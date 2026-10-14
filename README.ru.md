@@ -24,7 +24,7 @@
   <a href="#сборка-своими-руками">Сборка своими руками</a>
 </p>
 
-> [!Примечание]
+> [!NOTE]
 > Оригинальный проект Overdrive был закрыт, поэтому я декомпилировал последнюю выпущенную сборку,
 > восстановил полный исходный код и собрал его заново.
 
@@ -49,7 +49,7 @@
 ## Установка в четыре шага
 
 <p align="center">
-  <img src="https://github.com/Stintik-123/Overdrive/blob/main/.github/readme/install-steps.ru.jpg" alt="1 Скачайте Overdrive.exfat · 2 Скопируйте его в папку homebrew на USB-накопителе · 3 Вставьте накопитель: ShadowMount+ установит его · 4 Играйте" width="100%">
+  <img src=".github/readme/install-steps.ru.jpg" alt="1 Скачайте Overdrive.exfat · 2 Скопируйте его в папку homebrew на USB-накопителе · 3 Вставьте накопитель: ShadowMount+ установит его · 4 Играйте" width="100%">
 </p>
 
 ### Перед началом
@@ -266,8 +266,8 @@ Linux:
 
 ## Благодарности
 
-- **[MyLuxy](https://github.com/MyLuxy)** — декомпилировал Overdrive, восстановил его исходный код и собрал заново
-- **[Stintik-123](https://github.com/Stintik-123)** — добавил русский язык, если вы это читаете то благодаря мне, привет!
+- **[MyLuxy](https://github.com/MyLuxy)** — декомпилировал Overdrive, восстановил его исходный код и собрал заново.
+- **[Stintik-123](https://github.com/Stintik-123)** — добавил русский язык.
 - **[ps5-react](https://github.com/half144/ps5-react)** — фреймворк, на котором всё работает.
 - **[ShadowMount+](https://github.com/drakmor/ShadowMountPlus)** от drakmor — устанавливает приложение.
 
@@ -277,3 +277,5 @@ Linux:
 
 <sub>Overdrive — неофициальный homebrew-проект, не связанный с Sony Interactive Entertainment и не
 одобренный ею. PlayStation и PS5 — товарные знаки Sony Interactive Entertainment.</sub>
+
+<sub>Русский перевод сделан в [форке Stintik-123](https://github.com/Stintik-123/Overdrive).</sub>
