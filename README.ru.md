@@ -1,4 +1,9 @@
 <p align="center">
+  <a href="README.md">English</a> ·
+  <b>Русский</b>
+</p>
+
+<p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/readme/logo-dark.svg">
     <img src=".github/readme/logo-light.svg" alt="Overdrive" width="440">
@@ -267,7 +272,6 @@ Linux:
 ## Благодарности
 
 - **[MyLuxy](https://github.com/MyLuxy)** — декомпилировал Overdrive, восстановил его исходный код и собрал заново.
-- **[Stintik-123](https://github.com/Stintik-123)** — добавил русский язык.
 - **[ps5-react](https://github.com/half144/ps5-react)** — фреймворк, на котором всё работает.
 - **[ShadowMount+](https://github.com/drakmor/ShadowMountPlus)** от drakmor — устанавливает приложение.
 
@@ -278,4 +282,4 @@ Linux:
 <sub>Overdrive — неофициальный homebrew-проект, не связанный с Sony Interactive Entertainment и не
 одобренный ею. PlayStation и PS5 — товарные знаки Sony Interactive Entertainment.</sub>
 
-Русский перевод сделан в [форке Stintik-123](https://github.com/Stintik-123/Overdrive)
+<sub>Русский перевод сделан в [форке Stintik-123](https://github.com/Stintik-123/Overdrive).</sub>
