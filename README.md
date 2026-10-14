@@ -6,60 +6,61 @@
 </p>
 
 <p align="center">
-  <b>Your PS5 game store.</b><br>
-  Back from the dead, rebuilt from its own binary, with every line of source in the open.
+  <b>Ваш игровой магазин для PS5.</b><br>
+  Восставший из мёртвых, собранный заново из собственного бинарника, с полностью открытым исходным кодом.
 </p>
 
 <p align="center">
-  <a href="https://github.com/MyLuxy/overdrive/releases/latest"><img src="https://img.shields.io/github/v/release/MyLuxy/overdrive?style=for-the-badge&label=release&labelColor=0b0b0d&color=2a2a2f" alt="Latest release" width="197"></a>
-  <a href="https://github.com/MyLuxy/overdrive/releases"><img src="https://img.shields.io/github/downloads/MyLuxy/overdrive/total?style=for-the-badge&label=downloads&labelColor=0b0b0d&color=2a2a2f" alt="Downloads" width="183"></a>
-  <img src="https://img.shields.io/badge/platform-PS5-2a2a2f?style=for-the-badge&labelColor=0b0b0d" alt="Platform: PS5" width="184">
+  <a href="https://github.com/MyLuxy/overdrive/releases/latest"><img src="https://img.shields.io/github/v/release/MyLuxy/overdrive?style=for-the-badge&label=release&labelColor=0b0b0d&color=2a2a2f" alt="Последний релиз" width="197"></a>
+  <a href="https://github.com/MyLuxy/overdrive/releases"><img src="https://img.shields.io/github/downloads/MyLuxy/overdrive/total?style=for-the-badge&label=downloads&labelColor=0b0b0d&color=2a2a2f" alt="Скачивания" width="183"></a>
+  <img src="https://img.shields.io/badge/platform-PS5-2a2a2f?style=for-the-badge&labelColor=0b0b0d" alt="Платформа: PS5" width="184">
 </p>
 
 <p align="center">
-  <a href="#install-in-four-steps">Install</a> ·
-  <a href="#features">Features</a> ·
-  <a href="#updates">Updates</a> ·
-  <a href="#troubleshooting">Troubleshooting</a> ·
-  <a href="#build-it-yourself">Build it yourself</a>
+  <a href="#установка-в-четыре-шага">Установка</a> ·
+  <a href="#возможности">Возможности</a> ·
+  <a href="#обновления">Обновления</a> ·
+  <a href="#решение-проблем">Решение проблем</a> ·
+  <a href="#сборка-своими-руками">Сборка своими руками</a>
 </p>
 
 > [!NOTE]
-> The original Overdrive project has been shut down so I decompiled the last released build,
-> recovered the complete source and rebuilt it.
+> Оригинальный проект Overdrive был закрыт, поэтому я декомпилировал последнюю выпущенную сборку,
+> восстановил полный исходный код и собрал его заново.
 
 <p align="center">
-  <img src=".github/readme/discover.jpg" alt="Overdrive's Discover page, with a featured game and the Popular now row" width="100%">
+  <img src=".github/readme/discover.jpg" alt="Страница «Обзор» в Overdrive с рекомендованной игрой и подборкой «Популярное сейчас»" width="100%">
 </p>
 <p align="center">
-  <img src=".github/readme/browse.jpg" alt="Browse library: 1,845 games with filters, sorting, scores and sizes" width="49.5%">
-  <img src=".github/readme/downloads.jpg" alt="Downloads page with activity and storage for internal storage and a USB drive" width="49.5%">
+  <img src=".github/readme/browse.jpg" alt="Библиотека: 1845 игр с фильтрами, сортировкой, оценками и размерами" width="49.5%">
+  <img src=".github/readme/downloads.jpg" alt="Страница загрузок с активностью и местом на внутреннем накопителе и USB-накопителе" width="49.5%">
 </p>
 
-## Features
+## Возможности
 
-- **1,800+ games** to discover, with **Top rated**, **New releases** and a featured spotlight
-- **Browse the whole library** with filters, sorting, scores and download sizes at a glance
-- **Downloads straight to the console**, to internal storage or any USB drive, with live speed and storage stats
-- **Favorites**, **search** with an on-screen keyboard, and a **Files** page to see and clean up what's on your drives
-- **13 languages**: English, Deutsch, Español, Français, Português (Brasil), Русский, Bahasa Indonesia, 日本語, 简体中文, العربية, اردو, हिन्दी, বাংলা
-- **Updates itself**: a new version installs from the console, no PC needed
-- Made for the controller: <kbd>L1</kbd> <kbd>R1</kbd> to switch sections, <kbd>✕</kbd> to select, <kbd>○</kbd> to go back
+- **Более 1800 игр** для поиска, с подборками **«Лучшие по оценкам»**, **«Новые релизы»** и отдельной рекомендованной игрой
+- **Просмотр всей библиотеки** с фильтрами, сортировкой, оценками и размерами загрузок — всё сразу видно
+- **Загрузка прямо на консоль** — во внутренний накопитель или на любой USB-накопитель, с отображением скорости и занятого места в реальном времени
+- **Избранное**, **поиск** с экранной клавиатурой и страница **«Файлы»**, где видно, что лежит на накопителях, и можно это почистить
+- **13 языков**: английский, немецкий, испанский, французский, португальский (Бразилия), русский, индонезийский, японский, китайский (упрощённый), арабский, урду, хинди, бенгальский
+- **Обновляется сам**: новая версия устанавливается прямо с консоли, без компьютера
+- Сделано под геймпад: <kbd>L1</kbd> <kbd>R1</kbd> — переключение разделов, <kbd>✕</kbd> — выбрать, <kbd>○</kbd> — назад
 
-## Install in four steps
+## Установка в четыре шага
 
 <p align="center">
-  <img src=".github/readme/install-steps.svg" alt="1 Download Overdrive.exfat · 2 Copy it into a homebrew folder on a USB drive · 3 Plug it in: ShadowMount+ installs it · 4 Play" width="100%">
+  <img src=".github/readme/install-steps.svg" alt="1 Скачайте Overdrive.exfat · 2 Скопируйте его в папку homebrew на USB-накопителе · 3 Вставьте накопитель: ShadowMount+ установит его · 4 Играйте" width="100%">
 </p>
 
-### Before you start
+### Перед началом
 
-You need a **jailbroken PS5** running **[ShadowMount+](https://github.com/drakmor/ShadowMountPlus)**,
-the payload that installs `.exfat` images by itself. If ShadowMount+ shows its notification
-when the console starts, you are ready. You also need a **USB drive** and a **PC**.
+Вам нужна **взломанная PS5** с запущенным **[ShadowMount+](https://github.com/drakmor/ShadowMountPlus)** —
+это полезная нагрузка (payload), которая сама устанавливает образы `.exfat`. Если при включении
+консоли ShadowMount+ показывает уведомление, значит всё готово. Также понадобятся **USB-накопитель**
+и **компьютер**.
 
 <p align="center">
-  <a href="https://github.com/MyLuxy/overdrive/releases/latest/download/Overdrive.exfat"><img src="https://img.shields.io/badge/Download-Overdrive.exfat-f2f2f3?style=for-the-badge&labelColor=0b0b0d" alt="Download Overdrive.exfat" width="347"></a>
+  <a href="https://github.com/MyLuxy/overdrive/releases/latest/download/Overdrive.exfat"><img src="https://img.shields.io/badge/Download-Overdrive.exfat-f2f2f3?style=for-the-badge&labelColor=0b0b0d" alt="Скачать Overdrive.exfat" width="347"></a>
 </p>
 
 <table>
@@ -67,9 +68,9 @@ when the console starts, you are ready. You also need a **USB drive** and a **PC
 <td width="64" align="center" valign="top"><img src=".github/readme/step-1.svg" alt="1" width="40"></td>
 <td>
 
-**Download `Overdrive.exfat`** with the button above, or from the
-[latest release](https://github.com/MyLuxy/overdrive/releases/latest). It is the only file you
-need. Leave it as it is: don't unzip it and don't change the `.exfat` at the end of its name.
+**Скачайте `Overdrive.exfat`** по кнопке выше или из
+[последнего релиза](https://github.com/MyLuxy/overdrive/releases/latest). Это единственный нужный
+файл. Оставьте его как есть: не распаковывайте и не меняйте `.exfat` в конце имени.
 
 </td>
 </tr>
@@ -77,17 +78,18 @@ need. Leave it as it is: don't unzip it and don't change the `.exfat` at the end
 <td align="center" valign="top"><img src=".github/readme/step-2.svg" alt="2" width="40"></td>
 <td>
 
-**Copy it onto a USB drive, inside a folder called `homebrew`.** Plug the drive into your PC,
-create a new folder named exactly `homebrew` (all lowercase) at the top level of the drive, and
-copy `Overdrive.exfat` into it:
+**Скопируйте его на USB-накопитель в папку с названием `homebrew`.** Подключите накопитель к
+компьютеру, создайте в корне накопителя новую папку с именем ровно `homebrew` (все буквы строчные)
+и скопируйте в неё `Overdrive.exfat`:
 
 ```text
-USB drive
+USB-накопитель
 └── homebrew
     └── Overdrive.exfat
 ```
 
-The drive must be formatted as **exFAT**, which is how most drives come and what the PS5 reads.
+Накопитель должен быть отформатирован в **exFAT** — так он и продаётся в большинстве случаев, и
+именно этот формат читает PS5.
 
 </td>
 </tr>
@@ -95,9 +97,9 @@ The drive must be formatted as **exFAT**, which is how most drives come and what
 <td align="center" valign="top"><img src=".github/readme/step-3.svg" alt="3" width="40"></td>
 <td>
 
-**Plug the drive into the PS5.** ShadowMount+ checks for new files every few seconds: it finds
-Overdrive, mounts it and installs it, and a notification tells you when it's done. There is
-nothing to click.
+**Вставьте накопитель в PS5.** ShadowMount+ проверяет наличие новых файлов каждые несколько секунд:
+он находит Overdrive, монтирует его и устанавливает, а по завершении показывает уведомление.
+Нажимать ничего не нужно.
 
 </td>
 </tr>
@@ -105,123 +107,127 @@ nothing to click.
 <td align="center" valign="top"><img src=".github/readme/step-4.svg" alt="4" width="40"></td>
 <td>
 
-<img src="app/sce_sys/icon0.png" alt="Overdrive's icon" width="64" align="right">
+<img src="app/sce_sys/icon0.png" alt="Иконка Overdrive" width="64" align="right">
 
-**Open Overdrive from the home screen.** Look for this icon. Enjoy!
+**Откройте Overdrive с главного экрана.** Ищите эту иконку. Наслаждайтесь!
 
 </td>
 </tr>
 </table>
 
-You can also use **any FTP client** to move the file onto the console's internal storage
-instead, again inside a `homebrew` folder: `/data/homebrew/Overdrive.exfat`.
+Также можно перенести файл во внутренний накопитель консоли с помощью **любого FTP-клиента** — тоже
+в папку `homebrew`: `/data/homebrew/Overdrive.exfat`.
 
-## Updates
+## Обновления
 
-You only install Overdrive by hand once. When a new version comes out, the app tells you by
-itself a few seconds after it opens:
+Overdrive нужно установить вручную только один раз. Когда выходит новая версия, приложение само
+сообщает об этом через несколько секунд после запуска:
 
-1. A window shows the new version and what changed. Press **Install**.
-2. Overdrive downloads the update, checks it and puts it in place of the old one.
-3. When it's done, the app **closes itself**. Open it again and you are on the new version.
+1. Появляется окно с номером новой версии и списком изменений. Нажмите **«Установить»**.
+2. Overdrive скачивает обновление, проверяет его и ставит на место старого.
+3. Когда всё готово, приложение **закрывается само**. Откройте его снова — вы уже на новой версии.
 
-The update needs about **600 MB free** on the drive that holds Overdrive. `update.zip` in each
-release is the package the app downloads for this; you never need it yourself.
+Для обновления нужно около **600 МБ свободного места** на накопителе, где лежит Overdrive.
+Файл `update.zip` в каждом релизе — это тот самый пакет, который скачивает приложение; вам он
+самому не нужен.
 
-## Troubleshooting
+## Решение проблем
 
 <details>
-<summary><b>Overdrive doesn't appear on the home screen</b></summary>
+<summary><b>Overdrive не появляется на главном экране</b></summary>
 <br>
 
-- Make sure **ShadowMount+ is running**: it shows a notification when it starts.
-- Check the folder: it must be called exactly `homebrew` and sit at the **top level** of the
-  drive, not inside another folder.
-- Check the file still ends in **`.exfat`**. Some PCs hide extensions: a file renamed to
-  `Overdrive.exfat.zip` or unzipped into a folder won't be found.
-- Give it a minute: ShadowMount+ waits until the file has finished copying before it installs it.
+- Убедитесь, что **ShadowMount+ запущен**: при старте он показывает уведомление.
+- Проверьте папку: она должна называться ровно `homebrew` и лежать в **корне** накопителя, а не
+  внутри другой папки.
+- Проверьте, что файл по-прежнему заканчивается на **`.exfat`**. Некоторые системы скрывают
+  расширения: файл, переименованный в `Overdrive.exfat.zip` или распакованный в папку, найден не
+  будет.
+- Дайте ему минуту: ShadowMount+ ждёт, пока файл полностью скопируется, и только потом устанавливает
+  его.
 
 </details>
 
 <details>
-<summary><b>After an update, the app still shows the old version</b></summary>
+<summary><b>После обновления приложение всё ещё показывает старую версию</b></summary>
 <br>
 
-The new version is installed but the console still has the old one loaded. **Restart the
-console** and open Overdrive again; the app tells you this itself if it happens twice in a row.
+Новая версия установлена, но консоль всё ещё держит в памяти старую. **Перезагрузите консоль** и
+откройте Overdrive снова; приложение само подскажет это, если такое случится два раза подряд.
 
 </details>
 
 <details>
-<summary><b>The update says there isn't enough space</b></summary>
+<summary><b>Обновление сообщает, что недостаточно места</b></summary>
 <br>
 
-The update is downloaded next to the installed app, so the drive holding Overdrive needs about
-600 MB free. Free some space on that drive and press **Retry**. Nothing has been changed yet
-when this happens.
+Обновление скачивается рядом с установленным приложением, поэтому на накопителе с Overdrive нужно
+около 600 МБ свободного места. Освободите место на этом накопителе и нажмите **«Повторить»**.
+В этот момент ещё ничего не изменено.
 
 </details>
 
 <details>
-<summary><b>The update says it couldn't replace the app</b></summary>
+<summary><b>Обновление сообщает, что не удалось заменить приложение</b></summary>
 <br>
 
-Install it by hand: download `Overdrive.exfat` from the
-[latest release](https://github.com/MyLuxy/overdrive/releases/latest), close Overdrive, and copy
-the new file over the old one in the `homebrew` folder.
+Установите вручную: скачайте `Overdrive.exfat` из
+[последнего релиза](https://github.com/MyLuxy/overdrive/releases/latest), закройте Overdrive и
+скопируйте новый файл поверх старого в папку `homebrew`.
 
 </details>
 
 <details>
-<summary><b>How do I remove Overdrive?</b></summary>
+<summary><b>Как удалить Overdrive?</b></summary>
 <br>
 
-Delete `Overdrive.exfat` from the `homebrew` folder first, then delete its icon from the home
-screen. In the other order ShadowMount+ finds the file again and puts the icon back.
+Сначала удалите `Overdrive.exfat` из папки `homebrew`, а затем удалите его иконку с главного экрана.
+В обратном порядке ShadowMount+ снова найдёт файл и вернёт иконку на место.
 
 </details>
 
-## Build it yourself
+## Сборка своими руками
 
 <details>
-<summary><b>What's in this repository</b></summary>
+<summary><b>Что находится в этом репозитории</b></summary>
 <br>
 
-| Path | What it is |
+| Путь | Что это |
 | --- | --- |
-| `app/` | The application: JSX sources, state, assets, catalog data, and `app.json` (title id `PPSA99058`, version, capabilities) |
-| `ps5-react/` | The framework it runs on, vendored from [half144/ps5-react](https://github.com/half144/ps5-react) |
-| `packaging/make-exfat.sh` | Builds the exFAT image ShadowMount+ installs |
-| `.github/workflows/build.yml` | The build |
+| `app/` | Само приложение: исходники на JSX, состояние, ресурсы, данные каталога и `app.json` (title id `PPSA99058`, версия, возможности) |
+| `ps5-react/` | Фреймворк, на котором оно работает, взятый из [half144/ps5-react](https://github.com/half144/ps5-react) |
+| `packaging/make-exfat.sh` | Собирает образ exFAT, который устанавливает ShadowMount+ |
+| `.github/workflows/build.yml` | Процесс сборки |
 
 </details>
 
 <details>
-<summary><b>How the source was recovered</b></summary>
+<summary><b>Как был восстановлен исходный код</b></summary>
 <br>
 
-Overdrive is a React app running on [ps5-react](https://github.com/half144/ps5-react), and its
-whole JavaScript bundle sits in plain text inside `eboot.bin`. A bundler merges every module into
-one scope, so imports between modules turn into bare names; since each top-level name stays
-unique, the module that declares a name can be worked out again. That split the bundle back into
-its 137 original modules with their real `import`/`export` lines, checked against the original
-bundle until every import edge matched.
+Overdrive — это приложение на React, работающее на [ps5-react](https://github.com/half144/ps5-react),
+и весь его JavaScript-бандл лежит открытым текстом внутри `eboot.bin`. Сборщик объединяет все модули
+в одну область видимости, поэтому импорты между модулями превращаются в простые имена; поскольку
+каждое имя верхнего уровня остаётся уникальным, можно снова определить, какой модуль объявляет это
+имя. Так бандл удалось разбить обратно на его 137 исходных модулей с настоящими строками
+`import`/`export`, сверяя результат с оригинальным бандлом, пока не совпало каждое ребро импорта.
 
-What a bundler throws away could not come back: most comments, the JSX syntax (it reads as
-`jsx(View, {…})` calls), and `const`/`let` (now `var`). None of that changes how the app behaves.
+То, что сборщик отбрасывает, вернуть не удалось: большинство комментариев, синтаксис JSX (теперь это
+вызовы вида `jsx(View, {…})`) и `const`/`let` (теперь `var`). На поведение приложения это никак не
+влияет.
 
 </details>
 
 <details>
-<summary><b>Building</b></summary>
+<summary><b>Сборка</b></summary>
 <br>
 
-Every push builds on `ubuntu-24.04` with clang 18 and uploads `Overdrive.exfat` as a workflow
-artifact; a `v*` tag also publishes a release with `Overdrive.exfat` and `update.zip`.
+Каждый push собирается на `ubuntu-24.04` с clang 18 и загружает `Overdrive.exfat` как артефакт
+workflow; тег `v*` дополнительно публикует релиз с `Overdrive.exfat` и `update.zip`.
 
-The same build locally, on any Linux with the packages the workflow installs (`clang-18`,
+Та же сборка локально, на любом Linux с пакетами, которые устанавливает workflow (`clang-18`,
 `llvm-18`, `cmake`, `ninja-build`, `nodejs`, `npm`, `zlib1g-dev`, `build-essential`,
-`pkg-config`, `unzip`, `curl`, `exfatprogs`, and Pillow from `ps5-react/requirements.txt`):
+`pkg-config`, `unzip`, `curl`, `exfatprogs`, а также Pillow из `ps5-react/requirements.txt`):
 
 ```sh
 cd ps5-react
@@ -229,44 +235,47 @@ python3 tools/build_ps5.py --app-dir ../app --llvm /usr/bin
 sudo ../packaging/make-exfat.sh dist/PPSA99058 ../Overdrive.exfat
 ```
 
-The build downloads its pinned dependencies into `ps5-react/.deps` and writes the app folder, a
-`.zip` and a `.receipt.json` into `ps5-react/dist`. It verifies the result itself
-(`tools/verify.py`), so a green build means the payload structure and signatures check out.
-`--llvm /usr/bin` points it at the system clang; upstream defaults to the Homebrew LLVM path
-because macOS is its supported development environment.
+При сборке закреплённые зависимости скачиваются в `ps5-react/.deps`, а папка приложения, `.zip` и
+`.receipt.json` записываются в `ps5-react/dist`. Результат проверяется автоматически
+(`tools/verify.py`), поэтому успешная сборка означает, что структура полезной нагрузки и подписи
+в порядке. `--llvm /usr/bin` указывает на системный clang; по умолчанию в апстриме используется путь
+к LLVM из Homebrew, поскольку поддерживаемая среда разработки — macOS.
 
-The image is a plain exFAT volume whose root is the app folder, with 64 KiB clusters and the
-label `OVERDRIVE`. To release a new version, raise the version in `app/version.js` and
-`app/app.json` and push a `v*` tag: installed apps offer it on their next start.
+Образ — это обычный том exFAT, корнем которого является папка приложения, с кластерами 64 КиБ и
+меткой `OVERDRIVE`. Чтобы выпустить новую версию, поднимите версию в `app/version.js` и
+`app/app.json` и отправьте тег `v*`: установленные приложения предложат обновление при следующем
+запуске.
 
 </details>
 
 <details>
-<summary><b>Fixes over upstream ps5-react</b></summary>
+<summary><b>Исправления относительно оригинального ps5-react</b></summary>
 <br>
 
-Two fixes in the vendored framework, both in the build tooling and both reported by a Linux build:
+Два исправления во встроенном фреймворке, оба в инструментах сборки и оба обнаружены при сборке на
+Linux:
 
-- `ps5-react/tools/common.py` read the `git apply --summary` line with a fixed space count, which
-  glued the file mode onto the path (`100644 <path>`) and made every fresh dependency checkout
-  fail on the first patch that creates a file. It now splits on whitespace.
-- `ps5-react/tools/build_ps5.py` opened the pinned LLVM package's `data.tar.zst` with `tarfile`,
-  which reads zstd only from Python 3.14 while the documented minimum is 3.12. It now falls back
-  to the `zstd` command.
+- `ps5-react/tools/common.py` читал строку `git apply --summary` с фиксированным числом пробелов,
+  из-за чего режим файла приклеивался к пути (`100644 <путь>`) и любая свежая выгрузка зависимости
+  падала на первом же патче, создающем файл. Теперь строка разбивается по пробельным символам.
+- `ps5-react/tools/build_ps5.py` открывал `data.tar.zst` из закреплённого пакета LLVM через
+  `tarfile`, а тот читает zstd только начиная с Python 3.14, тогда как документированный минимум —
+  3.12. Теперь есть откат на команду `zstd`.
 
-Nothing else in the framework is changed.
+Больше во фреймворке ничего не изменено.
 
 </details>
 
-## Credits
+## Благодарности
 
-- **[MyLuxy](https://github.com/MyLuxy)**, who decompiled Overdrive, recovered its source and rebuilt it.
-- **[ps5-react](https://github.com/half144/ps5-react)**, the framework it runs on.
-- **[ShadowMount+](https://github.com/drakmor/ShadowMountPlus)** by drakmor, which installs it.
+- **[MyLuxy](https://github.com/MyLuxy)** — декомпилировал Overdrive, восстановил его исходный код и собрал заново.
+- **[Stintik-123](https://github.com/Stintik-123)** — в целом добавил русский язык.
+- **[ps5-react](https://github.com/half144/ps5-react)** — фреймворк, на котором всё работает.
+- **[ShadowMount+](https://github.com/drakmor/ShadowMountPlus)** от drakmor — устанавливает приложение.
 
-`ps5-react/` is GPL-3.0-or-later and carries its own `LICENSE`, `LICENSE-ATTRIBUTION` and
-`NOTICE`. Every dependency notice is copied into `notices/` inside the built app, and
-`ps5-react/docs/DEPENDENCIES.md` lists them with their sources.
+`ps5-react/` распространяется под GPL-3.0-or-later и содержит собственные `LICENSE`,
+`LICENSE-ATTRIBUTION` и `NOTICE`. Все уведомления о зависимостях копируются в `notices/` внутри
+собранного приложения, а `ps5-react/docs/DEPENDENCIES.md` перечисляет их с указанием источников.
 
-<sub>Overdrive is an unofficial homebrew project and is not affiliated with or endorsed by Sony
-Interactive Entertainment. PlayStation and PS5 are trademarks of Sony Interactive Entertainment.</sub>
+<sub>Overdrive — неофициальный homebrew-проект, не связанный с Sony Interactive Entertainment и не
+одобренный ею. PlayStation и PS5 — товарные знаки Sony Interactive Entertainment.</sub>
