@@ -278,4 +278,4 @@ Linux:
 <sub>Overdrive — неофициальный homebrew-проект, не связанный с Sony Interactive Entertainment и не
 одобренный ею. PlayStation и PS5 — товарные знаки Sony Interactive Entertainment.</sub>
 
-<sub>Русский перевод сделан в [форке Stintik-123](https://github.com/Stintik-123/Overdrive).</sub>
+Русский перевод сделан в [форке Stintik-123](https://github.com/Stintik-123/Overdrive)
