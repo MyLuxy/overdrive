@@ -1,4 +1,9 @@
 <p align="center">
+  <b>English</b> ·
+  <a href="README.ru.md">Русский</a>
+</p>
+
+<p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/readme/logo-dark.svg">
     <img src=".github/readme/logo-light.svg" alt="Overdrive" width="440">
