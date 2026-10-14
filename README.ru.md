@@ -49,7 +49,7 @@
 ## Установка в четыре шага
 
 <p align="center">
-  <img src="github.com/Stintik-123/Overdrive/blob/main/.github/readme/install-steps.ru.jpg" alt="1 Скачайте Overdrive.exfat · 2 Скопируйте его в папку homebrew на USB-накопителе · 3 Вставьте накопитель: ShadowMount+ установит его · 4 Играйте" width="100%">
+  <img src="https://github.com/Stintik-123/Overdrive/blob/main/.github/readme/install-steps.ru.jpg" alt="1 Скачайте Overdrive.exfat · 2 Скопируйте его в папку homebrew на USB-накопителе · 3 Вставьте накопитель: ShadowMount+ установит его · 4 Играйте" width="100%">
 </p>
 
 ### Перед началом
