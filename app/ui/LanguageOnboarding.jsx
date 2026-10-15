@@ -1,6 +1,7 @@
 // First-launch language picker — full-screen, matches Overdrive black UI.
-// Shown once after Splash until the player confirms a language.
-// Chrome is always English (primary audience). Default selection is English.
+// Shown once after Splash. UI chrome follows the PS5 system language;
+// the list is every app locale. No "System language" / "Default" rows —
+// the console language is pre-selected in the list.
 
 import '../assets/Inter-Regular.ttf';
 import { jsx, jsxs } from 'react/jsx-runtime';
@@ -14,12 +15,65 @@ import { FocusScope, ScrollView, Text, View, useIsFocused } from '@ps5-react/cor
 
 var SETTINGS = 'settings.json';
 
+/** Onboarding chrome in the console's language (fallback: English). */
+var COPY = {
+  en: {
+    title: 'Choose your language',
+    subtitle: "Overdrive's interface will use this language. Game titles and descriptions stay as the store lists them.",
+    hint: 'You can change the language later in Settings (gear icon).'
+  },
+  ru: {
+    title: 'Выберите язык',
+    subtitle: 'Интерфейс Overdrive будет на этом языке. Названия и описания игр остаются как в каталоге.',
+    hint: 'Изменить язык позже можно в настройках (шестерёнка).'
+  },
+  de: {
+    title: 'Sprache wählen',
+    subtitle: 'Die Oberfläche von Overdrive erscheint in dieser Sprache. Spieltitel und Beschreibungen bleiben wie im Katalog.',
+    hint: 'Die Sprache kannst du später in den Einstellungen ändern.'
+  },
+  es: {
+    title: 'Elige el idioma',
+    subtitle: 'La interfaz de Overdrive usará este idioma. Los títulos y descripciones siguen como en el catálogo.',
+    hint: 'Puedes cambiar el idioma más tarde en Ajustes.'
+  },
+  fr: {
+    title: 'Choisir la langue',
+    subtitle: "L'interface d'Overdrive utilisera cette langue. Titres et descriptions restent ceux du catalogue.",
+    hint: 'Vous pourrez changer la langue plus tard dans les Réglages.'
+  },
+  it: {
+    title: 'Scegli la lingua',
+    subtitle: "L'interfaccia di Overdrive userà questa lingua. Titoli e descrizioni restano quelli del catalogo.",
+    hint: 'Puoi cambiare lingua più tardi nelle Impostazioni.'
+  },
+  'pt-BR': {
+    title: 'Escolha o idioma',
+    subtitle: 'A interface do Overdrive usará este idioma. Títulos e descrições ficam como no catálogo.',
+    hint: 'Você pode mudar o idioma depois em Configurações.'
+  },
+  ja: {
+    title: '言語を選択',
+    subtitle: 'Overdriveの表示言語です。ゲームのタイトルと説明はカタログのままです。',
+    hint: '言語は後から設定で変更できます。'
+  },
+  'zh-Hans': {
+    title: '选择语言',
+    subtitle: 'Overdrive 界面将使用此语言。游戏标题和简介仍与目录一致。',
+    hint: '之后可在设置中更改语言。'
+  },
+  ar: {
+    title: 'اختر اللغة',
+    subtitle: 'ستستخدم واجهة Overdrive هذه اللغة. تبقى عناوين الألعاب ووصفها كما في المتجر.',
+    hint: 'يمكنك تغيير اللغة لاحقاً من الإعدادات.'
+  }
+};
+
 function markLanguageSetup() {
   const settings = loadList(SETTINGS, 'settings');
   saveList(SETTINGS, 'settings', { ...settings, languageSetup: true });
 }
 
-/** True until the player finishes the first-run language screen. */
 function needsLanguageSetup() {
   try {
     const settings = loadList(SETTINGS, 'settings');
@@ -29,36 +83,21 @@ function needsLanguageSetup() {
   }
 }
 
-function RowFace({ name, detail, checked }) {
+function RowFace({ name, checked }) {
   const focused = useIsFocused();
   return /* @__PURE__ */ jsxs(View, {
     style: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 24 },
     children: [
-      /* @__PURE__ */ jsxs(View, {
-        style: { flex: 1, gap: 3 },
-        children: [
-          /* @__PURE__ */ jsx(Text, {
-            style: {
-              fontFamily: 'Inter-Regular',
-              fontSize: 26,
-              fontWeight: 600,
-              color: focused ? colors.fg : '#e8e8ea',
-              lineHeight: 34
-            },
-            children: name
-          }),
-          detail
-            ? /* @__PURE__ */ jsx(Text, {
-                style: {
-                  fontFamily: 'Inter-Regular',
-                  fontSize: 20,
-                  lineHeight: 28,
-                  color: focused ? colors.muted : colors.subtle
-                },
-                children: detail
-              })
-            : null
-        ]
+      /* @__PURE__ */ jsx(Text, {
+        style: {
+          flex: 1,
+          fontFamily: 'Inter-Regular',
+          fontSize: 26,
+          fontWeight: 600,
+          color: focused ? colors.fg : '#e8e8ea',
+          lineHeight: 34
+        },
+        children: name
       }),
       checked
         ? /* @__PURE__ */ jsx(Icon, { name: 'check', color: colors.fg })
@@ -67,7 +106,7 @@ function RowFace({ name, detail, checked }) {
   });
 }
 
-function LangRow({ focusKey, autoFocus, name, detail, checked, onPress }) {
+function LangRow({ focusKey, autoFocus, name, checked, onPress }) {
   return /* @__PURE__ */ jsxs(View, {
     focusKey,
     autoFocus,
@@ -89,30 +128,22 @@ function LangRow({ focusKey, autoFocus, name, detail, checked, onPress }) {
     ],
     children: [
       /* @__PURE__ */ jsx(FocusRing, {}),
-      /* @__PURE__ */ jsx(RowFace, { name, detail, checked })
+      /* @__PURE__ */ jsx(RowFace, { name, checked })
     ]
   });
 }
 
-/**
- * Full-screen first-run language setup.
- * All labels stay in English — primary audience. Default focus is English.
- * Each row still shows the language in its own script.
- */
 function LanguageOnboarding({ onDone }) {
-  const choice = languageChoice();
-  // Before the player picks: treat English as the default selection.
-  const effective = choice === null ? 'en' : choice;
   const systemCode = systemLocale();
-  const systemName = LOCALES.find((l) => l.code === systemCode)?.name ?? systemCode;
+  const copy = COPY[systemCode] || COPY.en;
+  const choice = languageChoice();
+  const selected = choice ?? systemCode;
 
   const finish = (code) => {
     chooseLanguage(code);
     markLanguageSetup();
     onDone();
   };
-
-  const rest = LOCALES.filter((l) => l.code !== 'en');
 
   return /* @__PURE__ */ jsx(FocusScope, {
     trap: true,
@@ -157,7 +188,7 @@ function LanguageOnboarding({ onDone }) {
                     lineHeight: 52,
                     letterSpacing: -1
                   },
-                  children: 'Choose your language'
+                  children: copy.title
                 }),
                 /* @__PURE__ */ jsx(Text, {
                   style: {
@@ -166,53 +197,27 @@ function LanguageOnboarding({ onDone }) {
                     color: colors.muted,
                     lineHeight: 32
                   },
-                  children:
-                    "Overdrive's interface will use this language. Game titles and descriptions stay as the store lists them."
+                  children: copy.subtitle
                 })
               ]
             }),
             /* @__PURE__ */ jsx(ScrollView, {
               style: { flexGrow: 1, maxHeight: 720 },
-              children: /* @__PURE__ */ jsxs(View, {
+              children: /* @__PURE__ */ jsx(View, {
                 style: { gap: 8 },
-                children: [
-                  /* @__PURE__ */ jsx(LangRow, {
-                    focusKey: 'onboard:en',
-                    autoFocus: true,
-                    name: 'English',
-                    detail: 'Default',
-                    checked: effective === 'en',
-                    onPress: () => finish('en')
-                  }),
-                  /* @__PURE__ */ jsx(LangRow, {
-                    focusKey: 'onboard:system',
-                    name: 'System language',
-                    detail: systemName,
-                    checked: false,
-                    onPress: () => finish(null)
-                  }),
-                  /* @__PURE__ */ jsx(View, {
-                    style: {
-                      height: 1,
-                      backgroundColor: colors.line,
-                      marginVertical: 10,
-                      marginHorizontal: 12
-                    }
-                  }),
-                  rest.map(({ code, name }) =>
-                    /* @__PURE__ */ jsx(
-                      LangRow,
-                      {
-                        focusKey: `onboard:${code}`,
-                        name,
-                        detail: code === 'ru' ? 'Russian' : undefined,
-                        checked: effective === code,
-                        onPress: () => finish(code)
-                      },
-                      code
-                    )
+                children: LOCALES.map(({ code, name }) =>
+                  /* @__PURE__ */ jsx(
+                    LangRow,
+                    {
+                      focusKey: `onboard:${code}`,
+                      autoFocus: code === selected,
+                      name,
+                      checked: selected === code,
+                      onPress: () => finish(code)
+                    },
+                    code
                   )
-                ]
+                )
               })
             }),
             /* @__PURE__ */ jsx(Text, {
@@ -223,7 +228,7 @@ function LanguageOnboarding({ onDone }) {
                 paddingHorizontal: 12,
                 lineHeight: 26
               },
-              children: 'You can change the language later in Settings (gear icon).'
+              children: copy.hint
             })
           ]
         })
