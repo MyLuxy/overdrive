@@ -1,5 +1,6 @@
 // ../pub-game-store/native/index.jsx
 // reconstructed from the esbuild bundle in eboot.bin
+// MODIFIED: first-run language onboarding after Splash.
 
 import { jsx, jsxs } from 'react/jsx-runtime';
 import { useEffect, useState } from 'react';
@@ -14,6 +15,7 @@ import { getGame, warmCovers } from './state/catalog.js';
 import { NavProvider, useIsImmersive, useNavActions, useNavState } from './state/nav.jsx';
 import { StoreFreeze, StoreProvider } from './state/store.jsx';
 import { Header } from './ui/Header.jsx';
+import { LanguageOnboarding, needsLanguageSetup } from './ui/LanguageOnboarding.jsx';
 import { Legend } from './ui/Legend.jsx';
 import { Splash } from './ui/Splash.jsx';
 import { UpdateDialog } from './ui/UpdateDialog.jsx';
@@ -60,18 +62,28 @@ import { useInterfaceSounds } from './ui/sounds.js';
       ] })
     );
   }
-  // The intro owns the screen until it ends: the store is mounted by its `onDone`, so no
-  // page, cover or catalog work happens underneath the needle.
+  // Splash → optional first-run language → store.
+  // Catalog/store only mount after language is settled so covers are not warmed under the picker.
   function Boot() {
-    const [booted, setBooted] = (0, useState)(false);
-    // The intro reports itself (about 2.5s); this only covers an animation callback that never
-    // arrives, where a black screen forever is worse than a store without the needle.
+    const [phase, setPhase] = (0, useState)("splash");
     (0, useEffect)(() => {
-      const id = setTimeout(() => setBooted(true), 5e3);
+      const id = setTimeout(() => {
+        setPhase((p) => (p === "splash" ? (needsLanguageSetup() ? "language" : "app") : p));
+      }, 5e3);
       return () => clearTimeout(id);
     }, []);
-    return /* @__PURE__ */ (0, jsx)(View, { style: { width: 1920, height: 1080, backgroundColor: "#000000" }, children: booted
-      ? /* @__PURE__ */ (0, jsx)(LocaleProvider, { children: /* @__PURE__ */ (0, jsx)(StoreProvider, { children: /* @__PURE__ */ (0, jsx)(NavProvider, { children: /* @__PURE__ */ (0, jsx)(App, {}) }) }) })
-      : /* @__PURE__ */ (0, jsx)(Splash, { onDone: () => setBooted(true) }) });
+    const onSplashDone = () => {
+      setPhase(needsLanguageSetup() ? "language" : "app");
+    };
+    const onLanguageDone = () => setPhase("app");
+    return /* @__PURE__ */ (0, jsx)(View, { style: { width: 1920, height: 1080, backgroundColor: "#000000" }, children:
+      phase === "splash"
+        ? /* @__PURE__ */ (0, jsx)(Splash, { onDone: onSplashDone })
+        : /* @__PURE__ */ (0, jsx)(LocaleProvider, { children:
+            phase === "language"
+              ? /* @__PURE__ */ (0, jsx)(LanguageOnboarding, { onDone: onLanguageDone })
+              : /* @__PURE__ */ (0, jsx)(StoreProvider, { children: /* @__PURE__ */ (0, jsx)(NavProvider, { children: /* @__PURE__ */ (0, jsx)(App, {}) }) })
+          })
+    });
   }
   AppRegistry.registerComponent("overdrive", () => () => /* @__PURE__ */ (0, jsx)(Boot, {}));
