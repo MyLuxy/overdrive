@@ -341,7 +341,7 @@
   "search.popular": "Популярные",
   "search.recent": "Недавние поиски",
   "search.resultsFor": "Результаты для \"{query}\"",
-  "search.tryGenre": "Проверьте орфографию или попробуйте жанр:",
+  "search.tryGenre": "Проверьте написание или попробуйте жанр:",
   "settings.controller": "Геймпад",
   "settings.title": "Настройки",
   "settings.vibration": "Вибрация при навигации",
@@ -419,5 +419,6 @@
   "update.later": "Позже",
   "update.restarting": "Перезапуск Overdrive…",
   "update.retry": "Повторить",
-  "update.updating": "ОБНОВЛЕНИЕ"
+  "update.updating": "ОБНОВЛЕНИЕ",
+  "language.name.fa": "Персидский"
 }
