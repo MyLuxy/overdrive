@@ -1,7 +1,24 @@
 {
-  "_note": "temporary - full file will follow",
+  "browse.addToFavorites": "Add to favorites",
   "language.setupTitle": "Choose your language",
   "language.setupSubtitle": "Overdrive's interface will use this language. Game titles and descriptions stay as the store lists them.",
   "language.setupHint": "You can change the language later in Settings (gear icon).",
-  "browse.addToFavorites": "Add to favorites"
+  "language.system": "System language",
+  "language.title": "Language",
+  "language.subtitle": "Game titles and descriptions stay as the store lists them.",
+  "language.name.en": "English",
+  "language.name.ru": "Russian",
+  "language.name.de": "German",
+  "language.name.es": "Spanish",
+  "language.name.fr": "French",
+  "language.name.pt-BR": "Portuguese (Brazil)",
+  "language.name.it": "Italian",
+  "language.name.ja": "Japanese",
+  "language.name.zh-Hans": "Chinese (Simplified)",
+  "language.name.ar": "Arabic",
+  "language.name.ur": "Urdu",
+  "language.name.hi": "Hindi",
+  "language.name.bn": "Bengali",
+  "language.name.id": "Indonesian",
+  "settings.title": "Settings"
 }
