@@ -1,11 +1,19 @@
 name: Restore en.json locale
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/ensure-en-locale.py'
+      - '.github/workflows/restore-en-locale.yml'
+permissions:
+  contents: write
 jobs:
   restore:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
       - name: Build en.json from upstream + setup keys
         run: |
           python3 << 'PY'
@@ -25,10 +33,67 @@ jobs:
           )
           print('en keys', len(en))
           PY
-      - name: Commit if changed
+      - name: Build polished ru.json
         run: |
-          git config user.name 'github-actions'
-          git config user.email 'github-actions@github.com'
-          git add app/i18n/locales/en.json
-          git diff --cached --quiet || git commit -m 'chore: restore en.json from upstream + language.setup*'
-          git push
+          python3 << 'PY'
+          import json, urllib.request
+          from pathlib import Path
+          en = json.loads(Path('app/i18n/locales/en.json').read_text(encoding='utf-8'))
+          ru = json.loads(urllib.request.urlopen(
+              'https://raw.githubusercontent.com/MyLuxy/overdrive/main/app/i18n/locales/ru.json'
+          ).read())
+          polish = {
+            "language.setupTitle": "Выберите язык",
+            "language.setupSubtitle": "Интерфейс Overdrive будет на этом языке. Названия и описания игр остаются как в каталоге.",
+            "language.setupHint": "Изменить язык позже можно в настройках (шестерёнка).",
+            "language.subtitle": "Названия игр и описания остаются такими, как в каталоге.",
+            "browse.popularNow": "Популярное сейчас",
+            "catalog.empty.queryHint": "Проверьте написание, снимите фильтр или попробуйте другое название.",
+            "download.button.queued": "Пауза (в очереди)",
+            "download.soFar": "{size} скачано",
+            "download.fileLinkDetail": "Введите прямую ссылку на файл (ту, что начинает скачивание после проверки хоста), а не адрес страницы.",
+            "downloads.panel.awake": "Консоль не уходит в сон, пока идут загрузки.",
+            "nav.browse": "Каталог",
+            "nav.discover": "Обзор",
+            "nav.top": "Топ",
+            "nav.new": "Новинки",
+            "settings.vibration": "Вибрация при навигации",
+            "settings.vibrationDetail": "Лёгкая отдача при перемещении, выборе и возврате",
+            "capture.capturing": "Пройдите проверку и нажмите «Скачать»",
+            "capture.detail": "Вернитесь сюда после нажатия «Скачать». Загрузка начнётся сама, когда файл будет проверен. На захват даётся до 3 минут.",
+            "capture.preparing": "Подготовка проверки файла…",
+            "capture.title": "Проверка Vikingfile",
+            "capture.validating": "Проверка захваченного файла…",
+            "downloads.notice.captured": "Ссылка захвачена — вернитесь в Overdrive",
+            "update.available": "ДОСТУПНО ОБНОВЛЕНИЕ",
+            "update.close": "Закрыть",
+            "update.detail": "Готова новая версия Overdrive. Она установится поверх текущей и откроется сама.",
+            "update.done": "ОБНОВЛЕНО",
+            "update.failed": "ОШИБКА ОБНОВЛЕНИЯ",
+            "update.install": "Обновить",
+            "update.installing": "Установка…",
+            "update.later": "Позже",
+            "update.restarting": "Перезапуск Overdrive…",
+            "update.retry": "Повторить",
+            "update.updating": "ОБНОВЛЕНИЕ",
+          }
+          ru.update(polish)
+          for k, v in en.items():
+              if k not in ru:
+                  ru[k] = v
+          Path('app/i18n/locales/ru.json').write_text(
+              json.dumps(ru, ensure_ascii=False, indent=2) + '\n', encoding='utf-8'
+          )
+          print('ru keys', len(ru))
+          PY
+      - name: Commit and push
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/i18n/locales/en.json app/i18n/locales/ru.json
+          if git diff --cached --quiet; then
+            echo 'No changes'
+          else
+            git commit -m 'chore: restore full en.json + polished ru.json'
+            git push origin HEAD:main
+          fi
