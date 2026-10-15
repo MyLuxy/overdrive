@@ -1,8 +1,3 @@
-// First-launch language picker — full-screen, matches Overdrive black UI.
-// Shown once after Splash. UI chrome follows the PS5 system language;
-// the list is every app locale. No "System language" / "Default" rows —
-// the console language is pre-selected in the list.
-
 import '../assets/Inter-Regular.ttf';
 import { jsx, jsxs } from 'react/jsx-runtime';
 import { chooseLanguage, languageChoice, systemLocale } from '../i18n/index.js';
@@ -15,7 +10,6 @@ import { FocusScope, ScrollView, Text, View, useIsFocused } from '@ps5-react/cor
 
 var SETTINGS = 'settings.json';
 
-/** Onboarding chrome in the console's language (fallback: English). */
 var COPY = {
   en: {
     title: 'Choose your language',
