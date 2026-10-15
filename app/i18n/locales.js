@@ -150,7 +150,18 @@
       percent: "{n}%",
       date: "{y}\u5E74{M}\u6708{d}\u65E5",
       list: ["\u3001", "\u3001", "\u3001"]
-    }
+    },
+    {
+      code: "fa",
+      name: "فارسی",
+      rtl: true,
+      group: ",",
+      decimal: ".",
+      percent: "{n}%",
+      date: "{y}/{M}/{d}",
+      months: ["ژانویه", "فوریه", "مارس", "آوریل", "مه", "ژوئن", "ژوئیه", "اوت", "سپتامبر", "اکتبر", "نوامبر", "دسامبر"],
+      list: ["، ", " و ", " و "]
+    },
   ];
   var byCode = new Map(LOCALES.map((locale2) => [locale2.code, locale2]));
   var localeData = (code) => byCode.get(code) ?? byCode.get(SOURCE_LOCALE);
