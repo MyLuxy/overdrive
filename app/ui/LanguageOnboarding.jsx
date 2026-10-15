@@ -93,15 +93,15 @@ function LangRow({ focusKey, autoFocus, name, detail, checked, onPress }) {
   });
 }
 
-/**
- * Full-screen first-run language setup.
- * Each row shows the language in its own script; chrome uses the active locale.
- */
 function LanguageOnboarding({ onDone }) {
   const t = useT();
   const choice = languageChoice();
   const systemCode = systemLocale();
   const systemName = LOCALES.find((l) => l.code === systemCode)?.name ?? systemCode;
+
+  const title = t('language.setupTitle');
+  const subtitle = t('language.setupSubtitle');
+  const hint = t('language.setupHint');
 
   const finish = (code) => {
     chooseLanguage(code);
@@ -152,7 +152,7 @@ function LanguageOnboarding({ onDone }) {
                     lineHeight: 52,
                     letterSpacing: -1
                   },
-                  children: t('language.setupTitle')
+                  children: title && title !== 'language.setupTitle' ? title : 'Choose your language'
                 }),
                 /* @__PURE__ */ jsx(Text, {
                   style: {
@@ -161,7 +161,9 @@ function LanguageOnboarding({ onDone }) {
                     color: colors.muted,
                     lineHeight: 32
                   },
-                  children: t('language.setupSubtitle')
+                  children: subtitle && subtitle !== 'language.setupSubtitle'
+                    ? subtitle
+                    : "Overdrive's interface will use this language. Game titles and descriptions stay as the store lists them."
                 })
               ]
             }),
@@ -173,7 +175,7 @@ function LanguageOnboarding({ onDone }) {
                   /* @__PURE__ */ jsx(LangRow, {
                     focusKey: 'onboard:system',
                     autoFocus: true,
-                    name: t('language.system'),
+                    name: t('language.system') || 'System language',
                     detail: systemName,
                     checked: choice === null,
                     onPress: () => finish(null)
@@ -192,7 +194,7 @@ function LanguageOnboarding({ onDone }) {
                       {
                         focusKey: `onboard:${code}`,
                         name,
-                        detail: t(`language.name.${code}`),
+                        detail: t(`language.name.${code}`) || name,
                         checked: choice === code,
                         onPress: () => finish(code)
                       },
@@ -210,7 +212,9 @@ function LanguageOnboarding({ onDone }) {
                 paddingHorizontal: 12,
                 lineHeight: 26
               },
-              children: t('language.setupHint')
+              children: hint && hint !== 'language.setupHint'
+                ? hint
+                : 'You can change the language later in Settings (gear icon).'
             })
           ]
         })

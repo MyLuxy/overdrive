@@ -1,0 +1,34 @@
+name: Restore en.json locale
+on:
+  workflow_dispatch:
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build en.json from upstream + setup keys
+        run: |
+          python3 << 'PY'
+          import json, urllib.request
+          from pathlib import Path
+          en = json.loads(urllib.request.urlopen(
+              'https://raw.githubusercontent.com/MyLuxy/overdrive/main/app/i18n/locales/en.json'
+          ).read())
+          en['language.setupTitle'] = 'Choose your language'
+          en['language.setupSubtitle'] = (
+              "Overdrive's interface will use this language. "
+              'Game titles and descriptions stay as the store lists them.'
+          )
+          en['language.setupHint'] = 'You can change the language later in Settings (gear icon).'
+          Path('app/i18n/locales/en.json').write_text(
+              json.dumps(en, ensure_ascii=False, indent=2) + '\n', encoding='utf-8'
+          )
+          print('en keys', len(en))
+          PY
+      - name: Commit if changed
+        run: |
+          git config user.name 'github-actions'
+          git config user.email 'github-actions@github.com'
+          git add app/i18n/locales/en.json
+          git diff --cached --quiet || git commit -m 'chore: restore en.json from upstream + language.setup*'
+          git push
