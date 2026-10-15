@@ -1,6 +1,5 @@
 // ../pub-game-store/native/index.jsx
 // reconstructed from the esbuild bundle in eboot.bin
-// MODIFIED: first-run language onboarding after Splash.
 
 import { jsx, jsxs } from 'react/jsx-runtime';
 import { useEffect, useState } from 'react';
@@ -62,8 +61,6 @@ import { useInterfaceSounds } from './ui/sounds.js';
       ] })
     );
   }
-  // Splash → optional first-run language → store.
-  // Catalog/store only mount after language is settled so covers are not warmed under the picker.
   function Boot() {
     const [phase, setPhase] = (0, useState)("splash");
     (0, useEffect)(() => {
