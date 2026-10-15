@@ -1,1 +1,7 @@
-PLACEHOLDER
+{
+  "_note": "temporary - full file will follow",
+  "language.setupTitle": "Choose your language",
+  "language.setupSubtitle": "Overdrive's interface will use this language. Game titles and descriptions stay as the store lists them.",
+  "language.setupHint": "You can change the language later in Settings (gear icon).",
+  "browse.addToFavorites": "Add to favorites"
+}
