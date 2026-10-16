@@ -162,6 +162,16 @@
       months: ["ژانویه", "فوریه", "مارس", "آوریل", "مه", "ژوئن", "ژوئیه", "اوت", "سپتامبر", "اکتبر", "نوامبر", "دسامبر"],
       list: ["، ", " و ", " و "]
     },
+    {
+      code: "nl",
+      name: "Nederlands",
+      group: ".",
+      decimal: ",",
+      percent: "{n}%",
+      date: "{d} {m} {y}",
+      months: ["Jan", "Feb", "Mrt", "Apr", "Mei", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dec"],
+      list: [", ", ", en ", " en "]
+    },
   ];
   var byCode = new Map(LOCALES.map((locale2) => [locale2.code, locale2]));
   var localeData = (code) => byCode.get(code) ?? byCode.get(SOURCE_LOCALE);
