@@ -60,8 +60,14 @@ import { sourceKind, webURL } from './download-sources.js';
   }
   function transferURL(url) {
     const parsed = webURL(url);
-    if (!url.startsWith("https://") || parsed.origin !== `https://${parsed.host}` || parsed.path.includes("#") || !(["vikingfile.com", "ar.vikingfile.com", "vik1ngfile.site"].includes(parsed.host) || parsed.host.endsWith(".s3.bhs.io.cloud.ovh.net") || parsed.host.endsWith(".r2.cloudflarestorage.com")))
+    // Vikingfile hands each file to one of its own servers (ar., am., zo. ... .vikingfile.com, seen
+    // 2026-10-18): any of its subdomains is its own.
+    const own = ["vikingfile.com", "vik1ngfile.site"].some((domain) => parsed.host === domain || parsed.host.endsWith(`.${domain}`));
+    if (!url.startsWith("https://") || parsed.origin !== `https://${parsed.host}` || parsed.path.includes("#") || !(own || parsed.host.endsWith(".s3.bhs.io.cloud.ovh.net") || parsed.host.endsWith(".r2.cloudflarestorage.com"))) {
+      // The host only, never the path or query: those carry the file's signed token.
+      console.log("[browser-capture] download host refused:", parsed.origin);
       throw new Error("Captured file redirected to an unsupported download host.");
+    }
     return url;
   }
   async function rangeProbe(http, url, signal) {

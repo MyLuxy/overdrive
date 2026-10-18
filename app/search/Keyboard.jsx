@@ -46,7 +46,7 @@ import { FocusScope, Text, View, motion, useIsFocused } from '@ps5-react/core';
       _state.focused ? { backgroundColor: "#f2f2f3" } : null
     ], initial: false, animate: { scale: 1 }, transition: { type: "tween", duration: 0.1, ease: [0.4, 0, 0.2, 1] }, whilePress: { scale: 0.95 }, children: /* @__PURE__ */ (0, jsx)(KeyFace, { label, icon, button, url: compact }) });
   });
-  var Keyboard = (0, memo)(function Keyboard2({ onChange, onSubmit, url = false }) {
+  var Keyboard = (0, memo)(function Keyboard2({ onChange, onSubmit, url = false, focusKey }) {
     const t2 = useT();
     const { rtl } = useLocale();
     const edge = rtl ? 0 : COLUMNS2 - 1;
@@ -63,7 +63,7 @@ import { FocusScope, Text, View, motion, useIsFocused } from '@ps5-react/core';
         return false;
       return true;
     };
-    return /* @__PURE__ */ (0, jsx)(FocusScope, { wrap: true, onAction, children: /* @__PURE__ */ (0, jsxs)(View, { style: [{ width: 564, flexDirection: "row", flexWrap: "wrap", gap: 12 }, LTR2], children: [
+    return /* @__PURE__ */ (0, jsx)(FocusScope, { wrap: true, focusKey, onAction, children: /* @__PURE__ */ (0, jsxs)(View, { style: [{ width: 564, flexDirection: "row", flexWrap: "wrap", gap: 12 }, LTR2], children: [
       characters.map(
         (character, i) => /* @__PURE__ */ (0, jsx)(
           Key,

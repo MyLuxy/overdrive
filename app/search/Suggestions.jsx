@@ -69,7 +69,7 @@ import { FocusScope, ScrollView, Text, View, useIsFocused } from '@ps5-react/cor
             width: CARD_WIDTH3,
             onPress: () => onOpenGame(game),
             rowEnd: index % COLUMNS3 === COLUMNS3 - 1,
-            rowStart: index % COLUMNS3 === 0
+            rowStart: index % COLUMNS3 === 0 ? "search-keyboard" : void 0
           },
           game.id
         )

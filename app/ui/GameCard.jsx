@@ -140,8 +140,9 @@ import { Text, View, motion, transitions, useIsFocused } from '@ps5-react/core';
       motion.View,
       {
         ...focusEnd(rtl, rowEnd ? focusKey : void 0),
-        // A grid's first column: Left stops there instead of looking up the page for something to its left.
-        ...focusStart(rtl, rowStart ? focusKey : void 0),
+        // A grid's first column: Left stops there instead of looking up the page for something to its left,
+        // or goes where rowStart names (Search's keyboard).
+        ...focusStart(rtl, typeof rowStart === "string" ? rowStart : rowStart ? focusKey : void 0),
         ...rest2,
         focusKey,
         onPress,

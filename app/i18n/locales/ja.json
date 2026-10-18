@@ -202,6 +202,7 @@
   "files.free": "空き{free} / {total}",
   "files.installDone": "インストールしました。ホーム画面にあります。",
   "files.installFailed": "本体がこのパッケージを拒否しました。kstuffが読み込まれているか確認して、もう一度お試しください。",
+  "files.installFailedReason": "インストールに失敗しました：{reason}",
   "files.installed": "インストール済み",
   "files.installing": "インストール中 · {percent}",
   "files.kind.all": "すべてのファイル",

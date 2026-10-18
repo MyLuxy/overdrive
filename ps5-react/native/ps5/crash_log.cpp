@@ -11,6 +11,7 @@
 #include <initializer_list>
 #include <sys/stat.h>
 #include <sys/ucontext.h>
+#include <time.h>
 #include <unistd.h>
 
 extern "C" int __real_sceKernelDebugOutText(int channel, const char* text);
@@ -24,7 +25,12 @@ int sceKernelGetModuleInfo(int handle, ModuleInfo* info);
 namespace {
 std::atomic<int> log_fd{-1};
 // A session that logs in a loop stops here rather than filling the drive.
-constexpr long kMaxBytes = 16L * 1024 * 1024;
+constexpr long kMaxBytes = 8L * 1024 * 1024;
+// app.log keeps up to this many sessions, each opened by a "session" line, then becomes app.prev.log;
+// a bigger file than kRotateBytes goes too, whatever its count: both files stay under ~20 MB.
+constexpr int kSessions = 5;
+constexpr off_t kRotateBytes = 10L * 1024 * 1024;
+constexpr char kSessionMark[] = "[PS5-REACT] session ";
 std::atomic<long> written{0};
 
 // Lines from before start(), such as how filesystem access chose the folder app.log lives in, wait
@@ -98,6 +104,34 @@ void log_modules() {
     if (n > 0) { append(line, static_cast<std::size_t>(n)); __real_sceKernelDebugOutText(0, line); }
   }
 }
+
+// The sessions app.log already holds: its "session" lines at the start of a line. A file that can't
+// be read counts as full, so it moves aside rather than blocking anything.
+int sessions_in(const char* path) {
+  const int fd = ::open(path, O_RDONLY);
+  if (fd < 0) return 0;
+  struct stat info {};
+  if (::fstat(fd, &info) != 0 || info.st_size > kRotateBytes) { ::close(fd); return kSessions; }
+  constexpr std::size_t mark = sizeof kSessionMark - 1;
+  char buffer[64 * 1024 + mark + 1];
+  std::size_t kept = 1;
+  buffer[0] = '\n';  // the file's first line starts a line too
+  int count = 0;
+  for (;;) {
+    const ssize_t got = ::read(fd, buffer + kept, sizeof buffer - kept);
+    if (got < 0) { count = kSessions; break; }
+    if (got == 0) break;
+    const std::size_t size = kept + static_cast<std::size_t>(got);
+    for (std::size_t at = 0; at + 1 + mark <= size; ++at)
+      if (buffer[at] == '\n' && !std::memcmp(buffer + at + 1, kSessionMark, mark)) ++count;
+    // The tail that could still begin a mark goes on to the next read.
+    kept = size < mark ? size : mark;
+    std::memmove(buffer, buffer + size - kept, kept);
+    if (count >= kSessions) break;
+  }
+  ::close(fd);
+  return count;
+}
 }
 
 namespace crash_log {
@@ -105,10 +139,21 @@ void start(const char* directory) {
   char current[320], previous[320];
   std::snprintf(current, sizeof current, "%s/app.log", directory);
   std::snprintf(previous, sizeof previous, "%s/app.prev.log", directory);
-  ::rename(current, previous);
-  log_fd = ::open(current, O_WRONLY | O_CREAT | O_TRUNC | O_APPEND, 0644);
+  if (sessions_in(current) >= kSessions) ::rename(current, previous);
+  log_fd = ::open(current, O_WRONLY | O_CREAT | O_APPEND, 0644);
   started.store(true, std::memory_order_release);
-  if (log_fd >= 0) append(early, early_size.load());
+  if (log_fd >= 0) {
+    // When this session began, so a file of several sessions shows which one is which.
+    char line[96];
+    const time_t now = ::time(nullptr);
+    struct tm local {};
+    const int n = localtime_r(&now, &local)
+      ? std::snprintf(line, sizeof line, "\n%s%04d-%02d-%02d %02d:%02d:%02d\n", kSessionMark, local.tm_year + 1900,
+                      local.tm_mon + 1, local.tm_mday, local.tm_hour, local.tm_min, local.tm_sec)
+      : std::snprintf(line, sizeof line, "\n%s(time unknown)\n", kSessionMark);
+    if (n > 0) append(line, static_cast<std::size_t>(n));
+    append(early, early_size.load());
+  }
   struct sigaction action {};
   action.sa_sigaction = fatal;
   action.sa_flags = SA_SIGINFO | SA_RESETHAND;

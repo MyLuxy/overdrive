@@ -23,6 +23,15 @@ import { Text, View } from '@ps5-react/core';
   var PRIMARY = { width: 198 };
   var ARM_MS = 3e3;
   var primaryKey = (id) => `downloads:${id}`;
+  // A source the catalog lists without a format (FileKeeper's, mostly) showed "BINARY" until the file
+  // was done. Its kind is known long before: from the header the queue reads in the first megabytes, or
+  // from the name the host gave the file.
+  var FILE_KIND = /\.(exfat|ffpfsc|ffpfs|ffpkg|fpkg|pkg|rar|7z|zip)$/i;
+  function shownFormat(job2, release) {
+    const format = job2.artifact.format || release.format;
+    if (format && format !== "binary") return format;
+    return job2.inspected || FILE_KIND.exec(job2.fileName || "")?.[1] || format || "binary";
+  }
   function primary({ state, error: error2 }, run, openGame) {
     if (state === "pausing") return { icon: "pause", label: "downloads.action.pausing", onPress: () => {
     } };
@@ -71,7 +80,7 @@ import { Text, View } from '@ps5-react/core';
     const openGame = () => onOpenGame(job2);
     const main = primary(job2, (name) => run(job2, name), openGame);
     const onFocus = () => onFocusRow(job2);
-    const meta = [(job2.artifact.format || release.format).toUpperCase(), `${release.provider} ${release.version || ""}`.trim(), job2.root].join(" \xB7 ");
+    const meta = [shownFormat(job2, release).toUpperCase(), `${release.provider} ${release.version || ""}`.trim(), job2.root].join(" \xB7 ");
     const problem = job2.error && explainError(job2.error, Boolean(release.parts));
     // The files' own title id differs from the game chosen: said before anything else but an error.
     const mismatch = job2.titleMismatch ? t2("downloads.titleMismatch", { found: job2.titleMismatch, expected: job2.titleId }) : "";

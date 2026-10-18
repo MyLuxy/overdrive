@@ -72,6 +72,10 @@ import { FileSystem, Http, Packages, Platform } from '@ps5-react/core';
       task.done.then(
         () => {
           setInstalling((state) => ({ ...state, fraction: 1, done: true }));
+          try {
+            downloadQueue().packageInstalled(file.path);
+          } catch {
+          }
           rescan();
         },
         (error2) => setInstalling((state) => ({ ...state, error: error2.message }))

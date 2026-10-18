@@ -1664,6 +1664,21 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
       },
       /** Marks finished images (all, or job `id`'s) ShadowMount has installed since as installed; false when none or it can't be asked. */
       syncInstalls,
+      /** A package the Files screen installed by itself: the download it came from no longer offers "Install
+       * PKG" (testers, 2026-10-18). Only a download still waiting for its install moves. */
+      packageInstalled(path) {
+        let found = false;
+        for (const job2 of jobs) {
+          const paths = [job2.artifact?.destination, job2.downloadDestination, job2.output, ...job2.packages ?? []];
+          if (job2.state !== "installer-required" || !paths.includes(path)) continue;
+          job2.state = "installed";
+          job2.message = t("downloads.installed");
+          job2.error = "";
+          found = true;
+        }
+        if (found) change();
+        return found;
+      },
       /** Frees the engine's one archive task, for the updater: a set extracting while it downloads extracts after its download instead. */
       async yieldArchives() {
         const streamed = active2?.streamed;

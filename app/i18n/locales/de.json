@@ -202,6 +202,7 @@
   "files.free": "{free} frei von {total}",
   "files.installDone": "Installiert. Es ist auf dem Startbildschirm.",
   "files.installFailed": "Die Konsole hat dieses Paket abgelehnt. Prüfe, ob kstuff geladen ist, und versuche es erneut.",
+  "files.installFailedReason": "Installation fehlgeschlagen: {reason}",
   "files.installed": "Installiert",
   "files.installing": "Installiert · {percent}",
   "files.kind.all": "Alle Dateien",

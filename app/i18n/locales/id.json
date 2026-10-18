@@ -202,6 +202,7 @@
   "files.free": "{free} gratis dari {total}",
   "files.installDone": "Terpasang. Sudah ada di layar beranda.",
   "files.installFailed": "Konsol menolak paket ini. Pastikan kstuff sudah dimuat, lalu coba lagi.",
+  "files.installFailedReason": "Gagal memasang: {reason}",
   "files.installed": "Terpasang",
   "files.installing": "Memasang · {percent}",
   "files.kind.all": "Semua file",

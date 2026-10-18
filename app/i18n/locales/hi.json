@@ -202,6 +202,7 @@
   "files.free": "{total} में से {free} खाली",
   "files.installDone": "इंस्टॉल हो गया। यह होम स्क्रीन पर है।",
   "files.installFailed": "कंसोल ने इस पैकेज को अस्वीकार कर दिया। जाँचें कि kstuff लोड है, फिर दोबारा कोशिश करें।",
+  "files.installFailedReason": "इंस्टॉल नहीं हो सका: {reason}",
   "files.installed": "इंस्टॉल हो गया",
   "files.installing": "इंस्टॉल हो रहा है · {percent}",
   "files.kind.all": "सभी फ़ाइलें",

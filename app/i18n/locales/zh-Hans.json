@@ -202,6 +202,7 @@
   "files.free": "共 {total}，可用 {free}",
   "files.installDone": "已安装，已在主屏幕上。",
   "files.installFailed": "主机拒绝了此安装包。请确认 kstuff 已加载，然后重试。",
+  "files.installFailedReason": "安装失败：{reason}",
   "files.installed": "已安装",
   "files.installing": "正在安装 · {percent}",
   "files.kind.all": "所有文件",

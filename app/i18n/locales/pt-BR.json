@@ -202,6 +202,7 @@
   "files.free": "{free} livres de {total}",
   "files.installDone": "Instalado. Já está na tela inicial.",
   "files.installFailed": "O console recusou este pacote. Confira se o kstuff está carregado e tente de novo.",
+  "files.installFailedReason": "Falha na instalação: {reason}",
   "files.installed": "Instalado",
   "files.installing": "Instalando · {percent}",
   "files.kind.all": "Todos os arquivos",

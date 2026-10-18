@@ -78,16 +78,21 @@ import { formatBytes } from '../state/size.js';
   var GROUP_RANK = { direct: 0, page: 1, browser: 2, unavailable: 3 };
   var HEALTH_RANK = { ok: 0, flaky: 2 };
   var isBackport = ({ label }) => /\bback\s*port\b/i.test(label || "");
-  var hostRank = ({ provider }) => isOverdriveCdn(provider) ? 0 : provider.toLowerCase() === "archive.org" ? 1 : provider.toLowerCase() === "mediafire" ? 2 : 3;
+  // After MediaFire, the browser hosts confirmed on the console (Vikingfile, DataNodes, FileKeeper)
+  // before the ones still being tried (AkiraBox, a vault's other mirrors).
+  var CONFIRMED = /^(?:vik[i1]ngfile|datanodes|filekeeper(?:\.net)?)$/i;
+  var hostRank = ({ provider }) => isOverdriveCdn(provider) ? 0 : provider.toLowerCase() === "archive.org" ? 1 : provider.toLowerCase() === "mediafire" ? 2 : CONFIRMED.test(provider) ? 3 : 4;
   var ranked = (release, index) => ({ release, index, rank: [
     isDlc(release) ? 1 : 0,
     release.unavailableReason ? 1 : 0,
     isPatchOnly(release) ? 1 : 0,
     isPs5Package(release) ? 1 : 0,
+    // A backport is the game fixed for older firmware, or only the files to copy over it (a 40 MB
+    // download, issue #47): the full game comes first whatever its host.
+    isBackport(release) ? 1 : 0,
     hostRank(release),
     GROUP_RANK[describeSource(release).group],
     HEALTH_RANK[release.health] ?? 1,
-    isBackport(release) ? 1 : 0,
     release.source === "orbit" ? 0 : 1,
     release.requiresBrowser ? 1 : 0
   ] });

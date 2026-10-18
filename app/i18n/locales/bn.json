@@ -202,6 +202,7 @@
   "files.free": "{total}-এর মধ্যে {free} খালি",
   "files.installDone": "ইনস্টল হয়েছে। এটি হোম স্ক্রিনে আছে।",
   "files.installFailed": "কনসোল এই প্যাকেজ প্রত্যাখ্যান করেছে। kstuff লোড আছে কি না দেখে আবার চেষ্টা করুন।",
+  "files.installFailedReason": "ইনস্টল করা যায়নি: {reason}",
   "files.installed": "ইনস্টল হয়েছে",
   "files.installing": "ইনস্টল হচ্ছে · {percent}",
   "files.kind.all": "সব ফাইল",

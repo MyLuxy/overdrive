@@ -8,7 +8,8 @@
 //
 // Request lines: "PKI1", the package path, the name the home screen shows while it installs.
 // Answers: "ready", then "started <content ID>", then "p <installed bytes> <total bytes> <status>"
-// once a second, then "ok" or "fail <code as eight hex digits> <reason>".
+// once a second, then "ok" or "fail <code as eight hex digits> <reason>". A PS5 package whose ID the
+// service does not answer gets "started (unknown)" and "ok" as soon as the service takes it.
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -94,16 +95,18 @@ int main(void) {
       !read_line(name, sizeof name)) return 1;
   if (!allowed(path)) return fail(0, "The package path is not allowed.");
 
-  // A PKG starts with \x7FCNT and names its content ID at 0x40.
+  // A PS4 PKG starts with \x7FCNT and names its content ID at 0x40. A PS5 one starts with \x7FFIH,
+  // whose header has no content ID field: it goes to the service with none, and the service answers
+  // with the ID it read (as BFpilot does, verified there on 11.60).
   char header[0x40 + 36 + 1] = {0};
   const int file = open(path, O_RDONLY);
   if (file < 0) return fail(0, "The package could not be opened.");
   const ssize_t got = read(file, header, sizeof header - 1);
   close(file);
-  if (got != (ssize_t)sizeof header - 1 || memcmp(header, "\x7F" "CNT", 4)) return fail(0, "The file is not a PKG.");
-  char content_id[37];
-  memcpy(content_id, header + 0x40, 36);
-  content_id[36] = 0;
+  const int ps5 = got == (ssize_t)sizeof header - 1 && !memcmp(header, "\x7F" "FIH", 4);
+  if (got != (ssize_t)sizeof header - 1 || (!ps5 && memcmp(header, "\x7F" "CNT", 4))) return fail(0, "The file is not a PKG.");
+  char content_id[37] = {0};
+  if (!ps5) memcpy(content_id, header + 0x40, 36);
   say("ready\n");
 
   (void)sceUserServiceInitialize(NULL);
@@ -123,6 +126,9 @@ int main(void) {
   if ((result = install(&meta, &info, &playgo))) return fail((unsigned)result, "The console refused the package.");
   info.content_id[sizeof info.content_id - 1] = 0;
   const char* installing = info.content_id[0] ? info.content_id : content_id;
+  // Nothing to follow the install by (a PS5 package the service took without answering its ID):
+  // it was accepted, and the console shows its progress on the home screen.
+  if (!installing[0]) { say("started (unknown)\nok\n"); return 0; }
   snprintf(line, sizeof line, "started %s\n", installing);
   say(line);
 

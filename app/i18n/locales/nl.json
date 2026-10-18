@@ -205,6 +205,7 @@
     "files.free": "{free} vrij van {total}",
     "files.installDone": "Geïnstalleerd. De game staat op het startscherm.",
     "files.installFailed": "De console heeft dit pakket geweigerd. Controleer of kstuff is geladen en probeer het opnieuw.",
+    "files.installFailedReason": "Installatie mislukt: {reason}",
     "files.installed": "Geïnstalleerd",
     "files.installing": "Installeren \u00B7 {percent}",
     "files.kind.all": "Alle bestanden",

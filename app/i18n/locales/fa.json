@@ -203,6 +203,7 @@
     "files.free": "فضای آزاد: {free} از {total}",
     "files.installDone": "نصب شد. روی صفحهٔ اصلی است.",
     "files.installFailed": "کنسول این پکیج را نپذیرفت. مطمئن شوید kstuff بارگذاری شده و دوباره امتحان کنید.",
+    "files.installFailedReason": "نصب ناموفق بود: {reason}",
     "files.installed": "نصب‌شده",
     "files.installing": "در حال نصب · {percent}",
     "files.kind.all": "همهٔ فایل‌ها",

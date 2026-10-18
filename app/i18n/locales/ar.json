@@ -202,6 +202,7 @@
   "files.free": "{free} خالية من {total}",
   "files.installDone": "تم التثبيت. اللعبة على الشاشة الرئيسية.",
   "files.installFailed": "رفضت وحدة التحكم هذه الحزمة. تأكد من تحميل kstuff ثم حاول مجددًا.",
+  "files.installFailedReason": "فشل التثبيت: {reason}",
   "files.installed": "تم التثبيت",
   "files.installing": "جارٍ التثبيت · {percent}",
   "files.kind.all": "كل الملفات",

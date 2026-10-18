@@ -202,6 +202,7 @@
   "files.free": "{total} میں سے {free} خالی",
   "files.installDone": "انسٹال ہو گیا۔ یہ ہوم اسکرین پر ہے۔",
   "files.installFailed": "کنسول نے اس پیکج کو مسترد کر دیا۔ دیکھیں کہ kstuff لوڈ ہے، پھر دوبارہ کوشش کریں۔",
+  "files.installFailedReason": "انسٹال نہیں ہو سکا: {reason}",
   "files.installed": "انسٹال ہو گیا",
   "files.installing": "انسٹال ہو رہا ہے · {percent}",
   "files.kind.all": "تمام فائلیں",

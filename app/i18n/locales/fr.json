@@ -202,6 +202,7 @@
   "files.free": "{free} libres sur {total}",
   "files.installDone": "Installé. Il est sur l'écran d'accueil.",
   "files.installFailed": "La console a refusé ce paquet. Vérifiez que kstuff est chargé, puis réessayez.",
+  "files.installFailedReason": "Échec de l'installation : {reason}",
   "files.installed": "Installé",
   "files.installing": "Installation · {percent}",
   "files.kind.all": "Tous les fichiers",

@@ -1,6 +1,21 @@
 # Changelog
 
-## Unreleased - resumable download progress
+## Unreleased — PS5 packages install
+
+- The package installer payload takes a PS5 package (`\x7F` `FIH`) as well as a PS4 one
+  (`\x7F` `CNT`). A PS5 header has no content ID field, so it goes to the install service with none
+  and the service's answer names it; before, the payload answered "The file is not a PKG." and the
+  console was never asked. When the service answers no ID, the payload says `started (unknown)` and
+  `ok` once the service has taken the package, since there is nothing to follow it by.
+
+## Unreleased — app.log keeps five sessions
+
+- app.log holds up to five sessions, each opened by a `[PS5-REACT] session <local date and time>`
+  line; the sixth start moves it to app.prev.log (the five before) and opens a new one. A file over
+  10 MiB moves aside whatever its count, and one session stops logging at 8 MiB (was 16), so the two
+  files stay under about 20 MiB. Before, every start replaced app.log and kept one session aside.
+
+## Unreleased — resumable download progress
 
 - Download task snapshots expose `completedBytes` independently of the live `written`
   counter, so the app can show progress based on completed ranges across pause/resume.

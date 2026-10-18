@@ -203,6 +203,7 @@
   "files.free": "Свободно {free} из {total}",
   "files.installDone": "Установлено. Игра на главном экране.",
   "files.installFailed": "Консоль отклонила этот пакет. Проверьте, что kstuff загружен, и повторите.",
+  "files.installFailedReason": "Не удалось установить: {reason}",
   "files.installed": "Установлено",
   "files.installing": "Установка · {percent}",
   "files.kind.all": "Все файлы",

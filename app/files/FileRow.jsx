@@ -5,6 +5,7 @@ import '../assets/Inter-Regular.ttf';
 import { Fragment, jsx, jsxs } from 'react/jsx-runtime';
 import { memo } from 'react';
 import { KINDS, isPackage } from './scan.js';
+import { explainError } from '../downloads/errors.js';
 import { formatPercent2 } from '../i18n/core.js';
 import { useT } from '../i18n/index.js';
 import { formatBytes } from '../state/size.js';
@@ -39,6 +40,12 @@ import { Text, View, useIsFocused } from '@ps5-react/core';
     else if (isPackage(file.name)) parts.push(t2("files.notInstalled"));
     return parts.join(" \xB7 ");
   }
+  // The install's own reason, as the download rows show it (issue #44): a fixed "check kstuff" line
+  // hid a PS5 package the installer did not take at all (issue #24).
+  function installReason(t2, error2) {
+    const reason = explainError(error2).title;
+    return reason ? t2("files.installFailedReason", { reason }) : t2("files.installFailed");
+  }
   function Face2({ file, armed, installing, shadowMount }) {
     const t2 = useT();
     const focused = useIsFocused();
@@ -67,7 +74,7 @@ import { Text, View, useIsFocused } from '@ps5-react/core';
           Text,
           {
             style: [installing?.error ? { fontFamily: "Inter-Regular", fontSize: 20, color: "#f2f2f3", numberOfLines: 1, ellipsizeMode: "tail" } : focused ? { fontFamily: "Inter-Regular", fontSize: 20, color: "#a3a3ab", numberOfLines: 1, ellipsizeMode: "tail" } : { fontFamily: "Inter-Regular", fontSize: 20, color: "#8a8a94", numberOfLines: 1, ellipsizeMode: "tail" }, { width: px(TEXT_WIDTH) }],
-            children: installing?.error ? t2("files.installFailed") : installing?.done ? t2("files.installDone") : file.game ? `${file.name} \xB7 ${detail(t2, file, shadowMount)}` : detail(t2, file, shadowMount)
+            children: installing?.error ? installReason(t2, installing.error) : installing?.done ? t2("files.installDone") : file.game ? `${file.name} \xB7 ${detail(t2, file, shadowMount)}` : detail(t2, file, shadowMount)
           }
         )
       ] }),
