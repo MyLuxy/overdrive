@@ -201,7 +201,7 @@ JSValue poll(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     for (const auto& [name, value] : snapshot.headers)
       JS_SetPropertyStr(ctx, response_headers, name.c_str(), JS_NewStringLen(ctx, value.data(), value.size()));
     JS_SetPropertyStr(ctx, item, "headers", response_headers);
-    num("received", snapshot.received); num("written", snapshot.written);
+    num("received", snapshot.received); num("written", snapshot.written); num("completedBytes", snapshot.completed_bytes);
     JS_SetPropertyStr(ctx, item, "total", snapshot.total_known ? JS_NewFloat64(ctx, snapshot.total) : JS_NULL);
     num("bytesPerSecond", snapshot.bytes_per_second); num("bufferedBytes", snapshot.buffered);
     num("connections", snapshot.connections); num("retries", snapshot.retries); num("status", snapshot.status);

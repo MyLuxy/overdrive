@@ -355,12 +355,17 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
           throw new Error("Not enough space on the selected drive. Free space and retry.");
         fs.mkdir(job2.artifact.directory, { recursive: true });
         active2.transferring = true;
-        task = downloads.enqueue({ ...job2.options, rejectHtml: true, mirrors: void 0, connections: 64, adaptive: true, rangeBytes: 16 * 1024 * 1024, destination: job2.downloadDestination, storageRoot: job2.root, recoverCompleted: true });
+        if (job2.options.rangeBytes !== 4 * 1024 * 1024) {
+          job2.options.rangeBytes = 4 * 1024 * 1024;
+          change();
+        }
+        task = downloads.enqueue({ ...job2.options, rejectHtml: true, mirrors: void 0, connections: 64, adaptive: true, rangeBytes: job2.options.rangeBytes, destination: job2.downloadDestination, storageRoot: job2.root, recoverCompleted: true });
         active2.task = task;
         unsubscribe = task.subscribe((progress) => {
           if (job2.state === "pausing") return;
           if (ACTIVE.includes(progress.state)) job2.state = progress.state;
-          job2.written = progress.written || 0;
+          const completedBytes = progress.completedBytes ?? progress.written ?? 0;
+          if (completedBytes > 0 || !job2.written) job2.written = completedBytes;
           job2.total = progress.total ?? job2.total;
           job2.received = progress.received || 0;
           job2.connections = progress.connections || 0;
@@ -853,6 +858,10 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
           if (!fs.exists(part.destination) && fs.diskUsage(job2.root).free < setNeed(job2, streamed?.written) + MARGIN2)
             throw new Error("Not enough space for the remaining volumes and their extraction. Free space and resume.");
           active2.transferring = true;
+          if (part.options.rangeBytes !== 4 * 1024 * 1024) {
+            part.options.rangeBytes = 4 * 1024 * 1024;
+            change();
+          }
           const task = downloads.enqueue({
             ...part.options,
             rejectHtml: true,
@@ -866,7 +875,8 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
           const off = task.subscribe((progress) => {
             if (job2.state === "pausing") return;
             if (ACTIVE.includes(progress.state)) job2.state = progress.state;
-            part.written = progress.written || 0;
+            const completedBytes = progress.completedBytes ?? progress.written ?? 0;
+            if (completedBytes > 0 || !part.written) part.written = completedBytes;
             part.total = progress.total;
             job2.written = job2.parts.reduce((sum, item) => sum + item.written, 0);
             job2.total = job2.parts.every((item) => item.total != null) ? job2.parts.reduce((sum, item) => sum + item.total, 0) : null;

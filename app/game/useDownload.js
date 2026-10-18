@@ -8,13 +8,20 @@ import { downloadQueue } from '../state/downloads.js';
 import { sameRelease } from '../state/release-sets.js';
 
   function useDownload(game, release, root2) {
-    const [job2, setJob] = (0, useState)(null);
+    const matching = (jobs) => jobs.find((item) => item.gameId === game.id && release && ((item.requestedId ?? item.release.id) === release.id || sameRelease(item.release, release))) || null;
+    const [job2, setJob] = (0, useState)(() => {
+      try {
+        return matching(downloadQueue().snapshot());
+      } catch {
+        return null;
+      }
+    });
     const [error2, setError] = (0, useState)("");
     const started = (0, useRef)(false);
     (0, useEffect)(() => {
       setError("");
       try {
-        return downloadQueue().subscribe((jobs) => setJob(jobs.find((item) => item.gameId === game.id && release && ((item.requestedId ?? item.release.id) === release.id || sameRelease(item.release, release))) || null));
+        return downloadQueue().subscribe((jobs) => setJob(matching(jobs)));
       } catch (failure) {
         setError(failure.message);
         return void 0;

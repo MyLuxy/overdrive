@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased - resumable download progress
+
+- Download task snapshots expose `completedBytes` independently of the live `written`
+  counter, so the app can show progress based on completed ranges across pause/resume.
+
 ## Unreleased — Vikingfile names with spaces
 
 - Vikingfile mode reads a file name that keeps its spaces as they are in the page's JSON (or as

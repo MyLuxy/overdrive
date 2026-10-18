@@ -1384,13 +1384,23 @@ void Service::snapshot(Job& job, unsigned allowed, Clock::time_point now,
   for (const Transfer& t : transfers_) if (t.active || t.draining) {
     written += t.written.load(); received += t.accepted; ++active;
   }
+  std::uint64_t completed_bytes = written;
+  if (job.ranged) {
+    completed_bytes = 0;
+    for (std::size_t i = 0; i < job.completed.size(); ++i) {
+      if (!job.completed[i]) continue;
+      completed_bytes += job.sources.empty()
+        ? std::min(job.request.range_bytes, job.total - i*job.request.range_bytes)
+        : job.segments[i].length;
+    }
+  }
   std::uint64_t buffered;
   { std::lock_guard lock(disk_mutex_); buffered = (block_count-free_.size())*block_size; }
   const double elapsed = std::chrono::duration<double>(now-previous).count();
   const double speed = elapsed > 0 && written >= previous_written ? (written-previous_written)/elapsed : 0;
   {
     std::lock_guard lock(job.mutex);
-    job.snapshot.received = received; job.snapshot.written = written;
+    job.snapshot.received = received; job.snapshot.written = written; job.snapshot.completed_bytes = completed_bytes;
     job.snapshot.total = job.total; job.snapshot.total_known = job.known;
     job.snapshot.bytes_per_second = speed; job.snapshot.buffered = buffered;
     job.snapshot.connections = std::min(active, allowed); job.snapshot.retries = job.retries;
@@ -1651,7 +1661,7 @@ void Service::run_job(const std::shared_ptr<Job>& job) {
   }
   if (prepared && job->recovering) {
     std::lock_guard lock(job->mutex);
-    job->snapshot.written = job->snapshot.received = job->total;
+    job->snapshot.written = job->snapshot.received = job->snapshot.completed_bytes = job->total;
     job->snapshot.total = job->total; job->snapshot.total_known = true;
   }
   if (file && job->fd >= 0) {
