@@ -3,10 +3,23 @@
 #include "archive_preflight.hpp"
 #include <chrono>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <thread>
+#include <unistd.h>
 // ARCHIVE_TRACE=1 prints the extraction steps, the throughput breakdown among them.
-void archives::trace(const char* step,const char* detail){if(std::getenv("ARCHIVE_TRACE"))std::cerr<<step<<" "<<detail<<"\n";}
+void archives::trace(const char* step,const char* detail){
+ if(std::getenv("ARCHIVE_TRACE"))std::cerr<<step<<" "<<detail<<"\n";
+
+ // Simulate a package disappearing before the artifact classification starts.
+ static std::string staging;
+ if(!std::strcmp(step,"staging ok"))staging=detail;
+
+ const char* removed=std::getenv("ARCHIVE_REMOVE_AFTER_WRITE");
+ if(!removed||*detail)return;
+ if(std::strcmp(step,"read")&&std::strcmp(step,"rar worker finished"))return;
+ if(unlink((staging+"/"+removed).c_str()))std::abort();
+}
 // ARCHIVE_PIPELINE_BYTES=0 exercises the inline writer.
 std::size_t archives::pipeline_bytes(){const char* v=std::getenv("ARCHIVE_PIPELINE_BYTES");return v?std::strtoull(v,nullptr,10):32u<<20;}
 // ARCHIVE_NO_MEMORY=1 reports a heap without room for an in-process extraction.
@@ -46,6 +59,9 @@ int main(int argc,char** argv){
  if(!id){std::cout<<"failed\n"<<error;return 0;}
  auto started=std::chrono::steady_clock::now();
  while(true){for(const auto& s:archives::poll())if(ended(s)){
+  if(std::getenv("ARCHIVE_ARTIFACTS")){
+   for(const auto& path:s.artifacts)std::cerr<<"artifact "<<path<<"\n";
+  }
   std::cout<<s.state<<"\n"<<s.written<<"\n"<<s.error;
   if(!again){archives::stop();return 0;}
   std::cout<<"\n";setenv("PS5_REACT_RAR_WORKER",again,1);again=nullptr;cancel_after=-1;

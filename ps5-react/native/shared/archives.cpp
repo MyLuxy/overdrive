@@ -83,7 +83,90 @@ bool has_extension(const std::string& path, const std::array<std::string_view, c
   return std::any_of(extensions.begin(), extensions.end(), [&](std::string_view extension) { return path.ends_with(extension); });
 }
 bool image(const std::string& path) { return has_extension(path, image_extensions); }
-bool installable(const std::string& path) { return image(path) || has_extension(path, package_extensions); }
+// Check package signatures after extraction.
+bool package(const std::string& root, const std::string& path, std::string& error) {
+  if (!has_extension(path, package_extensions)) return false;
+
+  const auto file = root + "/" + path;
+  int fd;
+  // Reject substituted links and avoid blocking on substituted FIFOs.
+  do {
+    fd = open(file.c_str(), O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+  } while (fd < 0 && errno == EINTR);
+
+  if (fd < 0) {
+    error = "Cannot inspect extracted package " + path + ": " + std::strerror(errno);
+    return false;
+  }
+
+  struct stat st;
+  int status;
+  do {
+    status = fstat(fd, &st);
+  } while (status && errno == EINTR);
+
+  if (status || !S_ISREG(st.st_mode)) {
+    const char* reason = status ? std::strerror(errno) : "not a regular file.";
+    error = "Cannot inspect extracted package " + path + ": " + reason;
+    close(fd);
+    return false;
+  }
+
+  char header[4];
+  std::size_t count = 0;
+  while (count < sizeof header) {
+    const auto bytes = read(fd, header + count, sizeof header - count);
+    if (bytes < 0) {
+      if (errno == EINTR) continue;
+      error = "Cannot inspect extracted package " + path + ": " + std::strerror(errno);
+      break;
+    }
+    if (!bytes) break;
+    count += bytes;
+  }
+
+  close(fd);
+  return count == sizeof header &&
+    (!std::memcmp(header, "\x7f" "CNT", 4) || !std::memcmp(header, "\x7f" "FIH", 4));
+}
+
+bool installable(const std::string& root, const std::string& path, std::string& error) {
+  return image(path) || package(root, path, error);
+}
+
+// Writer can report the paths before their contents are complete.
+std::string collect_artifacts(Job& job, const std::string& root) {
+  const int fd = open((root + "/" + receipt_name).c_str(), O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+  if (fd < 0) return "Cannot inspect extraction receipt.";
+  struct Closer { int fd; ~Closer() { close(fd); } } closer{fd};
+
+  struct stat st;
+  if (fstat(fd, &st) || !S_ISREG(st.st_mode)) return "Invalid extraction receipt.";
+
+  LineReader reader(fd);
+  std::string line;
+  if (!reader.next(line) || !line.starts_with("P5AR001:")) return "Invalid extraction receipt.";
+
+  std::vector<std::string> artifacts;
+  while (reader.next(line)) {
+    const auto split = line.find('|');
+    if (split != 64 || line.size() <= split + 1) return "Invalid extraction receipt.";
+
+    std::string path = line.substr(split + 1);
+    std::string error;
+    const bool artifact = installable(root, path, error);
+    if (!error.empty()) return error;
+    if (artifact) {
+      if (artifacts.size() == max_artifacts) return "Archive has too many installable artifacts.";
+      artifacts.push_back(std::move(path));
+    }
+  }
+
+  if (!reader.clean()) return "Invalid extraction receipt.";
+  std::lock_guard lock(job.mutex);
+  job.snapshot.artifacts = std::move(artifacts);
+  return {};
+}
 const char* archive_error(archive* archive, const char* fallback) {
   const char* error = archive_error_string(archive);
   return error ? error : fallback;
@@ -312,7 +395,10 @@ bool recover(Job& job, const std::string& identity) {
     if (st.st_size < 0 || static_cast<std::uint64_t>(st.st_size) > job.request.max_bytes - verified.written) return false;
     if (++verified.entries > max_entries) return false;
     verified.written += st.st_size;
-    if (installable(path)) verified.artifacts.push_back(path);
+    std::string error;
+    const bool artifact = installable(root, path, error);
+    if (!error.empty()) return false;
+    if (artifact) verified.artifacts.push_back(path);
     if (verified.artifacts.size() > max_artifacts) return false;
   }
   if (!reader.clean()) return false;
@@ -518,10 +604,6 @@ std::string extract(Job& job, archive* archive, const std::string& staging, Rece
     }
     if (decrypted && !decrypted->verify(original_name, crc)) return "Extracted RAR5 file checksum mismatch.";
     std::lock_guard lock(job.mutex);
-    if (installable(path)) {
-      if (job.snapshot.artifacts.size() == max_artifacts) return "Archive has too many installable artifacts.";
-      job.snapshot.artifacts.push_back(path);
-    }
     if (++job.snapshot.entries > max_entries) return "Archive has too many entries.";
   }
   if (!job.cancelled && result != ARCHIVE_EOF) return archive_error(archive, "Incomplete archive headers.");
@@ -582,10 +664,6 @@ std::string rar_file(Job& job, const std::string& staging, const std::string& re
   total += size;
   if (!receipt.add(digest, path)) return "Cannot write extraction receipt.";
   std::lock_guard lock(job.mutex);
-  if (installable(path)) {
-    if (job.snapshot.artifacts.size() == max_artifacts) return "Archive has too many installable artifacts.";
-    job.snapshot.artifacts.push_back(path);
-  }
   if (++job.snapshot.entries > max_entries) return "Archive has too many entries.";
   return {};
 }
@@ -836,6 +914,7 @@ void run(const std::shared_ptr<Job>& pointer) {
     else receipt.set_header("P5AR001:" + full);
   }
   if (error.empty() && !job.cancelled && !receipt.commit(receipt_name)) error = "Cannot save extraction completion receipt.";
+  if (error.empty() && !job.cancelled) error = collect_artifacts(job, staging);
   if (error.empty() && !job.cancelled && fsync(root)) error = std::strerror(errno);
   close(root);
   if (job.cancelled || !error.empty()) {

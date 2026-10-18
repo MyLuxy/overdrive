@@ -47,6 +47,17 @@ def plain_rar5(name,data,link=None):
  file=vint(2)+vint(3 if extra else 2)+(vint(len(extra)) if extra else b"")+vint(len(data))+fields+extra
  return b"Rar!\x1a\x07\x01\x00"+rar5_block(bytes([1,0,0]))+rar5_block(file,data)+rar5_block(bytes([5,0,0]))
 
+def plain_rar5_files(files):
+ out = b"Rar!\x1a\x07\x01\x00" + rar5_block(bytes([1, 0, 0]))
+ for name, data in files:
+  encoded = name.encode()
+  fields = (vint(4) + vint(len(data)) + vint(0o100644)
+            + struct.pack("<I", binascii.crc32(data))
+            + vint(0) + vint(1) + vint(len(encoded)) + encoded)
+  out += rar5_block(vint(2) + vint(2) + vint(len(data)) + fields, data)
+ return out + rar5_block(bytes([5, 0, 0]))
+
+
 def plain_rar4(name,data,end=True):
  """A RAR 1.5-4 archive storing one file, with or without the end block RAR 2.x and "-en" leave out."""
  def block(kind,flags,fields=b"",data=b""):
@@ -130,6 +141,187 @@ def main():
    args=[] if password is None else ["--password",password]
    out=subprocess.check_output([str(binary),str(root/name),str(limit),*map(str,parts),*args],text=True,timeout=20).splitlines()
    return out
+  def artifact_run(name, parts, password=None, **env):
+   args = [] if password is None else ["--password", password]
+   output = subprocess.run(
+    [str(binary), str(root / name), str(1024 * 1024), *map(str, parts), *args],
+    capture_output=True, text=True, timeout=25, check=True,
+    env={**os.environ, "ARCHIVE_ARTIFACTS": "1", **env},
+   )
+   artifacts = [line[9:] for line in output.stderr.splitlines() if line.startswith("artifact ")]
+   return output.stdout.splitlines(), artifacts
+
+  files = [(f"game/Content/Packages/asset{i}.pkg", b"internal data " + bytes([i])) for i in range(90)]
+  files.extend(
+   (f"game/short{size}{suffix}", b"\x7fCNT"[:size])
+   for suffix in (".pkg", ".fpkg") for size in range(4)
+  )
+  files.extend([
+   ("game/resource.fpkg", b"internal data"),
+   ("game/near.pkg", b"\x7fCNX" + bytes(64)),
+   ("game/offset.pkg", b"x\x7fCNT" + bytes(64)),
+   ("game/magic.bin", b"\x7fCNT" + bytes(64)),
+  ])
+
+  # Discovery Tests
+  packages = [
+   ("installers/base.pkg", b"\x7fCNT" + bytes(64)),
+   ("installers/update.pkg", b"\x7fFIH" + bytes(64)),
+   ("installers/base.fpkg", b"\x7fCNT" + bytes(64)),
+   ("installers/update.fpkg", b"\x7fFIH" + bytes(64)),
+  ]
+  images = [
+   (f"nested/images/game{suffix}", b"image data")
+   for suffix in (".exfat", ".ffpfs", ".ffpfsc", ".ffpkg")
+  ]
+  files.extend(packages + images)
+  expected_artifacts = {path for path, data in packages}
+  expected_artifacts.update(Path(path).name for path, data in images)
+
+  packages_zip = root / "packages.zip"
+  with zipfile.ZipFile(packages_zip, "w") as archive:
+   for name, data in files:
+    archive.writestr(name, data)
+  packages_rar = root / "packages.rar"
+  packages_rar.write_bytes(plain_rar5_files(files))
+
+  formats = [
+   ("artifact-zip", [packages_zip], {}),
+   ("artifact-inline", [packages_zip], {"ARCHIVE_PIPELINE_BYTES": "0"}),
+   ("artifact-rar", [packages_rar], {}),
+   ("artifact-rar-fallback", [packages_rar], {"PS5_REACT_RAR_WORKER": "/nonexistent"}),
+  ]
+  for name, parts, env in formats:
+   for attempt in range(2):
+    result, artifacts = artifact_run(name, parts, **env)
+    assert result[0] == "completed" and set(artifacts) == expected_artifacts, (name, attempt, result, artifacts)
+    assert len(artifacts) == len(expected_artifacts), (name, attempt, artifacts)
+
+   for path, data in files:
+    target = Path(path).name if (path, data) in images else path
+    assert (root / name / target).read_bytes() == data
+   assert (root / name / ".ps5-react-extraction").read_text().startswith("P5AR001:")
+
+  # 64-artifact limit includes images as well.
+  for count in (64, 65):
+   limited = packages[:1] + [
+    (f"nested/package{i}.pkg", b"\x7fCNT" + bytes(64))
+    for i in range(count - 2)
+   ] + images[:1]
+   limited_zip = root / f"packages-{count}.zip"
+   with zipfile.ZipFile(limited_zip, "w") as archive:
+    for path, data in limited:
+     archive.writestr(path, data)
+   limited_rar = root / f"packages-{count}.rar"
+   limited_rar.write_bytes(plain_rar5_files(limited))
+
+   for mode, source, env in [
+    ("zip", limited_zip, {}),
+    ("inline", limited_zip, {"ARCHIVE_PIPELINE_BYTES": "0"}),
+    ("rar", limited_rar, {}),
+   ]:
+    name = f"artifact-limit-{count}-{mode}"
+    original = source.read_bytes()
+    result, artifacts = artifact_run(name, [source], **env)
+    if count == 64:
+     expected = {
+      Path(path).name if (path, data) in images else path
+      for path, data in limited
+     }
+     assert result[0] == "completed" and set(artifacts) == expected, (name, result, artifacts)
+     assert len(artifacts) == count, (name, artifacts)
+     result, artifacts = artifact_run(name, [source], **env)
+     assert result[0] == "completed" and set(artifacts) == expected, (name, result, artifacts)
+     assert len(artifacts) == count, (name, artifacts)
+    else:
+     assert result[0] == "failed" and result[2] == "Archive has too many installable artifacts.", (name, result)
+     assert not (root / name).exists() and not (root / (name + ".extracting")).exists()
+    assert source.read_bytes() == original
+
+  # Encryption and split volumes must expose package headers before classification.
+  encrypted_pkg = root / "protected.pkg"
+  encrypted_pkg.write_bytes(b"\x7fFIH" + bytes(64))
+  encrypted_resource = root / "resource.fpkg"
+  encrypted_resource.write_bytes(b"ordinary resource")
+  protected_packages = root / "protected-packages.zip"
+  subprocess.run(
+   ["/usr/bin/zip", "-q", "-P", "fixture-password",
+    str(protected_packages), encrypted_pkg.name, encrypted_resource.name],
+   cwd=root, check=True,
+  )
+  for attempt in range(2):
+   result, artifacts = artifact_run("artifact-encrypted-zip", [protected_packages], password="fixture-password")
+   assert result[0] == "completed" and artifacts == [encrypted_pkg.name], (attempt, result, artifacts)
+
+  for headers in (True, False):
+   for volumes in (1, 2):
+    name = f"artifact-encrypted-rar-{headers}-{volumes}"
+    encrypted_parts = []
+    blobs = encrypted_rar5(
+     encrypted_pkg.read_bytes(), name="nested/game.pkg",
+     password="fixture-password", headers=headers, volumes=volumes,
+    )
+    for i, blob in enumerate(blobs):
+     part = root / f"{name}-{i}.rar"
+     part.write_bytes(blob)
+     encrypted_parts.append(part)
+    for attempt in range(2):
+     result, artifacts = artifact_run(name, encrypted_parts, password="fixture-password")
+     assert result[0] == "completed" and artifacts == ["nested/game.pkg"], (name, attempt, result, artifacts)
+
+  # Missing package files need to fail instead of disappearing
+  for mode, source in [("zip", packages_zip), ("rar", packages_rar)]:
+   name = "artifact-missing-" + mode
+   original = source.read_bytes()
+   result, artifacts = artifact_run(
+    name, [source], ARCHIVE_REMOVE_AFTER_WRITE="installers/base.pkg",
+   )
+   assert result[0] == "failed" and "Cannot inspect extracted package" in result[-1], (name, result, artifacts)
+   assert not (root / name).exists() and not (root / (name + ".extracting")).exists()
+   assert source.read_bytes() == original
+
+  # Invalid receipts must not be recovered or overwrite existing output.
+  outside = root / "outside.pkg"
+  outside.write_bytes(b"\x7fCNT" + bytes(64))
+  damage_cases = (
+   "content", "missing", "symlink", "receipt-version",
+   "receipt-record", "receipt-truncated", "receipt-path",
+  )
+  for damage in damage_cases:
+   name = "artifact-recovery-" + damage
+   result, artifacts = artifact_run(name, [packages_zip])
+   assert result[0] == "completed", (name, result)
+
+   destination = root / name
+   candidate = destination / "installers/base.pkg"
+   receipt = destination / ".ps5-react-extraction"
+   metadata = receipt.read_text()
+   if damage == "content":
+    candidate.write_bytes(b"\x7fCNT" + bytes([1]) * 64)
+   elif damage == "missing":
+    candidate.unlink()
+   elif damage == "symlink":
+    candidate.unlink()
+    candidate.symlink_to(outside)
+   elif damage == "receipt-version":
+    receipt.write_text(metadata.replace("P5AR001:", "P5AR002:", 1))
+   elif damage == "receipt-record":
+    receipt.write_text(metadata.splitlines()[0] + "\ninvalid\n")
+   elif damage == "receipt-truncated":
+    receipt.write_text(metadata[:-1])
+   else:
+    forged = hashlib.sha256(outside.read_bytes()).hexdigest()
+    receipt.write_text(metadata.splitlines()[0] + "\n" + forged + "|../outside.pkg\n")
+
+   saved_receipt = receipt.read_bytes()
+   saved_candidate = candidate.read_bytes() if candidate.exists() else None
+   result, artifacts = artifact_run(name, [packages_zip])
+   assert result[0] == "failed" and "valid completion receipt" in result[-1], (name, result, artifacts)
+   assert destination.is_dir() and receipt.read_bytes() == saved_receipt
+   assert not (root / (name + ".extracting")).exists()
+   assert (candidate.read_bytes() if candidate.exists() else None) == saved_candidate
+   assert candidate.is_symlink() == (damage == "symlink")
+   assert outside.read_bytes() == b"\x7fCNT" + bytes(64)
   zip=root/"fixture.zip"
   with zipfile.ZipFile(zip,"w",compression=zipfile.ZIP_DEFLATED) as z:z.writestr("nested/game.ffpfsc",DATA)
   assert run("zip",[zip])[0]=="completed"
