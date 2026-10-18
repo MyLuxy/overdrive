@@ -355,8 +355,11 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
           throw new Error("Not enough space on the selected drive. Free space and retry.");
         fs.mkdir(job2.artifact.directory, { recursive: true });
         active2.transferring = true;
-        if (job2.options.rangeBytes !== 4 * 1024 * 1024) {
-          job2.options.rangeBytes = 4 * 1024 * 1024;
+        const rangeBytes = fs.exists(job2.downloadDestination + ".part")
+          ? job2.checkpointRangeBytes || job2.options.rangeBytes || 16 * 1024 * 1024
+          : 4 * 1024 * 1024;
+        if (job2.options.rangeBytes !== rangeBytes || job2.checkpointRangeBytes !== rangeBytes) {
+          job2.options.rangeBytes = job2.checkpointRangeBytes = rangeBytes;
           change();
         }
         task = downloads.enqueue({ ...job2.options, rejectHtml: true, mirrors: void 0, connections: 64, adaptive: true, rangeBytes: job2.options.rangeBytes, destination: job2.downloadDestination, storageRoot: job2.root, recoverCompleted: true });
@@ -858,8 +861,11 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
           if (!fs.exists(part.destination) && fs.diskUsage(job2.root).free < setNeed(job2, streamed?.written) + MARGIN2)
             throw new Error("Not enough space for the remaining volumes and their extraction. Free space and resume.");
           active2.transferring = true;
-          if (part.options.rangeBytes !== 4 * 1024 * 1024) {
-            part.options.rangeBytes = 4 * 1024 * 1024;
+          const rangeBytes = fs.exists(part.destination + ".part")
+            ? part.checkpointRangeBytes || part.options.rangeBytes || 32 * 1024 * 1024
+            : 4 * 1024 * 1024;
+          if (part.options.rangeBytes !== rangeBytes || part.checkpointRangeBytes !== rangeBytes) {
+            part.options.rangeBytes = part.checkpointRangeBytes = rangeBytes;
             change();
           }
           const task = downloads.enqueue({
@@ -1570,10 +1576,12 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
         if (job2.parts?.[job2.partIndex] && !job2.parts[job2.partIndex].completed) {
           job2.parts[job2.partIndex].written = 0;
           delete job2.parts[job2.partIndex].options;
+          delete job2.parts[job2.partIndex].checkpointRangeBytes;
         }
         job2.written = job2.parts ? job2.parts.reduce((sum, part) => sum + part.written, 0) : 0;
         job2.bytesPerSecond = 0;
         delete job2.options;
+        delete job2.checkpointRangeBytes;
         delete job2.inspected;
         job2.state = "queued";
         job2.error = "";
