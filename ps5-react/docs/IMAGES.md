@@ -68,7 +68,7 @@ them with no opt-in.
   [NAVIGATION.md](NAVIGATION.md)): in a private 3840×2160 app, a hidden home
   screen otherwise pinned about 60 MiB of decoded art while the next page loaded
   its own, and the PS5 heap peaked at 238 of 256 MiB.
-- **Lazy loading.** As a browser's `loading="lazy"`, an element's image goes to
+- **Lazy loading.** As with a browser's `loading="lazy"`, an element's image goes to
   the network only once it has been mounted for 120 ms, and no request starts
   while a ScrollView moves or for 150 ms after it stops: a held key scrolls past
   rows without fetching their art (holding Down through the Overdrive grid for
