@@ -37,6 +37,8 @@ bool ended(const archives::Snapshot& s){
 bool archives::list_directory(const char* path,void(*visit)(const char*,void*),void* user){
  DIR* d=opendir(path);if(!d)return false;while(auto* e=readdir(d))visit(e->d_name,user);closedir(d);return true;}
 int main(int argc,char** argv){
+ if(argc>2&&std::string(argv[1])=="preflight"){
+  std::cout<<archives::preflight(std::vector<std::string>(argv+2,argv+argc))<<"\n";return 0;}
  if(argc>2&&std::string(argv[1])=="inspect"){
   int first=2;
   if(argc>4&&std::string(argv[2])=="--budget"){archives::inspect_budget=std::chrono::milliseconds(std::stol(argv[3]));first=4;}

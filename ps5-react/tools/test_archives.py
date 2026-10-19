@@ -13,9 +13,10 @@ def number7z(v):
   if v<1<<(8*n+7-n):return bytes([(0xFF00>>n)&0xFF|v>>(8*n)])+(v&((1<<8*n)-1)).to_bytes(n,"little")
  return b"\xff"+v.to_bytes(8,"little")
 
-def encode_7z_header(plain):
+def encode_7z_header(plain, extra_header_bytes=0):
  """Rewrites a bsdtar 7z with the LZMA-compressed header 7-Zip writes by default."""
  offset,size=struct.unpack("<QQ",plain[12:28]);header=plain[32+offset:32+offset+size]
+ if extra_header_bytes:header+=bytes(extra_header_bytes)
  packed=lzma.compress(header,format=lzma.FORMAT_RAW,filters=[{"id":lzma.FILTER_LZMA1,"dict_size":1<<16}])
  coder=b"\x23\x03\x01\x01"+number7z(5)+b"\x5d"+(1<<16).to_bytes(4,"little")
  encoded=(b"\x17\x06"+number7z(offset)+number7z(1)+b"\x09"+number7z(len(packed))+b"\x00"
@@ -577,6 +578,14 @@ def main():
   result=run("encoded-7zip",[encoded])
   assert result[0]=="completed",result
   assert (root/"encoded-7zip/payload.bin").read_bytes()==DATA
+  large_header=root/"encoded-large-header.7z"
+  large_header.write_bytes(encode_7z_header(seven.read_bytes(),17*1024*1024))
+  result=subprocess.check_output([str(binary),"preflight",str(large_header)],text=True).strip()
+  assert result=="",result
+  oversized=root/"encoded-oversized-header.7z"
+  oversized.write_bytes(encode_7z_header(seven.read_bytes(),33*1024*1024))
+  result=subprocess.check_output([str(binary),"preflight",str(oversized)],text=True).strip()
+  assert result=="Unsupported or incomplete archive.",result
   encoded_big=root/"encoded-big.7z";encoded_big.write_bytes(encode_7z_header(big.read_bytes()))
   assert run("encoded-big-7zip",[encoded_big])[0]=="completed"
   p=root/"preset9.tar.xz";p.write_bytes(lzma.compress(tar.read_bytes(),preset=9))

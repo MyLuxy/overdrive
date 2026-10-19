@@ -32,6 +32,7 @@ constexpr std::uint64_t max_decoder_memory = 64ULL * 1024 * 1024;
 constexpr std::uint64_t mib = 1024 * 1024;
 constexpr std::uint64_t unbounded = UINT64_MAX;
 constexpr unsigned max_coders = 64;
+constexpr std::uint64_t max_7z_header_bytes = 32ULL * 1024 * 1024;
 const std::string too_much_memory = "This archive needs more memory to extract than the console app can use.";
 const std::string malformed = "Unsupported or incomplete archive.";
 const std::string too_many_entries = "Archive has too many entries.";
@@ -432,7 +433,7 @@ bool unpack_header(Volumes& in, Cursor& cursor, std::vector<unsigned char>& head
   if (!(refusal = fits(folder_memory(item, streams, in))).empty()) return false;
   const auto packed_size = streams.pack_sizes[0];
   const auto unpacked_size = item.sizes[0];
-  if (packed_size > max_metadata_bytes || unpacked_size > max_metadata_bytes) return false;
+  if (packed_size > max_metadata_bytes || unpacked_size > max_7z_header_bytes) return false;
   std::vector<unsigned char> packed(packed_size);
   header.assign(unpacked_size, 0);
   return in.read(signature_size + streams.pack_position, packed.data(), packed.size()) && decode_header(coder, packed, header);
