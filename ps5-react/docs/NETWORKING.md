@@ -19,7 +19,7 @@ elevation (resident Lapy or a localhost ELF loader, as described in
 [NATIVE-API.md](NATIVE-API.md#hardware-status)). It uses the console trust store
 at `/system/common/cert/CA_LIST.cer`, verified HTTPS, SceNetResolver DNS and
 BSD sockets with native-title nonblocking compatibility. Failed elevation or
-missing trust certificates leaves networking unavailable with an actionable
+missing trust certificates leave networking unavailable with an actionable
 error. Desktop networking uses macOS libcurl and its trust configuration;
 it is available without the PS5 opt-in. Desktop headers and libraries require
 libcurl 7.85 or newer; install a current curl development package if CMake reports
