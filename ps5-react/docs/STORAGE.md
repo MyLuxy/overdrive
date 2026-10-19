@@ -5,7 +5,7 @@
 The previous PS5 host dynamically resolved `statfs` and `getfsstat` from
 `libkernel_sys.sprx`. Mount enumeration was reported as unavailable. An earlier
 Files-tab crash had made `statvfs` a suspected cause, but no crash dump proved
-that attribution. Neither failed exports nor successful compilation establish
+that attribution. Neither failed exports nor successful compilation establishes
 the behavior of the replacement on hardware.
 
 System Explorer also called both storage functions during every render,
