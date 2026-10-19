@@ -110,6 +110,7 @@
   "downloads.extractedReady": "{parts, select, all {Toutes les parties} other {L'archive}} vérifiées et extraites. Prêt à installer.",
   "downloads.extractedTo": "Extrait vers {path}",
   "downloads.extractedNothing": "Extrait dans {path}, mais l'archive ne contient aucun jeu à installer (ni PKG ni dossier de jeu). Retirez ce téléchargement et choisissez une autre source.",
+  "downloads.filesExtracted": "Fichiers extraits",
   "downloads.installFailed": "La console a refusé le paquet. Appuyez sur Installer pour réessayer.",
   "downloads.installHint": "Fermez Overdrive pour terminer : ShadowMount installe quand aucun jeu n'est ouvert.",
   "downloads.installRequested": "Installation demandée. Fermez Overdrive pour terminer : ShadowMount installe quand aucun jeu n'est ouvert.",

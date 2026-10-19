@@ -110,6 +110,7 @@
   "downloads.extractedReady": "{parts, select, all {تمام حصے} other {آرکائیو}} تصدیق شدہ اور نکالے گئے۔ انسٹال کے لیے تیار۔",
   "downloads.extractedTo": "{path} میں نکالا گیا",
   "downloads.extractedNothing": "{path} میں نکالا گیا، لیکن آرکائیو میں انسٹال کرنے کے لیے کوئی گیم نہیں (نہ PKG نہ گیم فولڈر)۔ یہ ڈاؤن لوڈ ہٹائیں اور کوئی اور ماخذ چنیں۔",
+  "downloads.filesExtracted": "ایکسٹریکٹ کی گئی فائلیں",
   "downloads.installFailed": "کنسول نے پیکج مسترد کر دیا۔ دوبارہ کوشش کے لیے انسٹال دبائیں۔",
   "downloads.installHint": "ختم کرنے کے لیے Overdrive بند کریں: ShadowMount انسٹال کرتا ہے جب کوئی گیم کھلی نہ ہو۔",
   "downloads.installRequested": "انسٹال درخواست دی گئی۔ ختم کرنے کے لیے Overdrive بند کریں: ShadowMount انسٹال کرتا ہے جب کوئی گیم کھلی نہ ہو۔",

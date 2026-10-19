@@ -110,6 +110,7 @@
   "downloads.extractedReady": "{parts, select, all {Все части} other {Архив}} проверены и распакованы. Готово к установке.",
   "downloads.extractedTo": "Распаковано в {path}",
   "downloads.extractedNothing": "Распаковано в {path}, но в архиве нет игры для установки (ни PKG, ни папки игры). Удалите эту загрузку и выберите другой источник.",
+  "downloads.filesExtracted": "Распаковано файлов",
   "downloads.installFailed": "Консоль отклонила пакет. Нажмите «Установить», чтобы повторить.",
   "downloads.installHint": "Закройте Overdrive для завершения: ShadowMount установит, когда не будет открытых игр.",
   "downloads.installRequested": "Установка запрошена. Закройте Overdrive для завершения: ShadowMount установит, когда не будет открытых игр.",

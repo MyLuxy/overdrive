@@ -111,6 +111,7 @@
     "downloads.extractedTo": "Extracted to {path}",
     "downloads.extractedNothing": "Extracted to {path}, but the archive holds no game to install (no PKG and no game folder). Remove this download and pick another source.",
     "downloads.extractedLeft": "Other folders stayed in {path}.",
+    "downloads.filesExtracted": "Files extracted",
     "downloads.installFailed": "The console refused the package. Press Install to try again.",
     "downloads.installHint": "Close Overdrive to finish: ShadowMount installs once no game is open.",
     "downloads.titleMismatch": "The files are {found}, the game is {expected}: another game, or another region?",

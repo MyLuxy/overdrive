@@ -38,7 +38,7 @@ import { FileSystem, ScrollView, Text, View } from '@ps5-react/core';
   }
   function Activity({ onFocus }) {
     const t2 = useT();
-    const { active: active2, speed, left, connections, peak, low, mean } = useActivity();
+    const { active: active2, speed, left, connections, peak, low, mean, extracting, extractedFiles } = useActivity();
     const limit = useSpeedLimit();
     return /* @__PURE__ */ (0, jsx)(Block, { title: t2("downloads.panel.activity"), children: /* @__PURE__ */ (0, jsxs)(View, { focusable: true, focusKey: PANEL_KEY, onFocus, style: (_state) => [{ gap: 18, borderRadius: 12, padding: 12 }, _state.focused ? { backgroundColor: "#212125" } : null], children: [
       /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 45, fontWeight: 600, color: "#f2f2f3", lineHeight: 54, letterSpacing: -1.13 }, children: active2 ? formatSpeed(speed) : t2("downloads.panel.idle") }),
@@ -56,7 +56,8 @@ import { FileSystem, ScrollView, Text, View } from '@ps5-react/core';
         /* @__PURE__ */ (0, jsx)(Figure, { label: t2("downloads.panel.average"), value: mean ? formatSpeed(mean) : "\u2014" }),
         /* @__PURE__ */ (0, jsx)(Figure, { label: t2("downloads.panel.connections"), value: connections ? formatNumber2(connections) : "\u2014" }),
         // Why a download goes no faster: the cap chosen in Settings (issue #15).
-        /* @__PURE__ */ (0, jsx)(Figure, { label: t2("settings.speedLimit"), value: limit ? t2("units.speed", { n: String(limit) }) : t2("settings.speedUnlimited") })
+        /* @__PURE__ */ (0, jsx)(Figure, { label: t2("settings.speedLimit"), value: limit ? t2("units.speed", { n: String(limit) }) : t2("settings.speedUnlimited") }),
+        extracting && extractedFiles > 0 ? /* @__PURE__ */ (0, jsx)(Figure, { label: t2("downloads.filesExtracted"), value: formatNumber2(extractedFiles) }) : null
       ] }),
       /* @__PURE__ */ (0, jsx)(Text, { style: [{ fontFamily: "Inter-Regular", fontSize: 21, color: "#8a8a94", lineHeight: 30 }, INNER], children: awake() ? t2("downloads.panel.awake") : " " })
     ] }) });

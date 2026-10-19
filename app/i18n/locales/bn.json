@@ -110,6 +110,7 @@
   "downloads.extractedReady": "{parts, select, all {সমস্ত অংশ} other {সংরক্ষণাগার}} যাচাই এবং বের করা হয়েছে। ইনস্টল করার জন্য প্রস্তুত।",
   "downloads.extractedTo": "{path} এ বের করা হয়েছে",
   "downloads.extractedNothing": "{path}-এ এক্সট্র্যাক্ট হয়েছে, কিন্তু আর্কাইভে ইনস্টল করার মতো কোনো গেম নেই (PKG বা গেম ফোল্ডার কিছুই নেই)। এই ডাউনলোড সরিয়ে অন্য উৎস বেছে নিন।",
+  "downloads.filesExtracted": "এক্সট্র্যাক্ট করা ফাইল",
   "downloads.installFailed": "কনসোল প্যাকেজটি প্রত্যাখ্যান করেছে। আবার চেষ্টা করতে ইনস্টল চাপুন।",
   "downloads.installHint": "Overdrive বন্ধ করুন যাতে এটি শেষ হয়: ShadowMount ইনস্টল করে একবার কোনো গেম খোলা না থাকে।",
   "downloads.installRequested": "ইনস্টলের অনুরোধ করা হয়েছে। Overdrive বন্ধ করুন: কোনো গেম খোলা না থাকলে ShadowMount ইনস্টল করে।",

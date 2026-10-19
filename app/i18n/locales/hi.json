@@ -110,6 +110,7 @@
   "downloads.extractedReady": "{parts, select, all {सभी भाग} other {संग्रह}} सत्यापित और निकाले गए। इंस्टॉल करने के लिए तैयार।",
   "downloads.extractedTo": "{path} में निकाले गए",
   "downloads.extractedNothing": "{path} में निकाला गया, लेकिन आर्काइव में इंस्टॉल करने लायक कोई गेम नहीं है (न PKG, न गेम फ़ोल्डर)। यह डाउनलोड हटाएँ और कोई दूसरा स्रोत चुनें।",
+  "downloads.filesExtracted": "एक्सट्रैक्ट की गई फ़ाइलें",
   "downloads.installFailed": "कंसोल ने पैकेज अस्वीकार कर दिया। फिर से कोशिश करने के लिए इंस्टॉल दबाएँ।",
   "downloads.installHint": "पूरा करने के लिए Overdrive बंद करें: कोई गेम खुला न होने पर ShadowMount इंस्टॉल करता है।",
   "downloads.installRequested": "इंस्टॉल का अनुरोध भेजा गया। Overdrive बंद करें: कोई गेम खुला न होने पर ShadowMount इंस्टॉल करता है।",

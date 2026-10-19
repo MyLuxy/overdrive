@@ -123,6 +123,7 @@
   "downloads.extractedTo": "Estratto in {path}",
   "downloads.extractedNothing": "Estratto in {path}, ma l'archivio non contiene un gioco da installare (né un PKG né una cartella di gioco). Rimuovi questo download e scegli un'altra fonte.",
   "downloads.extractedLeft": "Le altre cartelle sono rimaste in {path}.",
+  "downloads.filesExtracted": "File estratti",
   "downloads.installFailed": "La console ha rifiutato il pacchetto. Premi Installa per riprovare.",
   "downloads.installHint": "Chiudi Overdrive per completare: ShadowMount installa quando nessun gioco è aperto.",
   "downloads.titleMismatch": "I file sono {found}, il gioco è {expected}: un altro gioco o un'altra regione?",

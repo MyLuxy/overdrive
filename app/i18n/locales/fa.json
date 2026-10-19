@@ -110,6 +110,7 @@
     "downloads.extractedReady": "{parts, select, all {همهٔ بخش‌ها} other {آرشیو}} تأیید و استخراج شد. آمادهٔ نصب است.",
     "downloads.extractedTo": "استخراج شد به {path}",
     "downloads.extractedNothing": "در {path} استخراج شد، اما آرشیو بازی قابل نصبی ندارد (نه PKG و نه پوشه بازی). این دانلود را حذف کنید و منبع دیگری انتخاب کنید.",
+    "downloads.filesExtracted": "فایل‌های استخراج‌شده",
     "downloads.installFailed": "کنسول بسته را نپذیرفت. برای تلاش دوباره، گزینهٔ «نصب» را انتخاب کنید.",
     "downloads.installHint": "Overdrive را ببندید تا تمام شود: ShadowMount وقتی هیچ بازی باز نباشد نصب می‌کند.",
     "downloads.installRequested": "نصب درخواست شد. Overdrive را ببندید تا تمام شود: ShadowMount وقتی هیچ بازی باز نباشد نصب می‌کند.",

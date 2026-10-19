@@ -110,6 +110,7 @@
   "downloads.extractedReady": "{parts, select, all {すべてのパート} other {アーカイブ}}を検証して展開しました。インストールできます。",
   "downloads.extractedTo": "展開先：{path}",
   "downloads.extractedNothing": "{path} に展開しましたが、インストールできるゲーム（PKG もゲームフォルダーも）がありません。このダウンロードを削除して別のソースを選んでください。",
+  "downloads.filesExtracted": "展開済みファイル",
   "downloads.installFailed": "本体がパッケージを拒否しました。「インストール」を押して再試行してください。",
   "downloads.installHint": "Overdriveを終了すると完了します。ShadowMountはゲームが開いていないときにインストールします。",
   "downloads.installRequested": "インストールを受け付けました。Overdriveを終了すると完了します。ShadowMountはゲームが開いていないときにインストールします。",

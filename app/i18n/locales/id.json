@@ -110,6 +110,7 @@
   "downloads.extractedReady": "{parts, select, all {All parts} other {Archive}} diverifikasi dan diekstrak. Siap untuk diinstal.",
   "downloads.extractedTo": "Diekstrak ke {path}",
   "downloads.extractedNothing": "Diekstrak ke {path}, tetapi arsip tidak berisi game untuk dipasang (tidak ada PKG maupun folder game). Hapus unduhan ini dan pilih sumber lain.",
+  "downloads.filesExtracted": "File diekstrak",
   "downloads.installFailed": "Konsol menolak paket. Tekan Pasang untuk mencoba lagi.",
   "downloads.installHint": "Tutup Overdrive untuk menyelesaikan: ShadowMount memasang setelah tidak ada game yang terbuka.",
   "downloads.installRequested": "Pemasangan diminta. Tutup Overdrive untuk menyelesaikan: ShadowMount memasang setelah tidak ada game yang terbuka.",

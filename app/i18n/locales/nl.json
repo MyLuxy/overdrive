@@ -111,6 +111,7 @@
     "downloads.extractedTo": "Uitgepakt naar {path}",
     "downloads.extractedNothing": "Uitgepakt naar {path}, maar het archief bevat geen spel om te installeren (geen PKG en geen spelmap). Verwijder deze download en kies een andere bron.",
     "downloads.extractedLeft": "Andere mappen zijn in {path} gebleven.",
+    "downloads.filesExtracted": "Uitgepakte bestanden",
     "downloads.installFailed": "De console heeft het pakket geweigerd. Druk op Installeren om het opnieuw te proberen.",
     "downloads.installHint": "Sluit Overdrive om de installatie af te ronden. ShadowMount installeert zodra er geen game geopend is.",
     "downloads.titleMismatch": "De bestanden zijn {found}, maar de game is {expected}: een andere game of een andere regio?",

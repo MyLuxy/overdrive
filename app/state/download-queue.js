@@ -669,6 +669,7 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
       // what is written, with no total, instead of holding at 99%.
       let guessed = true;
       job2.state = "extracting";
+      job2.extractedFiles = 0;
       job2.written = 0;
       job2.total = estimate;
       job2.bytesPerSecond = 0;
@@ -686,6 +687,7 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
         emit2();
       };
       const follow = (progress) => {
+        job2.extractedFiles = progress.entries || 0;
         // A total at the extraction's cap is the space free, not the files' size: they are bigger.
         if (progress.total && progress.total !== estimate && progress.total < options.maxBytes) {
           job2.total = estimate = progress.total;
@@ -716,6 +718,7 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
           if (outcome.error) {
             console.log("[download-queue] extraction during download stopped, extracting again:", outcome.error.message);
             job2.written = 0;
+            job2.extractedFiles = 0;
             delete job2.phase;
             sample = { at: Date.now(), bytes: 0 };
             emit2();
@@ -738,6 +741,7 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
               if (last || job2.state === "pausing" || job2.cancelling || !PASSWORD_FAILURE.test(cause(error2.message))) throw error2;
               console.log(`[download-queue] archive password ${index + 1} of ${passwords.length} did not open it, trying the next`);
               job2.written = 0;
+              job2.extractedFiles = 0;
               sample = { at: Date.now(), bytes: 0 };
               emit2();
             } finally {
@@ -750,6 +754,7 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
         throw error2;
       } finally {
         Object.assign(job2, downloaded, { bytesPerSecond: 0 });
+        delete job2.extractedFiles;
         delete job2.phase;
       }
       const images = (result.artifacts || []).filter((path) => /\.(ffpfsc|ffpfs|ffpkg|exfat)$/i.test(path));

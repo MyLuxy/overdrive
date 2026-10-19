@@ -110,6 +110,7 @@
   "downloads.extractedReady": "{parts, select, all {所有分卷} other {压缩包}}已验证并解压。可以安装。",
   "downloads.extractedTo": "已解压到 {path}",
   "downloads.extractedNothing": "已解压到 {path}，但压缩包中没有可安装的游戏（没有 PKG，也没有游戏文件夹）。请移除此下载并选择其他来源。",
+  "downloads.filesExtracted": "已解压文件",
   "downloads.installFailed": "主机拒绝了此安装包。按“安装”重试。",
   "downloads.installHint": "请关闭 Overdrive 以完成：没有游戏运行时 ShadowMount 才会安装。",
   "downloads.installRequested": "已请求安装。请关闭 Overdrive 以完成：没有游戏运行时 ShadowMount 才会安装。",

@@ -110,6 +110,7 @@
   "downloads.extractedReady": "{parts, select, all {جميع الأجزاء} other {الأرشيف}} تم التحقق منه واستخراجه. جاهز للتثبيت.",
   "downloads.extractedTo": "تم الاستخراج إلى {path}",
   "downloads.extractedNothing": "تم الاستخراج إلى {path}، لكن الأرشيف لا يحتوي على لعبة للتثبيت (لا PKG ولا مجلد لعبة). أزل هذا التنزيل واختر مصدرًا آخر.",
+  "downloads.filesExtracted": "الملفات المستخرجة",
   "downloads.installFailed": "رفض الجهاز الحزمة. اضغط تثبيت للمحاولة مرة أخرى.",
   "downloads.installHint": "أغلق Overdrive لإنهاء: ShadowMount يثبت بمجرد عدم فتح أي لعبة.",
   "downloads.installRequested": "تم طلب التثبيت. أغلق Overdrive لإنهاء: ShadowMount يثبت بمجرد عدم فتح أي لعبة.",

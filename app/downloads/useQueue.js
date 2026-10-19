@@ -46,12 +46,13 @@ import { downloadQueue } from '../state/downloads.js';
     return progress;
   }
   function useActivity() {
-    const [activity, setActivity] = (0, useState)({ speed: 0, left: 0, active: 0, connections: 0, peak: 0, low: 0, mean: 0 });
+    const [activity, setActivity] = (0, useState)({ speed: 0, left: 0, active: 0, connections: 0, peak: 0, low: 0, mean: 0, extracting: false, extractedFiles: 0 });
     (0, useEffect)(() => {
       const measure = createActivity();
       let shown = null;
       return subscribe2((jobs) => {
-        const next = measure(jobs, Date.now());
+        const extracting = jobs.find((job2) => job2.state === "extracting");
+        const next = { ...measure(jobs, Date.now()), extracting: Boolean(extracting), extractedFiles: extracting?.extractedFiles || 0 };
         if (shown && Object.keys(next).every((key) => shown[key] === next[key])) return;
         shown = next;
         setActivity(next);
