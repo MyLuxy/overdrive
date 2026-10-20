@@ -614,11 +614,16 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
       delete job2.routing;
       change();
     }
-    // A dump can hold a base game alongside a update, patch or optional backports. When the
-    // derach for the lone-Folder cannot identify a base game, search other folders aswell but exclude
-    // those inside supplemental directories. Only choose a unique candidate, preferring the
-    // matching title ID where available. Otherwise just leave the extraction untouched.
-    var SUPPLEMENTAL_FOLDER = /(?:^|[-_ .(\[])(?:patch|update|upd|backport)(?:$|[-_ .)\]\d])/i;
+    // A dump can hold its game beside a patch, an update or an optional backport, each a folder with
+    // its own eboot.bin (issue #76). gameFolder follows a lone folder down and takes it whatever its
+    // name: a backported game's folder is often named so, and a merged dump "(Base + Update)". When
+    // it gives up beside a second folder, every folder holding a game is listed. One is taken as it
+    // was before (unless named a patch or an update); among several, patches, updates and backports
+    // are left out by the names below the folder that holds them all (it may name a backport for
+    // every one of them), then the chosen game's title id decides. Only one left is taken, else
+    // nothing moves.
+    var PATCH_FOLDER = /(?:^|[-_ .(\[])(?:patch|update|upd)(?:$|[-_ .)\]\d])/i;
+    var BACKPORT_FOLDER = /(?:^|[-_ .(\[])backport(?:$|[-_ .)\]\d])/i;
     function gameFolders(output) {
       const found = [];
       const queue = [{ path: output, depth: 0 }];
@@ -640,13 +645,20 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
       return found;
     }
     function findGame(job2, output) {
-      const supplemental = (path) => path.slice(output.length + 1).split("/").some((segment) => SUPPLEMENTAL_FOLDER.test(segment));
       const lone = gameFolder(output);
-      if (lone && !supplemental(lone)) return { folder: lone, beside: false };
+      if (lone) return { folder: lone, beside: false };
       const found = gameFolders(output);
       const shown = (path) => path.slice(output.length) || "/";
       if (found.length) console.log(`[download-queue] game folders in ${output}: ${found.map(shown).join(", ")}`);
-      let games = found.filter((path) => !supplemental(path));
+      const name = (path) => path.slice(path.lastIndexOf("/") + 1);
+      let games;
+      if (found.length > 1) {
+        const parts = found.map((path) => path.split("/"));
+        let shared = 0;
+        while (parts.every((list) => shared < list.length - 1 && list[shared] === parts[0][shared])) shared++;
+        const supplemental = (list) => list.slice(shared).some((segment) => PATCH_FOLDER.test(segment) || BACKPORT_FOLDER.test(segment));
+        games = found.filter((path, index) => !supplemental(parts[index]));
+      } else games = found.filter((path) => !PATCH_FOLDER.test(name(path)));
       const titled = games.filter((path) => String(titleIn(path) || "").toUpperCase() === String(job2.titleId || "").toUpperCase());
       if (titled.length) games = titled;
       if (games.length !== 1) {

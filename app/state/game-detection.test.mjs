@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const source = readFileSync(new URL("../../app/state/download-queue.js", import.meta.url), "utf8");
-const start = source.indexOf("    var SUPPLEMENTAL_FOLDER =");
+// findGame and the helpers it calls, taken from the queue's source: they use only fs and titleIn.
+const source = readFileSync(new URL("./download-queue.js", import.meta.url), "utf8");
+const start = source.indexOf("    var PATCH_FOLDER =");
 const end = source.indexOf("    // The extractor writes files", start);
 assert.ok(start !== -1 && end > start);
 const selectGame = new Function("fs", "titleIn", "console", `${source.slice(start, end)}
@@ -55,8 +56,22 @@ test("nested backport is not selected as a game", () => {
   });
 });
 
-test("backport-only archive is not automatically published", () => {
-  assert.deepEqual(fixture(["backport (4.xx to 11.xx)"]), { folder: null, beside: false });
+test("a lone game folder is taken whatever its name, as before", () => {
+  for (const lone of ["PPSA28000 Backport 4.xx", "Ghost of Yotei v1.010 (Base + Update)", "backport (4.xx to 11.xx)"]) {
+    assert.deepEqual(fixture([lone]), { folder: lone, beside: false });
+  }
+});
+
+test("a lone game folder inside a wrapper named a backport is taken", () => {
+  assert.deepEqual(fixture(["Dawnwalker 4.xx Backport/PPSA28000-app"]), {
+    folder: "Dawnwalker 4.xx Backport/PPSA28000-app", beside: false
+  });
+});
+
+test("a wrapper named a backport does not hide the game from its update", () => {
+  assert.deepEqual(fixture(["Dawnwalker 4.xx Backport/PPSA28000-app", "Dawnwalker 4.xx Backport/update 01.005"]), {
+    folder: "Dawnwalker 4.xx Backport/PPSA28000-app", beside: true
+  });
 });
 
 test("existing patch filtering continues to select the base game", () => {
@@ -99,9 +114,9 @@ test("more than one potential base game remains ambiguous even with backport", (
   });
 });
 
-test("a game inside a backport directory is not a standalone base game", () => {
-  assert.deepEqual(fixture(["wrapper/backport 4.xx/PPSA28000-app"]), {
-    folder: null, beside: false
+test("a game inside a backport folder beside the base game is left out", () => {
+  assert.deepEqual(fixture(["PPSA28000-app", "extras/backport 4.xx/PPSA28000-app"]), {
+    folder: "PPSA28000-app", beside: true
   });
 });
 
