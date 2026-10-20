@@ -9,19 +9,24 @@ assert.ok(start !== -1 && end > start);
 const selectGame = new Function("fs", "titleIn", "console", `${source.slice(start, end)}
 return findGame;`);
 
-function fixture(paths, titles = {}) {
+function fixture(paths, titles = {}, otherDirectories = []) {
   const root = "/data/downloads/extracted/release";
   const directories = new Set([root]);
   const entries = new Set();
-  for (const relative of paths) {
+  const addDirectories = (relative) => {
     let parent = root;
     for (const segment of relative.split("/")) {
       parent += `/${segment}`;
       directories.add(parent);
     }
+    return parent;
+  };
+  for (const relative of paths) {
+    const parent = addDirectories(relative);
     entries.add(`${parent}/eboot.bin`);
     entries.add(`${parent}/sce_sys/param.json`);
   }
+  for (const relative of otherDirectories) addDirectories(relative);
   const fs = {
     exists: (path) => entries.has(path),
     readDir: (path) => {
@@ -103,5 +108,21 @@ test("a game inside a backport directory is not a standalone base game", () => {
 test("single base game next to nested patch and backport", () => {
   assert.deepEqual(fixture(["collection/PPSA28000-app", "collection/update/version", "collection/backport/version"]), {
     folder: "collection/PPSA28000-app", beside: true
+  });
+});
+
+test("DLC-only extraction without game markers is not selected as a base game", () => {
+  assert.deepEqual(fixture([], {}, ["DLC/content"]), { folder: null, beside: false });
+});
+
+test("base game next to DLC content and backport is selected", () => {
+  assert.deepEqual(fixture(["PPSA28000-app", "backport (4.xx to 11.xx)"], {}, ["DLC/content"]), {
+    folder: "PPSA28000-app", beside: true
+  });
+});
+
+test("game-like DLC with the same title ID stays ambiguous beside base and backport", () => {
+  assert.deepEqual(fixture(["PPSA28000-app", "DLC/extra-game", "backport (4.xx to 11.xx)"]), {
+    folder: null, beside: false
   });
 });
