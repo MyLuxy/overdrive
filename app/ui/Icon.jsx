@@ -1,6 +1,6 @@
 // ../pub-game-store/native/ui/Icon.jsx
 // reconstructed from the esbuild bundle in eboot.bin
-// MODIFIED: settings and languages icons.
+// MODIFIED: settings, languages and info icons.
 
 import { jsx } from 'react/jsx-runtime';
 import { Path, Svg } from '@ps5-react/core';
@@ -28,6 +28,8 @@ import { px } from './scale.js';
     ],
     circleCheck: [ring(12, 12, 10), "m9 12 2 2 4-4"],
     alert: [ring(12, 12, 10), "M12 8v4", "M12 16h.01"],
+    // lucide 0.462 info, for the download row's game page.
+    info: [ring(12, 12, 10), "M12 16v-4", "M12 8h.01"],
     restart: ["M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8", "M3 3v5h5"],
     trash: ["M3 6h18", "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6", "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"],
     list: ["M8 6h13", "M8 12h13", "M8 18h13", "M3 6h.01", "M3 12h.01", "M3 18h.01"],

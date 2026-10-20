@@ -1,10 +1,11 @@
 // ../pub-game-store/native/downloads/DownloadRow.jsx
 // reconstructed from the esbuild bundle in eboot.bin
+// MODIFIED: game page info button; title/meta columns rebalanced so the meta still ends on the row's right edge.
 
 import '../assets/Inter-Regular.ttf';
 import { jsx, jsxs } from 'react/jsx-runtime';
 import { memo, useEffect, useState } from 'react';
-import { RowProgress } from './RowProgress.jsx';
+import { RowProgress, ROW } from './RowProgress.jsx';
 import { StatsStrip } from './StatsStrip.jsx';
 import { PANEL_KEY } from './SummaryPanel.jsx';
 import { STALE_PARTIAL, cause, explainError } from './errors.js';
@@ -12,6 +13,7 @@ import { WAITING, clearAction, shownState, stateLabel } from './labels.js';
 import { shapeOf } from './useQueue.js';
 import { isOverdriveCdn } from '../game/sources.js';
 import { focusEnd, useLocale, useT } from '../i18n/index.js';
+import { getGame } from '../state/catalog.js';
 import { BUSY, COMPLETE } from '../state/download-queue.js';
 import { Button2 } from '../ui/Button.jsx';
 import { CdnAura, CdnSpark } from '../ui/CdnAura.jsx';
@@ -72,6 +74,19 @@ import { Text, View } from '@ps5-react/core';
       }
     );
   }
+  function InfoButton({ id, onPress, onFocus }) {
+    return /* @__PURE__ */ (0, jsx)(
+      Button2,
+      {
+        variant: "secondary",
+        size: "icon",
+        icon: "info",
+        focusKey: `downloads-info:${id}`,
+        onFocus,
+        onPress
+      }
+    );
+  }
   function DownloadRowView({ job: job2, game, autoFocus, run, onOpenGame, onFocusRow }) {
     const t2 = useT();
     const { state, release } = job2;
@@ -79,6 +94,9 @@ import { Text, View } from '@ps5-react/core';
     const complete = COMPLETE.includes(state);
     const openGame = () => onOpenGame(job2);
     const main = primary(job2, (name) => run(job2, name), openGame);
+    // A job outside the catalog has no page to open, and a primary button that already leads there
+    // (continue on page) needs no second one; the triangle shortcut opens it either way.
+    const infoPage = !getGame(job2.gameId) || main.onPress === openGame ? null : () => openGame();
     const onFocus = () => onFocusRow(job2);
     const meta = [shownFormat(job2, release).toUpperCase(), `${release.provider} ${release.version || ""}`.trim(), job2.root].join(" \xB7 ");
     const problem = job2.error && explainError(job2.error, Boolean(release.parts));
@@ -91,8 +109,8 @@ import { Text, View } from '@ps5-react/core';
       /* @__PURE__ */ (0, jsxs)(View, { style: { flexDirection: "row", alignItems: "center", gap: 30, paddingHorizontal: 30, paddingVertical: 24 }, children: [
         /* @__PURE__ */ (0, jsx)(Cover, { game, label: false, style: THUMB2 }),
         /* @__PURE__ */ (0, jsxs)(View, { style: { flex: 1, gap: 15 }, children: [
-          /* @__PURE__ */ (0, jsxs)(View, { style: { width: 870, flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" }, children: [
-            /* @__PURE__ */ (0, jsx)(Text, { style: { width: 540, fontFamily: "Inter-Regular", fontSize: 27, fontWeight: 600, color: "#f2f2f3", numberOfLines: 1, ellipsizeMode: "tail", lineHeight: 42, letterSpacing: -0.68 }, children: job2.title }),
+          /* @__PURE__ */ (0, jsxs)(View, { style: { width: ROW, flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" }, children: [
+            /* @__PURE__ */ (0, jsx)(Text, { style: { width: 505, fontFamily: "Inter-Regular", fontSize: 27, fontWeight: 600, color: "#f2f2f3", numberOfLines: 1, ellipsizeMode: "tail", lineHeight: 42, letterSpacing: -0.68 }, children: job2.title }),
             /* @__PURE__ */ (0, jsxs)(View, { style: { width: 315, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 9 }, children: [
               cdn ? /* @__PURE__ */ (0, jsx)(CdnSpark, { size: 13 }) : null,
               /* @__PURE__ */ (0, jsx)(Text, { style: cdn ? { maxWidth: 285, fontFamily: "Inter-Regular", fontSize: 21, color: "#f2f2f3", numberOfLines: 1, ellipsizeMode: "tail", lineHeight: 30 } : { width: 315, textAlign: "end", fontFamily: "Inter-Regular", fontSize: 21, color: "#8a8a94", numberOfLines: 1, ellipsizeMode: "tail", lineHeight: 30 }, children: meta })
@@ -111,9 +129,10 @@ import { Text, View } from '@ps5-react/core';
               detail: shown === "finishing" ? t2("downloads.writingToDisk") : null
             }
           ),
-          note ? /* @__PURE__ */ (0, jsx)(Text, { style: { width: 870, fontFamily: "Inter-Regular", fontSize: 21, color: problem ? "#f2f2f3" : mismatch ? "#fde68a" : "#a3a3ab", numberOfLines: 1, ellipsizeMode: "tail", lineHeight: 30 }, children: note }) : null
+          note ? /* @__PURE__ */ (0, jsx)(Text, { style: { width: ROW, fontFamily: "Inter-Regular", fontSize: 21, color: problem ? "#f2f2f3" : mismatch ? "#fde68a" : "#a3a3ab", numberOfLines: 1, ellipsizeMode: "tail", lineHeight: 30 }, children: note }) : null
         ] }),
         /* @__PURE__ */ (0, jsxs)(View, { style: { flexDirection: "row", gap: 12 }, children: [
+          infoPage ? /* @__PURE__ */ (0, jsx)(InfoButton, { id: job2.id, onPress: infoPage, onFocus }) : null,
           /* @__PURE__ */ (0, jsx)(
             Button2,
             {
