@@ -59,16 +59,16 @@ import { FocusScope, ScrollView, Text, View } from '@ps5-react/core';
       )
     ] });
   }
-  function Empty({ error: error2, onBack }) {
+  function Empty({ error: error2, onBrowse }) {
     const t2 = useT();
     return /* @__PURE__ */ (0, jsxs)(View, { style: { flex: 1, alignItems: "center", justifyContent: "center", paddingBottom: 144 }, children: [
       /* @__PURE__ */ (0, jsx)(Icon, { name: "download", size: 32, color: colors.subtle }),
       /* @__PURE__ */ (0, jsx)(Text, { style: { marginTop: 24, fontFamily: "Inter-Regular", fontSize: 27, fontWeight: 600, color: "#f2f2f3", lineHeight: 42 }, children: t2(error2 ? "downloads.unavailable" : "downloads.empty") }),
       /* @__PURE__ */ (0, jsx)(Text, { style: { marginTop: 6, width: 720, textAlign: "center", fontFamily: "Inter-Regular", fontSize: 24, color: "#a3a3ab", numberOfLines: 3, ellipsizeMode: "tail", lineHeight: 36 }, children: error2 || t2("downloads.emptyDetail") }),
-      /* @__PURE__ */ (0, jsx)(View, { style: { marginTop: 36 }, children: /* @__PURE__ */ (0, jsx)(Button2, { variant: "outline", label: t2("downloads.browseGames"), focusKey: EMPTY_KEY, autoFocus: true, onPress: onBack }) })
+      /* @__PURE__ */ (0, jsx)(View, { style: { marginTop: 36 }, children: /* @__PURE__ */ (0, jsx)(Button2, { variant: "outline", label: t2("downloads.browseGames"), focusKey: EMPTY_KEY, autoFocus: true, onPress: onBrowse }) })
     ] });
   }
-  function DownloadsScreen({ onBack, onOpenGame }) {
+  function DownloadsScreen({ onBack, onBrowse, onOpenGame }) {
     const t2 = useT();
     const { jobs, error: error2 } = useJobs();
     (0, useEffect)(() => {
@@ -137,7 +137,7 @@ import { FocusScope, ScrollView, Text, View } from '@ps5-react/core';
           /* @__PURE__ */ (0, jsx)(Section, { title: "downloads.section.active", jobs: active2, first, handlers }),
           /* @__PURE__ */ (0, jsx)(Section, { title: "downloads.section.stopped", jobs: stopped, first, handlers }),
           /* @__PURE__ */ (0, jsx)(Section, { title: "downloads.section.completed", jobs: done, first, handlers })
-        ] }) }) : /* @__PURE__ */ (0, jsx)(Empty, { error: error2, onBack }),
+        ] }) }) : /* @__PURE__ */ (0, jsx)(Empty, { error: error2, onBrowse }),
         /* @__PURE__ */ (0, jsx)(SummaryPanel, { error: error2, onFocus: () => {
           focused.current = null;
         } })

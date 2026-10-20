@@ -24,12 +24,12 @@ import { useInterfaceSounds } from './ui/sounds.js';
 import { VERSION } from './version.js';
 
   function Screen({ screen: screen2 }) {
-    const { openGame, pop } = useNavActions();
+    const { openGame, pop, home } = useNavActions();
     const openCard = (game) => openGame(game.id, `card:${game.id}`);
     // A homebrew app's page reads its file from the catalog first, and says so when the app is gone.
     if (screen2.name === "game" && isHomebrewId(screen2.id)) return /* @__PURE__ */ (0, jsx)(HomebrewGame, { game: getGame(screen2.id), download: screen2.download, onBack: pop, onOpenGame: openCard });
     if (screen2.name === "game") return /* @__PURE__ */ (0, jsx)(GameScreen, { game: getGame(screen2.id), download: screen2.download, onBack: pop, onOpenGame: openCard });
-    if (screen2.name === "downloads") return /* @__PURE__ */ (0, jsx)(DownloadsScreen, { onBack: pop, onOpenGame: openGame });
+    if (screen2.name === "downloads") return /* @__PURE__ */ (0, jsx)(DownloadsScreen, { onBack: pop, onBrowse: () => home("page"), onOpenGame: openGame });
     if (screen2.name === "files") return /* @__PURE__ */ (0, jsx)(FilesScreen, { onBack: pop });
     return /* @__PURE__ */ (0, jsx)(SearchScreen, { onBack: pop, onOpenGame: openCard });
   }
