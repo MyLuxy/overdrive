@@ -4,6 +4,7 @@
 import { features, games, twins } from '../data/catalog.js';
 import { formatDate2, formatNumber2, t } from '../i18n/core.js';
 import { getHomebrew, homebrewApps, relatedHomebrew } from './homebrew.js';
+import { formatOptions, hasFormat } from './formats.js';
 import { createPageCache } from './page-cache.js';
 import { pausedFilter } from './paused-hosts.js';
 import { createReleaseCache } from './release-cache.js';
@@ -165,6 +166,8 @@ import { FileSystem, Image } from '@ps5-react/core';
     },
     // A source the app downloads by itself, with no CAPTCHA page to pass in a browser.
     { key: "access", options: [{ value: "direct", label: "filters.access.direct" }], has: (game) => Boolean(game.direct) },
+    // The file a source delivers (PKG, exFAT image, ...). A game can offer several, so one pick matches any.
+    { key: "format", any: true, options: formatOptions(games), has: hasFormat },
     {
       key: "genre",
       options: named(byGames(genres, (game, genre) => game.genres.includes(genre)), "genre"),
