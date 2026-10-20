@@ -1,0 +1,107 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+const source = readFileSync(new URL("../../app/state/download-queue.js", import.meta.url), "utf8");
+const start = source.indexOf("    var SUPPLEMENTAL_FOLDER =");
+const end = source.indexOf("    // The extractor writes files", start);
+assert.ok(start !== -1 && end > start);
+const selectGame = new Function("fs", "titleIn", "console", `${source.slice(start, end)}
+return findGame;`);
+
+function fixture(paths, titles = {}) {
+  const root = "/data/downloads/extracted/release";
+  const directories = new Set([root]);
+  const entries = new Set();
+  for (const relative of paths) {
+    let parent = root;
+    for (const segment of relative.split("/")) {
+      parent += `/${segment}`;
+      directories.add(parent);
+    }
+    entries.add(`${parent}/eboot.bin`);
+    entries.add(`${parent}/sce_sys/param.json`);
+  }
+  const fs = {
+    exists: (path) => entries.has(path),
+    readDir: (path) => {
+      if (!directories.has(path)) throw new Error("Directory does not exist");
+      return [...directories].filter((child) => child.startsWith(`${path}/`) && !child.slice(path.length + 1).includes("/")).map((child) => ({
+        name: child.slice(path.length + 1),
+        isDirectory: true
+      }));
+    }
+  };
+  const titleIn = (path) => titles[path.slice(root.length + 1)] ?? "PPSA28000";
+  const findGame = selectGame(fs, titleIn, { log() {} });
+  const result = findGame({ titleId: "PPSA28000" }, root);
+  return { folder: result.folder?.slice(root.length + 1) ?? null, beside: result.beside };
+}
+
+test("base game next to the reported optional backport", () => {
+  assert.deepEqual(fixture(["PPSA28000-app", "backport (backport 4.xx to 11.xx)"]), {
+    folder: "PPSA28000-app", beside: true
+  });
+});
+
+test("nested backport is not selected as a game", () => {
+  assert.deepEqual(fixture(["PPSA28000-app", "backport (4.xx to 11.xx)/content/game"]), {
+    folder: "PPSA28000-app", beside: true
+  });
+});
+
+test("backport-only archive is not automatically published", () => {
+  assert.deepEqual(fixture(["backport (4.xx to 11.xx)"]), { folder: null, beside: false });
+});
+
+test("existing patch filtering continues to select the base game", () => {
+  assert.deepEqual(fixture(["PPSA28000-app", "patch v01.005"]), {
+    folder: "PPSA28000-app", beside: true
+  });
+});
+
+test("single unambiguous base game follows the fast path", () => {
+  assert.deepEqual(fixture(["PPSA28000-app"]), { folder: "PPSA28000-app", beside: false });
+});
+
+test("two unclassified game folders stay untouched", () => {
+  assert.deepEqual(fixture(["PPSA28000-app", "PPSA28000-other"]), { folder: null, beside: false });
+});
+
+test("matching title ID wins when two normal games exist", () => {
+  assert.deepEqual(fixture(["PPSA28000-app", "PPSA99999-app"], {
+    "PPSA99999-app": "PPSA99999"
+  }), { folder: "PPSA28000-app", beside: true });
+});
+
+test("unrelated names containing the substring backport are not filtered", () => {
+  assert.deepEqual(fixture(["PPSA28000-backporter", "PPSA99999-app"], {
+    "PPSA99999-app": "PPSA99999"
+  }), { folder: "PPSA28000-backporter", beside: true });
+});
+
+test("case-insensitive backport variants are ignored", () => {
+  for (const extra of ["BACKPORT_4.xx", "(backport 5.05)", "11.xx-backport", "Backport4.00"]) {
+    assert.deepEqual(fixture(["PPSA28000-app", extra]), {
+      folder: "PPSA28000-app", beside: true
+    });
+  }
+});
+
+test("more than one potential base game remains ambiguous even with backport", () => {
+  assert.deepEqual(fixture(["PPSA28000-app", "PPSA28000-alternate", "backport"]), {
+    folder: null, beside: false
+  });
+});
+
+test("a game inside a backport directory is not a standalone base game", () => {
+  assert.deepEqual(fixture(["wrapper/backport 4.xx/PPSA28000-app"]), {
+    folder: null, beside: false
+  });
+});
+
+test("single base game next to nested patch and backport", () => {
+  assert.deepEqual(fixture(["collection/PPSA28000-app", "collection/update/version", "collection/backport/version"]), {
+    folder: "collection/PPSA28000-app", beside: true
+  });
+});

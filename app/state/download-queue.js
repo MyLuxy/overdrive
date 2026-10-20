@@ -614,11 +614,11 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
       delete job2.routing;
       change();
     }
-    // gameFolder follows a lone folder down and gives up beside a second one, as a dump with its
-    // patch, DLC or backport folder next to it. Only when it finds nothing, every folder holding a
-    // game is listed, and one is taken only when exactly one is plainly the game: not named a patch
-    // or an update, with the chosen game's title id when several are left. Else nothing moves.
-    var PATCH_FOLDER = /(?:^|[-_ .(\[])(?:patch|update|upd)(?:$|[-_ .)\]\d])/i;
+    // A dump can hold a base game alongside a update, patch or optional backports. When the
+    // derach for the lone-Folder cannot identify a base game, search other folders aswell but exclude
+    // those inside supplemental directories. Only choose a unique candidate, preferring the
+    // matching title ID where available. Otherwise just leave the extraction untouched.
+    var SUPPLEMENTAL_FOLDER = /(?:^|[-_ .(\[])(?:patch|update|upd|backport)(?:$|[-_ .)\]\d])/i;
     function gameFolders(output) {
       const found = [];
       const queue = [{ path: output, depth: 0 }];
@@ -640,13 +640,13 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
       return found;
     }
     function findGame(job2, output) {
+      const supplemental = (path) => path.slice(output.length + 1).split("/").some((segment) => SUPPLEMENTAL_FOLDER.test(segment));
       const lone = gameFolder(output);
-      if (lone) return { folder: lone, beside: false };
+      if (lone && !supplemental(lone)) return { folder: lone, beside: false };
       const found = gameFolders(output);
       const shown = (path) => path.slice(output.length) || "/";
       if (found.length) console.log(`[download-queue] game folders in ${output}: ${found.map(shown).join(", ")}`);
-      const name = (path) => path.slice(path.lastIndexOf("/") + 1);
-      let games = found.filter((path) => !PATCH_FOLDER.test(name(path)));
+      let games = found.filter((path) => !supplemental(path));
       const titled = games.filter((path) => String(titleIn(path) || "").toUpperCase() === String(job2.titleId || "").toUpperCase());
       if (titled.length) games = titled;
       if (games.length !== 1) {
