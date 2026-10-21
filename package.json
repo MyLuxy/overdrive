@@ -16,6 +16,10 @@
     "dev        Same window, rebuilt and restarted on every save under app/. State resets.",
     "test       The framework's checks; run after changing rendering or input in ps5-react/.",
     "",
+    "macOS only: setup:mac creates ps5-react/.venv with Pillow; preview:mac, dev:mac and",
+    "            doctor:mac run through that venv, with LLVM 18, Node and the MacPorts/SDL2",
+    "            libraries when present. The commands above stay unchanged for other hosts.",
+    "",
     "CC=clang CXX=clang++: the preview is compiled with clang on every platform, since GCC",
     "stops on a bounds warning in archive_preflight.cpp."
   ],
@@ -25,6 +29,10 @@
     "build:app": "bash packaging/build.sh --no-package",
     "preview": "cd ps5-react && CC=clang CXX=clang++ python3 tools/cli.py preview --app-dir ../app",
     "dev": "cd ps5-react && CC=clang CXX=clang++ python3 tools/cli.py preview --app-dir ../app --watch",
-    "test": "cd ps5-react && CC=clang CXX=clang++ npm test"
+    "test": "cd ps5-react && CC=clang CXX=clang++ npm test",
+    "setup:mac": "python3 -m venv ps5-react/.venv && ps5-react/.venv/bin/pip install -r ps5-react/requirements.txt",
+    "doctor:mac": "cd ps5-react && sh tools/mac-run.sh doctor",
+    "preview:mac": "cd ps5-react && CC=clang CXX=clang++ sh tools/mac-run.sh preview --app-dir ../app",
+    "dev:mac": "cd ps5-react && CC=clang CXX=clang++ sh tools/mac-run.sh preview --app-dir ../app --watch"
   }
 }

@@ -10,7 +10,10 @@
     "dev": "python3 tools/cli.py preview --watch",
     "build": "python3 tools/cli.py build",
     "test": "python3 tools/cli.py test",
-    "create": "python3 tools/cli.py create"
+    "create": "python3 tools/cli.py create",
+    "doctor:mac": "sh tools/mac-run.sh doctor",
+    "preview:mac": "sh tools/mac-run.sh preview",
+    "dev:mac": "sh tools/mac-run.sh preview --watch"
   },
   "dependencies": {
     "react": "18.3.1"
