@@ -101,11 +101,26 @@ def build(output, compiler, flags=(), libraries=(), env=None):
     return output
 
 
+def archive_prefix():
+    """The prefix holding archive.h, as pkg-config, Homebrew or MacPorts reports it."""
+    for command in (["pkg-config", "--variable=prefix", "libarchive"], ["brew", "--prefix", "libarchive"]):
+        try:
+            candidate = subprocess.check_output(command, text=True, stderr=subprocess.DEVNULL).strip()
+        except (OSError, subprocess.CalledProcessError):
+            continue
+        if candidate and (Path(candidate) / "include/archive.h").exists():
+            return candidate
+    for candidate in ("/opt/local", "/usr/local", "/opt/homebrew"):
+        if (Path(candidate) / "include/archive.h").exists():
+            return candidate
+    raise RuntimeError("libarchive not found: install it with Homebrew or MacPorts")
+
+
 def build_host(output):
     """rar-extract for the desktop preview and the archive tests."""
     # macOS hashes with CommonCrypto and keeps Homebrew's libarchive keg-only; elsewhere the driver uses
-    # OpenSSL's EVP and the system's libarchive.
+    # OpenSSL's EVP and the system's libarchive. MacPorts' libarchive is found through pkg-config too.
     if sys.platform == "darwin":
-        prefix = subprocess.check_output(["brew", "--prefix", "libarchive"], text=True).strip()
+        prefix = archive_prefix()
         return build(output, ["clang++"], ["-pthread", "-I", f"{prefix}/include"], ["-L", f"{prefix}/lib", "-larchive"])
     return build(output, ["clang++"], ["-pthread"], ["-larchive", "-lcrypto"])
