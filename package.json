@@ -19,6 +19,7 @@
     "macOS only: setup:mac creates ps5-react/.venv with Pillow; preview:mac, dev:mac and",
     "            doctor:mac run through that venv, with LLVM 18, Node and the MacPorts/SDL2",
     "            libraries when present. The commands above stay unchanged for other hosts.",
+    "build:mac  The PS5 app only, through that venv, into ps5-react/dist/PPSA99058. No sudo.",
     "",
     "CC=clang CXX=clang++: the preview is compiled with clang on every platform, since GCC",
     "stops on a bounds warning in archive_preflight.cpp."
@@ -33,6 +34,7 @@
     "setup:mac": "python3 -m venv ps5-react/.venv && ps5-react/.venv/bin/pip install -r ps5-react/requirements.txt",
     "doctor:mac": "cd ps5-react && sh tools/mac-run.sh doctor",
     "preview:mac": "cd ps5-react && CC=clang CXX=clang++ sh tools/mac-run.sh preview --app-dir ../app",
-    "dev:mac": "cd ps5-react && CC=clang CXX=clang++ sh tools/mac-run.sh preview --app-dir ../app --watch"
+    "dev:mac": "cd ps5-react && CC=clang CXX=clang++ sh tools/mac-run.sh preview --app-dir ../app --watch",
+    "build:mac": "bash packaging/build-mac.sh"
   }
 }
