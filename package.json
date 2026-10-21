@@ -20,6 +20,9 @@
     "            doctor:mac run through that venv, with LLVM 18, Node and the MacPorts/SDL2",
     "            libraries when present. The commands above stay unchanged for other hosts.",
     "build:mac  The PS5 app only, through that venv, into ps5-react/dist/PPSA99058. No sudo.",
+    "package:mac  Local only: builds Overdrive.exfat from the app above with newfs_exfat/hdiutil.",
+    "             It writes no update.zip; the CI keeps producing that on Linux.",
+    "image:mac  build:mac, then package:mac.",
     "",
     "CC=clang CXX=clang++: the preview is compiled with clang on every platform, since GCC",
     "stops on a bounds warning in archive_preflight.cpp."
@@ -35,6 +38,8 @@
     "doctor:mac": "cd ps5-react && sh tools/mac-run.sh doctor",
     "preview:mac": "cd ps5-react && CC=clang CXX=clang++ sh tools/mac-run.sh preview --app-dir ../app",
     "dev:mac": "cd ps5-react && CC=clang CXX=clang++ sh tools/mac-run.sh preview --app-dir ../app --watch",
-    "build:mac": "bash packaging/build-mac.sh"
+    "build:mac": "bash packaging/build-mac.sh",
+    "package:mac": "bash packaging/make-exfat-mac.sh ps5-react/dist/PPSA99058 Overdrive.exfat OVERDRIVE",
+    "image:mac": "npm run build:mac && npm run package:mac"
   }
 }
