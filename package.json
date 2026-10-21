@@ -34,7 +34,7 @@
     "preview": "cd ps5-react && CC=clang CXX=clang++ python3 tools/cli.py preview --app-dir ../app",
     "dev": "cd ps5-react && CC=clang CXX=clang++ python3 tools/cli.py preview --app-dir ../app --watch",
     "test": "cd ps5-react && CC=clang CXX=clang++ npm test",
-    "setup:mac": "python3 -m venv ps5-react/.venv && ps5-react/.venv/bin/pip install -r ps5-react/requirements.txt",
+    "setup:mac": "[ -x ps5-react/.venv/bin/python ] || python3 -m venv ps5-react/.venv; ps5-react/.venv/bin/pip install -r ps5-react/requirements.txt",
     "doctor:mac": "cd ps5-react && sh tools/mac-run.sh doctor",
     "preview:mac": "cd ps5-react && CC=clang CXX=clang++ sh tools/mac-run.sh preview --app-dir ../app",
     "dev:mac": "cd ps5-react && CC=clang CXX=clang++ sh tools/mac-run.sh preview --app-dir ../app --watch",
