@@ -30,7 +30,7 @@ import { GameCard } from '../ui/GameCard.jsx';
         GameCard,
         {
           game,
-          width: 152,
+          width: 162,
           detailed: true,
           focusKey: key,
           rowEnd: index === games2.length - 1,

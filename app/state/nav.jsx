@@ -4,7 +4,7 @@
 import { jsx, jsxs } from 'react/jsx-runtime';
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { recordVisit } from './recent.js';
-import { useFocus } from '@ps5-react/core';
+import { useFocusActions } from '@ps5-react/core';
 
   var StateContext2 = (0, createContext)(null);
   var ActionsContext2 = (0, createContext)(null);
@@ -12,12 +12,23 @@ import { useFocus } from '@ps5-react/core';
   var RETRY_MS = 50;
   var GIVE_UP_MS = 1500;
   function FocusRequest({ target }) {
-    const { focus: focus2 } = useFocus();
+    const { focus: focus2, blur, focusedRect } = useFocusActions();
     (0, useEffect)(() => {
       let waited = 0;
       let id = 0;
+      let focusedBeforeLayout = false;
       const attempt = () => {
-        if (focus2(target) || waited >= GIVE_UP_MS) return;
+        const accepted = focus2(target);
+        if (accepted && focusedRect?.()) {
+          // Retry focus after layout: focusing a node before measurement does not reveal it.
+          if (focusedBeforeLayout) {
+            blur();
+            focus2(target);
+          }
+          return;
+        }
+        if (accepted) focusedBeforeLayout = true;
+        if (waited >= GIVE_UP_MS) return;
         waited += RETRY_MS;
         id = setTimeout(attempt, RETRY_MS);
       };
@@ -33,8 +44,10 @@ import { useFocus } from '@ps5-react/core';
     const current = (0, useRef)(stack);
     current.current = stack;
     const [actions] = (0, useState)(() => {
-      const focusLater = (target) => setRequest((last) => ({ target, n: (last?.n ?? 0) + 1 }));
+      let requestNumber = 0;
+      const focusLater = (target) => setRequest({ target, n: ++requestNumber });
       const push = (screen2, from) => {
+        setRequest(null);
         if (screen2.name === "game") recordVisit(screen2.id);
         setStack((list) => [...list.slice(0, -1), { ...list[list.length - 1], from }, screen2]);
       };
@@ -42,9 +55,16 @@ import { useFocus } from '@ps5-react/core';
         focusLater,
         immerse: (delta) => setImmersive((count) => count + delta),
         push,
+        // Use the pending navigation state when shoulder inputs arrive before React commits.
+        openTab: (name, from) => {
+          setRequest(null);
+          setStack((list) => list.length === 2 && list[1].name === name ? list
+            : [{ ...list[0], from }, { name }]);
+        },
         openGame: (id, from) => push({ name: "game", id }, from),
         // Another edition of the open game takes its place, so Back still leaves the title.
         openEdition: (id, download) => {
+          setRequest(null);
           recordVisit(id);
           setStack((list) => [...list.slice(0, -1), { name: "game", id, download }]);
         },
@@ -52,6 +72,7 @@ import { useFocus } from '@ps5-react/core';
           const list = current.current;
           if (list.length === 1) return false;
           const back2 = list[list.length - 2];
+          setRequest(null);
           setStack(list.slice(0, -1));
           if (back2.from) focusLater(back2.from);
           return true;
@@ -59,6 +80,7 @@ import { useFocus } from '@ps5-react/core';
         home: (target) => {
           setStack((list) => list.slice(0, 1));
           if (target) focusLater(target);
+          else setRequest(null);
         }
       };
     });

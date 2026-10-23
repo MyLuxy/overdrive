@@ -3,7 +3,7 @@
 
 import { savedList } from '../state/saved.js';
 
-  var LIMIT2 = 8;
+  var LIMIT2 = 6;
   var searches = savedList("searches.json", "recent searches");
   var same2 = (a, b) => a.toLowerCase() === b.toLowerCase();
   function rememberSearch(query) {

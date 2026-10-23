@@ -6,15 +6,13 @@ import { memo, useState } from 'react';
 import { GameRail } from './GameRail.jsx';
 import { games } from '../data/catalog.js';
 import { useT } from '../i18n/index.js';
-import { NO_FILTERS } from '../state/catalog.js';
 import { FAMOUS, INDIE, picked, shuffle } from './picks.js';
 import { useNavActions } from '../state/nav.jsx';
-import { useStoreActions } from '../state/store.jsx';
 import { GameCard } from '../ui/GameCard.jsx';
 import { ART_AHEAD, FIRST_ART } from './GameRail.jsx';
 import { RowCard, useRowWindow } from './near.js';
 
-  var WIDTH4 = 152;
+  var WIDTH4 = 162;
   // "You might like" (was the most popular, which only Archive.org's few games could reach): 25
   // games, new on every launch, from the hand-picked famous and indie ones and the rest of the
   // catalog's games that have art and a genre, so the row always has something worth opening.
@@ -30,19 +28,12 @@ import { RowCard, useRowWindow } from './near.js';
   var FIRST_POPULAR = `popular:${POPULAR[0].id}`;
   var PopularRail = (0, memo)(function PopularRail2() {
     const t2 = useT();
-    const { openGame, focusLater } = useNavActions();
-    const { setFilters, setQuery, setSort } = useStoreActions();
+    const { openGame } = useNavActions();
     // Covers load only up to a few cards past the furthest one reached.
     const [reach, setReach] = (0, useState)(FIRST_ART);
     // And the ones far from where focus rests let theirs go.
     const row = useRowWindow();
-    const seeAll = () => {
-      setFilters(NO_FILTERS);
-      setQuery("");
-      setSort("newest");
-      focusLater("catalog:sort");
-    };
-    return /* @__PURE__ */ (0, jsx)(GameRail, { title: t2("browse.forYou"), onSeeAll: seeAll, seeAllKey: "popular:all", children: POPULAR.map((game, index) => {
+    return /* @__PURE__ */ (0, jsx)(GameRail, { title: t2("browse.forYou"), children: POPULAR.map((game, index) => {
       const key = `popular:${game.id}`;
       return /* @__PURE__ */ (0, jsx)(RowCard, { far: row.far(index), children: /* @__PURE__ */ (0, jsx)(
         GameCard,
@@ -50,6 +41,7 @@ import { RowCard, useRowWindow } from './near.js';
           game,
           width: WIDTH4,
           detailed: true,
+          highlightFocus: true,
           focusKey: key,
           rowEnd: index === POPULAR.length - 1,
           deferArt: index >= reach,

@@ -5,6 +5,7 @@ import { features, games, twins } from '../data/catalog.js';
 import { formatDate2, formatNumber2, t } from '../i18n/core.js';
 import { applyUpdate, loadUpdate } from './catalog-update.js';
 import { getHomebrew, homebrewApps, relatedHomebrew } from './homebrew.js';
+import { matchesFavoriteKind } from './favorite-kinds.js';
 import { createPageCache } from './page-cache.js';
 import { pausedFilter } from './paused-hosts.js';
 import { createReleaseCache } from './release-cache.js';
@@ -131,7 +132,8 @@ import { FileSystem, Image } from '@ps5-react/core';
     { id: "relevance", compare: (a, b) => fromArchive(b) - fromArchive(a) || b.recommendations - a.recommendations },
     { id: "rating", compare: (a, b) => (b.metacritic ?? 0) - (a.metacritic ?? 0) },
     { id: "size", compare: (a, b) => (b.sizeGb ?? 0) - (a.sizeGb ?? 0) },
-    { id: "title", compare: (a, b) => a.title.localeCompare(b.title) }
+    { id: "title", compare: (a, b) => a.title.localeCompare(b.title) },
+    { id: "titleDesc", compare: (a, b) => b.title.localeCompare(a.title) }
   ];
   var sortLabel = (id) => t(`sort.${id}`);
   var sortGames = (list, id) => [...list].sort(SORTS.find((sort) => sort.id === id).compare);
@@ -183,9 +185,9 @@ import { FileSystem, Image } from '@ps5-react/core';
     return [...values].sort((a, b) => counts.get(b) - counts.get(a) || a.localeCompare(b));
   };
   var RELEASES = [
-    { value: "recent", label: "filters.release.recent", test: (year) => year >= 2024 },
+    { value: "older", label: "filters.release.older", test: (year) => year < 2020 },
     { value: "current", label: "filters.release.current", test: (year) => year >= 2020 && year <= 2023 },
-    { value: "older", label: "filters.release.older", test: (year) => year < 2020 }
+    { value: "recent", label: "filters.release.recent", test: (year) => year >= 2024 }
   ];
   var FACETS = [
     {
@@ -237,17 +239,32 @@ import { FileSystem, Image } from '@ps5-react/core';
   var genreLabel = (genre) => optionLabel({ label: `genre.${slug(genre)}`, name: genre });
   var featureLabel = (feature) => optionLabel({ label: `feature.${slug(feature)}`, name: feature });
   var NO_FILTERS = { ...Object.fromEntries(FACETS.map((facet) => [facet.key, []])), wishlist: false };
-  var activeCount = (filters) => FACETS.reduce((sum, facet) => sum + filters[facet.key].length, Number(filters.wishlist));
+  var activeCount = (filters) => FACETS.reduce((sum, facet) => sum + filters[facet.key].length, 0);
   var toggleValue = (list, value) => list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
   var passes = (game, facet, picked) => !picked.length || (facet.any ? picked.some((value) => facet.has(game, value)) : picked.every((value) => facet.has(game, value)));
-  function matching({ filters, query, wishlist }) {
+  function matching({ filters, query, wishlist, favoriteKind }, skip) {
     const q = query.trim().toLowerCase();
     // Favorites can hold homebrew apps too; every other list is the game catalog's.
     const pool = filters.wishlist ? [...games, ...homebrewApps()] : games;
-    return pool.filter((game) => (!q || `${game.title} ${game.developer} ${game.publisher}`.toLowerCase().includes(q)) && FACETS.every((facet) => passes(game, facet, filters[facet.key])) && (!filters.wishlist || wishlist.includes(game.id)));
+    const favorites = filters.wishlist ? new Set(wishlist) : null;
+    const activeFacets = FACETS.filter((facet) => facet !== skip && filters[facet.key].length);
+    return pool.filter((game) =>
+      (!favorites || (favorites.has(game.id) && matchesFavoriteKind(game, favoriteKind))) &&
+      (!q || `${game.title} ${game.developer} ${game.publisher}`.toLowerCase().includes(q)) &&
+      activeFacets.every((facet) => passes(game, facet, filters[facet.key])));
   }
   var filterGames = (state) => matching(state);
-  // Number each facet and corresponding games, but don't re-filter the catalog for every possibility.
+  function facetCounts(state, facet) {
+    const pool = matching(state, facet.any ? facet : void 0);
+    const counts = Object.fromEntries(facet.options.map(({ value }) => [value, 0]));
+    for (const game of pool) {
+      for (const { value } of facet.options) {
+        if (facet.has(game, value)) counts[value]++;
+      }
+    }
+    return counts;
+
+  }
   function facetSummary({ filters, query, wishlist }) {
     const counts = Object.fromEntries(FACETS.map((facet) => [
       facet.key, Object.fromEntries(facet.options.map(({ value }) => [value, 0]))
@@ -293,4 +310,4 @@ import { FileSystem, Image } from '@ps5-react/core';
     return formatNumber2(n);
   }
 
-export { CDN_HOST, FACETS, NO_FILTERS, SORTS, activeCount, addedAt, editionsOf, facetLabel, facetSummary, facetTitle, featureLabel, filterGames, formatCount, formatDate3, fromArchive, genreLabel, genres, getGame, listedId, onCdn, optionLabel, relatedGames, showcase, sortGames, sortLabel, summaryOf, toggleValue, warmCovers };
+export { CDN_HOST, FACETS, NO_FILTERS, SORTS, activeCount, addedAt, editionsOf, facetCounts, facetLabel, facetSummary, facetTitle, featureLabel, filterGames, formatCount, formatDate3, fromArchive, genreLabel, genres, getGame, listedId, onCdn, optionLabel, relatedGames, showcase, sortGames, sortLabel, summaryOf, toggleValue, warmCovers };

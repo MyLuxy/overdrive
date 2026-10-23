@@ -16,8 +16,10 @@ import { useStoreActions, useWishlist } from '../state/store.jsx';
 import { Button2 } from '../ui/Button.jsx';
 import { GameLogo, logoStyle } from '../ui/GameLogo.jsx';
 import { WishHeart } from '../ui/WishHeart.jsx';
+import { setFavoriteTarget } from '../ui/favoriteFocus.js';
+import { HINT, useHints } from '../ui/Legend.jsx';
 import { EASE_OUT } from '../ui/ease.js';
-import { AnimatePresence, Image, Text, View, motion } from '@ps5-react/core';
+import { AnimatePresence, Image, Text, View, motion, useFocus } from '@ps5-react/core';
 
   // Five slides, new on every launch: four of the hand-picked famous games (picks.js), and one
   // surprise from the rest of the catalog's well-dressed games. A slide needs only its hero art: a
@@ -30,7 +32,8 @@ import { AnimatePresence, Image, Text, View, motion } from '@ps5-react/core';
     return shuffle(slides.length ? slides : games.filter((game) => game.art.hero).slice(0, 5));
   }
   var featured = selectFeatured();
-  var ART = { width: 1410, height: 660 };
+  const HERO_SCALE = 1.02;
+  var ART = { width: 1410 * HERO_SCALE, height: 660 * HERO_SCALE };
   var LOGO2 = [320, 112, 48 * 256];
   function prefetchSlides() {
     for (const game of featured) {
@@ -100,6 +103,8 @@ import { AnimatePresence, Image, Text, View, motion } from '@ps5-react/core';
     const wishlist = useWishlist();
     const { toggleWish } = useStoreActions();
     const wished = wishlist.includes(id);
+    const { focusedKey } = useFocus();
+    useHints(focusedKey === 'spotlight:wish' ? [HINT.select, wished ? HINT.unfavorite : HINT.favorite, HINT.top, HINT.sections] : null);
     return /* @__PURE__ */ (0, jsx)(
       Button2,
       {
@@ -125,11 +130,19 @@ import { AnimatePresence, Image, Text, View, motion } from '@ps5-react/core';
     const { openGame } = useNavActions();
     const game = featured[slides.active];
     (0, useEffect)(() => {
+      setFavoriteTarget('spotlight:cta', game.id);
+      setFavoriteTarget('spotlight:wish', game.id);
+      return () => {
+        setFavoriteTarget('spotlight:cta', null);
+        setFavoriteTarget('spotlight:wish', null);
+      };
+    }, [game.id]);
+    (0, useEffect)(() => {
       const id = setTimeout(prefetchSlides, 1500);
       return () => clearTimeout(id);
     }, []);
-    return /* @__PURE__ */ (0, jsxs)(View, { style: { flexDirection: "row", gap: 24 }, children: [
-      /* @__PURE__ */ (0, jsxs)(View, { style: { position: "relative", width: 1410, height: 660, overflow: "hidden", borderRadius: 18, backgroundColor: "#212125" }, children: [
+    return /* @__PURE__ */ (0, jsxs)(View, { style: { flexDirection: "row", gap: 16 }, children: [
+      /* @__PURE__ */ (0, jsxs)(View, { style: { position: "relative", width: ART.width, height: ART.height, overflow: "hidden", borderRadius: 18, backgroundColor: "#212125" }, children: [
         /* @__PURE__ */ (0, jsx)(Art, { game }),
         /* @__PURE__ */ (0, jsx)(View, { style: rtl ? { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundGradient: { type: "linear", to: "left", stops: [{ color: "#000000", offset: 0 }, { color: "#000000bf", offset: 0.35 }, { color: "transparent", offset: 0.75 }] } } : { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundGradient: { type: "linear", to: "right", stops: [{ color: "#000000", offset: 0 }, { color: "#000000bf", offset: 0.35 }, { color: "transparent", offset: 0.75 }] } } }),
         /* @__PURE__ */ (0, jsx)(View, { style: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundGradient: { type: "linear", to: "top", stops: [{ color: "#000000b3", offset: 0 }, { color: "transparent", offset: 0.5 }] } } }),

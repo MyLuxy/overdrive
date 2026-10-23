@@ -85,7 +85,10 @@ constexpr std::pair<SDL_Scancode, int> kKeyButtons[] = {
 constexpr float kLightTravel = 0.4f;
 
 float key_travel(SDL_Scancode key) {
-  if (!SDL_GetKeyboardState(nullptr)[key]) return 0;
+  // Under QWERTZ the logical Z key can occupy the SDL_SCANCODE_Y position.
+  // Accept both physical layouts for the L2 keyboard shortcut.
+  const Uint8* keys = SDL_GetKeyboardState(nullptr);
+  if (!keys[key] && !(key == SDL_SCANCODE_Z && keys[SDL_SCANCODE_Y])) return 0;
   return SDL_GetModState() & KMOD_SHIFT ? kLightTravel : 1;
 }
 

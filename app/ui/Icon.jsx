@@ -9,8 +9,15 @@ import { px } from './scale.js';
 
   var ring = (cx, cy, r) => `M${cx + r} ${cy}a${r} ${r} 0 1 1-${2 * r} 0a${r} ${r} 0 1 1 ${2 * r} 0`;
   var ICONS = {
-    search: [ring(11, 11, 8), "m21 21-4.3-4.3"],
+    search: [ring(10.5, 10.5, 7), "m20.5 20.5-4.8-4.8"],
+    compass: [ring(12, 12, 10), "m16.2 7.8-2.5 5.9-5.9 2.5 2.5-5.9 5.9-2.5Z"],
+    controller: ["M6.8 8h10.4a4 4 0 0 1 3.8 2.8l1.1 5.3a2.8 2.8 0 0 1-4.5 2.8l-2.5-2.1H8.9l-2.5 2.1a2.8 2.8 0 0 1-4.5-2.8L3 10.8A4 4 0 0 1 6.8 8Z", "M8 11v4", "M6 13h4", "M16 12h.01", "M18 14h.01"],
+    book: ["M12 7v14", "M3 18V5a2 2 0 0 1 2-2h4a3 3 0 0 1 3 3 3 3 0 0 1 3-3h4a2 2 0 0 1 2 2v13a1 1 0 0 1-1 1h-5a3 3 0 0 0-3 2 3 3 0 0 0-3-2H4a1 1 0 0 1-1-1Z"],
+    homebrew: ["M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z"],
+
     searchX: [ring(11, 11, 8), "m21 21-4.3-4.3", "m13.5 8.5-5 5", "m8.5 8.5 5 5"],
+    filter: ["M4 4h16l-6.5 7.5V19l-3 1v-8.5L4 4Z"],
+    sort: ["M3 6h11", "M3 12h8", "M3 18h5", "M19 5v14", "m15 15 4 4 4-4"],
     chevronDown: ["m6 9 6 6 6-6"],
     chevronUp: ["m18 15-6-6-6 6"],
     chevronRight: ["m9 18 6-6-6-6"],
@@ -40,6 +47,12 @@ import { px } from './scale.js';
       "m12 9 6 6",
       "m18 9-6 6"
     ],
+    backspaceWide: [
+      "M10 5H22a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H10L1 12z",
+      "m13 9 6 6",
+      "m19 9-6 6"
+    ],
+    clearSearch: ["M7 7l10 10", "M17 7 7 17"],
     space: ["M22 17v1c0 .5-.5 1-1 1H3c-.5 0-1-.5-1-1v-1"],
     globe: [ring(12, 12, 10), "M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20", "M2 12h20"],
     // lucide 0.462 "settings" and "languages", the set the rest of these come from.

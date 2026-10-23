@@ -125,10 +125,10 @@ import { FocusScope, ScrollView, Text, View } from '@ps5-react/core';
     const done = jobs.filter((job2) => COMPLETE.includes(placed(job2)));
     const first = active2[0] ?? stopped[0] ?? done[0];
     return /* @__PURE__ */ (0, jsx)(FocusScope, { autoFocus: true, onBack: back2, onAction, children: /* @__PURE__ */ (0, jsxs)(View, { style: { flex: 1 }, children: [
-      /* @__PURE__ */ (0, jsxs)(View, { style: { flexDirection: "row", alignItems: "flex-end", gap: 48, paddingHorizontal: 48, paddingTop: 48, paddingBottom: 36 }, children: [
-        /* @__PURE__ */ (0, jsxs)(Text, { style: { width: 1356, fontFamily: "Inter-Regular", fontSize: 30, fontWeight: 600, color: "#f2f2f3", numberOfLines: 1, ellipsizeMode: "tail", lineHeight: 42, letterSpacing: -0.75 }, children: [
+      /* @__PURE__ */ (0, jsxs)(View, { style: { flexDirection: "row", alignItems: "flex-end", gap: 48, paddingHorizontal: 48, paddingTop: 36, paddingBottom: 36 }, children: [
+        /* @__PURE__ */ (0, jsxs)(Text, { style: { width: 1356, fontFamily: "Inter-Regular", fontSize: 36, fontWeight: 700, color: "#f2f2f3", numberOfLines: 1, ellipsizeMode: "tail", lineHeight: 50, letterSpacing: -0.75 }, children: [
           fitBytes(t2("downloads.title"), SPAN_MAX),
-          /* @__PURE__ */ (0, jsx)(Text, { style: { fontWeight: 400, color: "#8a8a94" }, children: jobs.length ? fitBytes(`  ${summary(jobs)}`, SPAN_MAX) : "" })
+          /* @__PURE__ */ (0, jsx)(Text, { style: { fontSize: 22, fontWeight: 400, color: "#8a8a94" }, children: jobs.length ? fitBytes(`  ${summary(jobs)}`, SPAN_MAX) : "" })
         ] }),
         /* @__PURE__ */ (0, jsx)(Text, { style: { width: 420, fontFamily: "Inter-Regular", fontSize: 21, color: "#f2f2f3", numberOfLines: 2, ellipsizeMode: "tail", lineHeight: 30 }, children: failure })
       ] }),
@@ -138,9 +138,7 @@ import { FocusScope, ScrollView, Text, View } from '@ps5-react/core';
           /* @__PURE__ */ (0, jsx)(Section, { title: "downloads.section.stopped", jobs: stopped, first, handlers }),
           /* @__PURE__ */ (0, jsx)(Section, { title: "downloads.section.completed", jobs: done, first, handlers })
         ] }) }) : /* @__PURE__ */ (0, jsx)(Empty, { error: error2, onBrowse }),
-        /* @__PURE__ */ (0, jsx)(SummaryPanel, { error: error2, onFocus: () => {
-          focused.current = null;
-        } })
+        /* @__PURE__ */ (0, jsx)(SummaryPanel, { error: error2 })
       ] }),
       /* @__PURE__ */ (0, jsx)(ButtonHints, { hints: jobs.length > 0 ? LIST_HINTS : EMPTY_HINTS })
     ] }) });

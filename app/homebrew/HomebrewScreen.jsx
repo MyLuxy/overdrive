@@ -12,13 +12,15 @@ import { detailsOf, loadDetails, refresh, useHomebrew } from '../state/homebrew.
 import { useNavActions } from '../state/nav.jsx';
 import { Button2 } from '../ui/Button.jsx';
 import { FocusRing } from '../ui/FocusRing.jsx';
-import { DETAILED_CAPTION, GameCard, useFavoriteAction } from '../ui/GameCard.jsx';
+import { DETAILS_HEIGHT, GameCard, useFavoriteAction } from '../ui/GameCard.jsx';
+import { POSTER_WIDTH, POSTER_ROW_GAP } from '../ui/posterLayout.js';
+import { logical, px } from '../ui/scale.js';
 import { Spinner } from '../ui/Spinner.jsx';
 import { FocusScope, ScrollView, Text, View, VirtualList, useIsFocused } from '@ps5-react/core';
 
-  var COLUMNS = 6;
-  var CARD_WIDTH = 182;
-  var CARD_HEIGHT = 243 + DETAILED_CAPTION;
+  var COLUMNS = 7;
+  var CARD_WIDTH = POSTER_WIDTH;
+  var CARD_HEIGHT = px(Math.round(CARD_WIDTH * 4 / 3)) + DETAILS_HEIGHT;
   var TITLE = { fontFamily: "Inter-Regular", fontSize: 30, fontWeight: 600, color: "#f2f2f3", lineHeight: 42, letterSpacing: -0.75 };
   var NOTE = { fontFamily: "Inter-Regular", fontSize: 21, color: "#a3a3ab", lineHeight: 30 };
   var SOURCE = "prosperostore.net";
@@ -54,7 +56,10 @@ import { FocusScope, ScrollView, Text, View, VirtualList, useIsFocused } from '@
   function Grid({ apps }) {
     const { openGame } = useNavActions();
     const renderItem = (0, useCallback)(
-      ({ item: app, index }) => /* @__PURE__ */ (0, jsx)(
+      ({ item: app, index }) => /* @__PURE__ */ (0, jsx)(View, {
+        scrollAnchor: index >= COLUMNS,
+        style: { width: px(CARD_WIDTH), height: CARD_HEIGHT },
+        children: /* @__PURE__ */ (0, jsx)(
         GameCard,
         {
           game: app,
@@ -62,13 +67,22 @@ import { FocusScope, ScrollView, Text, View, VirtualList, useIsFocused } from '@
           detailed: true,
           rowEnd: index % COLUMNS === COLUMNS - 1 || index === apps.length - 1,
           rowStart: index % COLUMNS === 0,
+          nextFocusUp: index >= COLUMNS
+            ? 'card:' + apps[index - COLUMNS].id : 'homebrew-kind:' + chosenFilter,
+          nextFocusRight: index % COLUMNS === COLUMNS - 1 && index + 1 < apps.length
+            ? 'card:' + apps[index + 1].id : void 0,
+          nextFocusLeft: index % COLUMNS === 0
+            ? (index > 0 ? 'card:' + apps[index - 1].id : void 0) : void 0,
+          nextFocusDown: index + COLUMNS < apps.length
+            ? 'card:' + apps[index + COLUMNS].id : void 0,
+          enterDelay: void 0,
           onFocus: () => prefetch(app),
           onPress: () => openGame(app.id, `card:${app.id}`)
-        }
-      ),
+        })
+      }),
       [apps, openGame]
     );
-    return /* @__PURE__ */ (0, jsx)(VirtualList, { style: { marginTop: 36 }, data: apps, numColumns: COLUMNS, itemHeight: CARD_HEIGHT, rowGap: 40, columnGap: 24, initialNumRows: 3, keyExtractor: (app) => app.id, renderItem });
+    return /* @__PURE__ */ (0, jsx)(VirtualList, { style: { marginTop: 36 }, data: apps, numColumns: COLUMNS, itemHeight: logical(CARD_HEIGHT), rowGap: POSTER_ROW_GAP, columnGap: 12, initialNumRows: 3, keyExtractor: (app) => app.id, renderItem });
   }
   // Waiting for the list, or why there is none, with a way to ask again.
   function Status({ failed }) {

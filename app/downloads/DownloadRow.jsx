@@ -7,7 +7,6 @@ import { jsx, jsxs } from 'react/jsx-runtime';
 import { memo, useEffect, useState } from 'react';
 import { RowProgress, ROW } from './RowProgress.jsx';
 import { StatsStrip } from './StatsStrip.jsx';
-import { PANEL_KEY } from './SummaryPanel.jsx';
 import { STALE_PARTIAL, cause, explainError } from './errors.js';
 import { WAITING, clearAction, shownState, stateLabel } from './labels.js';
 import { shapeOf } from './useQueue.js';
@@ -60,7 +59,8 @@ import { Text, View } from '@ps5-react/core';
         size: "icon",
         icon: armed ? "delete" : "x",
         focusKey: `downloads-cancel:${id}`,
-        ...focusEnd(rtl, PANEL_KEY),
+        // The summary is display-only; horizontal focus must stop at the action column.
+        ...focusEnd(rtl, `downloads-cancel:${id}`),
         onFocus,
         onBlur: () => setArmed(false),
         onPress: () => {

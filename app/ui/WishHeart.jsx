@@ -24,7 +24,7 @@ import { View, motion, transitions } from '@ps5-react/core';
           initial: active2 ? { scale: 1.45 } : false,
           animate: { scale: 1 },
           transition: transitions.pop,
-          children: /* @__PURE__ */ (0, jsx)(Icon, { name: "heart", color, fill: active2 ? color : "none" })
+          children: /* @__PURE__ */ (0, jsx)(Icon, { name: "star", color, fill: active2 ? color : "none" })
         },
         String(active2)
       )

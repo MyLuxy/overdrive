@@ -4,9 +4,9 @@
 import { Fragment, jsx, jsxs } from 'react/jsx-runtime';
 import { useEffect, useState } from 'react';
 import { ShineBorder } from './FocusRing.jsx';
-import { PlatformBadge } from './PlatformBadge.jsx';
+import { formatSize } from '../state/size.js';
 import { px } from './scale.js';
-import { AnimatePresence, View, motion } from '@ps5-react/core';
+import { AnimatePresence, Text, View, motion } from '@ps5-react/core';
 
   var SIZE = 2.6;
   var band2 = { backgroundGradient: {
@@ -44,10 +44,18 @@ import { AnimatePresence, View, motion } from '@ps5-react/core';
       }
     ) });
   }
-  function CardFocus({ focused, width, height, platforms }) {
+  function CardFocus({ focused, width, height, platforms, sizeGb }) {
     return /* @__PURE__ */ (0, jsxs)(Fragment, { children: [
-      /* @__PURE__ */ (0, jsx)(AnimatePresence, { children: focused && /* @__PURE__ */ (0, jsx)(motion.View, { ...fade2, style: { position: "absolute", bottom: 12, left: 12 }, children: /* @__PURE__ */ (0, jsx)(PlatformBadge, { platforms }) }, "tag") }),
       focused && /* @__PURE__ */ (0, jsx)(Glare, { width, height }),
+      /* @__PURE__ */ (0, jsx)(AnimatePresence, { children: sizeGb != null && /* @__PURE__ */ (0, jsx)(motion.View, {
+        ...fade2,
+        style: { position: "absolute", bottom: 12, right: 12, height: px(18), paddingHorizontal: px(7),
+          borderRadius: px(2.5), backgroundColor: "#ffffff", alignItems: "center", justifyContent: "center" },
+        children: /* @__PURE__ */ (0, jsx)(Text, {
+          style: { fontFamily: "Inter-Regular", fontSize: 16, fontWeight: 700, color: "#000000" },
+          children: formatSize(sizeGb)
+        })
+      }, "size") }),
       /* @__PURE__ */ (0, jsx)(AnimatePresence, { children: focused && /* @__PURE__ */ (0, jsx)(ShineBorder, { radius: 8 }, "shine") })
     ] });
   }

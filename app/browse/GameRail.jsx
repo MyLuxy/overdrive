@@ -34,7 +34,7 @@ import { FocusScope, ScrollView, Text, View, useIsFocused } from '@ps5-react/cor
           /* @__PURE__ */ (0, jsx)(Arrow, { name: "chevronRight" })
         ] })
       ] }),
-      /* @__PURE__ */ (0, jsx)(View, { style: { marginHorizontal: -12, marginVertical: -24 }, children: /* @__PURE__ */ (0, jsx)(FocusScope, { row: true, children: /* @__PURE__ */ (0, jsx)(ScrollView, { style: [{ flexDirection: "row", gap: 36, paddingHorizontal: 12, paddingVertical: 24 }, LTR], children }) }) })
+      /* @__PURE__ */ (0, jsx)(View, { style: { marginHorizontal: -12, marginVertical: -24 }, children: /* @__PURE__ */ (0, jsx)(FocusScope, { row: true, children: /* @__PURE__ */ (0, jsx)(ScrollView, { style: [{ flexDirection: "row", gap: 20, paddingHorizontal: 12, paddingVertical: 24 }, LTR], children }) }) })
     ] });
   }
 

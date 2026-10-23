@@ -3,10 +3,10 @@
 
 import '../assets/Inter-Regular.ttf';
 import { Fragment, jsx, jsxs } from 'react/jsx-runtime';
-import { memo, useRef, useState } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
 import { formatNumber2 } from '../i18n/core.js';
 import { useT } from '../i18n/index.js';
-import { FACETS, activeCount, facetSummary, facetTitle, optionLabel } from '../state/catalog.js';
+import { FACETS, activeCount, facetCounts, facetSummary, facetTitle, optionLabel } from '../state/catalog.js';
 import { useNavActions } from '../state/nav.jsx';
 import { useStore } from '../state/store.jsx';
 import { Button2 } from '../ui/Button.jsx';
@@ -32,9 +32,9 @@ import { AnimatePresence, FocusScope, ScrollView, Text, View, useIsFocused } fro
     ] });
   }
   var reachable2 = ({ count, active: active2 }) => count > 0 || active2;
-  function Tile({ focusKey, autoFocus, ...props }) {
+  function Tile({ focusKey, autoFocus, compact = false, ...props }) {
     const { active: active2, onPress } = props;
-    return /* @__PURE__ */ (0, jsx)(View, { focusKey, autoFocus, focusable: reachable2(props), onPress, style: (_state) => active2 ? { height: 108, flex: 1, justifyContent: "center", gap: 9, borderRadius: 12, backgroundColor: "#f2f2f3", paddingHorizontal: 24 } : [{ height: 108, flex: 1, justifyContent: "center", gap: 9, borderRadius: 12, borderWidth: 2, borderColor: "#2a2a2f", paddingHorizontal: 24 }, _state.focused ? { backgroundColor: "#212125" } : null], children: /* @__PURE__ */ (0, jsx)(TileFace, { ...props }) });
+    return /* @__PURE__ */ (0, jsx)(View, { focusKey, autoFocus, focusable: true, onPress, style: (_state) => active2 ? { height: compact ? 80 : 108, flex: 1, justifyContent: "center", gap: compact ? 4 : 9, borderRadius: 12, backgroundColor: "#f2f2f3", paddingHorizontal: compact ? 14 : 24 } : [{ height: compact ? 80 : 108, flex: 1, justifyContent: "center", gap: compact ? 4 : 9, borderRadius: 12, borderWidth: 2, borderColor: "#2a2a2f", paddingHorizontal: compact ? 14 : 24 }, _state.focused ? { backgroundColor: "#212125" } : null], children: /* @__PURE__ */ (0, jsx)(TileFace, { ...props }) });
   }
   function PillFace({ label, count, active: active2 }) {
     const focused = useIsFocused();
@@ -45,18 +45,18 @@ import { AnimatePresence, FocusScope, ScrollView, Text, View, useIsFocused } fro
       /* @__PURE__ */ (0, jsx)(Text, { style: active2 ? { fontFamily: "Inter-Regular", fontSize: 20, color: "#00000099" } : { fontFamily: "Inter-Regular", fontSize: 20, color: "#8a8a94" }, children: formatNumber2(count) })
     ] });
   }
-  function Pill({ label, count, active: active2, onPress, focusKey, autoFocus, value }) {
+  function Pill({ label, count, active: active2, onPress, focusKey, autoFocus, value, compact = false }) {
     const cdn = value === "overdrive cdn" && !active2;
-    return /* @__PURE__ */ (0, jsxs)(View, { focusKey, autoFocus, focusable: reachable2({ count, active: active2 }), onPress, style: (_state2) => active2 ? { height: 60, flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 14999, backgroundColor: "#f2f2f3", paddingHorizontal: 24 } : cdn ? { position: "relative", height: 60, flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 14999, backgroundColor: "#17171a", paddingHorizontal: 24 } : [{ height: 60, flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 14999, backgroundColor: "#17171a", paddingHorizontal: 24 }, _state2.focused ? { backgroundColor: "#2b2b30" } : null], children: [
+    return /* @__PURE__ */ (0, jsxs)(View, { focusKey, autoFocus, focusable: true, onPress, style: (_state2) => active2 ? { height: compact ? 46 : 60, flexDirection: "row", alignItems: "center", gap: compact ? 8 : 12, borderRadius: 14999, backgroundColor: "#f2f2f3", paddingHorizontal: compact ? 14 : 24 } : cdn ? { position: "relative", height: compact ? 46 : 60, flexDirection: "row", alignItems: "center", gap: compact ? 8 : 12, borderRadius: 14999, backgroundColor: "#17171a", paddingHorizontal: compact ? 14 : 24 } : [{ height: compact ? 46 : 60, flexDirection: "row", alignItems: "center", gap: compact ? 8 : 12, borderRadius: 14999, backgroundColor: "#17171a", paddingHorizontal: compact ? 14 : 24 }, _state2.focused ? { backgroundColor: "#2b2b30" } : null], children: [
       cdn ? /* @__PURE__ */ (0, jsx)(CdnAura, { radius: 20, width: 170 }) : null,
       cdn ? /* @__PURE__ */ (0, jsx)(CdnSpark, { size: 14 }) : null,
       /* @__PURE__ */ (0, jsx)(PillFace, { label, count, active: active2 })
     ] });
   }
-  function More({ count, onPress }) {
+  function More({ count, onPress, compact = false }) {
     const t2 = useT();
     const focused = useIsFocused();
-    return /* @__PURE__ */ (0, jsxs)(View, { onPress, style: (_state3) => [{ height: 60, flexDirection: "row", alignItems: "center", borderRadius: 14999, borderWidth: 2, borderColor: "#2a2a2f", paddingHorizontal: 24 }, _state3.focused ? { backgroundColor: "#2b2b30" } : null], children: [
+    return /* @__PURE__ */ (0, jsxs)(View, { focusable: true, onPress, style: (_state3) => [{ height: compact ? 46 : 60, flexDirection: "row", alignItems: "center", borderRadius: 14999, borderWidth: 2, borderColor: "#2a2a2f", paddingHorizontal: compact ? 14 : 24 }, _state3.focused ? { backgroundColor: "#2b2b30" } : null], children: [
       /* @__PURE__ */ (0, jsx)(FocusRing, { round: "full" }),
       /* @__PURE__ */ (0, jsx)(Text, { style: focused ? { fontFamily: "Inter-Regular", fontSize: 21, color: "#f2f2f3", lineHeight: 30 } : { fontFamily: "Inter-Regular", fontSize: 21, color: "#a3a3ab", lineHeight: 30 }, children: t2("filters.more", { count }) })
     ] });
@@ -69,26 +69,30 @@ import { AnimatePresence, FocusScope, ScrollView, Text, View, useIsFocused } fro
       /* @__PURE__ */ (0, jsx)(Text, { style: focused ? { fontFamily: "Inter-Regular", fontSize: 21, color: "#f2f2f3", lineHeight: 30 } : { fontFamily: "Inter-Regular", fontSize: 21, color: "#a3a3ab", lineHeight: 30 }, children: t2("filters.clearFacet") })
     ] });
   }
-  function Facet({ facet, store, counts, autoFocus }) {
+  function Facet({ facet, store, autoFocus, compact = false }) {
     const t2 = useT();
     const [expanded, setExpanded] = (0, useState)(false);
     const { focusLater } = useNavActions();
+    // Facet counts depend on filters and query, not sort or panel state.
+    const wishlist = store.filters.wishlist ? store.wishlist : null;
+    const counts = (0, useMemo)(() => facetCounts(store, facet),
+      [facet, store.filters, store.query, wishlist, store.favoriteKind]);
+
     const picked = store.filters[facet.key];
-    const tiles = facet.options.length <= TILE_LIMIT;
-    const folded = !tiles && !expanded && facet.options.length > PILL_LIMIT;
-    const shown = folded ? facet.options.filter((option, index) => index < PILL_LIMIT || picked.includes(option.value)) : facet.options;
-    return /* @__PURE__ */ (0, jsxs)(View, { style: { gap: 18, borderBottomWidth: 2, borderColor: "#2a2a2f", paddingVertical: 30 }, children: [
-      /* @__PURE__ */ (0, jsxs)(View, { style: { height: 36, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, children: [
+    const options = facet.options;
+    const tiles = options.length <= TILE_LIMIT;
+    const visibleLimit = compact && facet.key === 'genre' ? 8 : PILL_LIMIT;
+    const folded = !tiles && !expanded && options.length > visibleLimit;
+    const shown = folded ? options.filter((option, index) => index < visibleLimit || picked.includes(option.value)) : options;
+    return /* @__PURE__ */ (0, jsxs)(View, { scrollAnchor: compact && facet.key === 'access', style: { gap: compact ? 10 : 18, paddingVertical: compact ? 15 : 30 }, children: [
+      /* @__PURE__ */ (0, jsxs)(View, { style: { height: compact ? 28 : 36, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, children: [
         /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 20, fontWeight: 600, color: "#a3a3ab", letterSpacing: 1.6 }, children: facetTitle(facet.key).toUpperCase() }),
-        picked.length > 0 && /* @__PURE__ */ (0, jsxs)(View, { style: { flexDirection: "row", alignItems: "center", gap: 18 }, children: [
-          /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, color: "#f2f2f3", lineHeight: 30 }, children: t2("filters.selected", { count: picked.length }) }),
-          /* @__PURE__ */ (0, jsx)(ClearFacet, { onPress: () => {
-            store.setFilters({ ...store.filters, [facet.key]: [] });
-            focusLater(`filters:${facet.key}`);
-          } })
-        ] })
+
       ] }),
-      /* @__PURE__ */ (0, jsxs)(View, { style: tiles ? { flexDirection: "row", gap: 18 } : { flexDirection: "row", flexWrap: "wrap", gap: 12 }, children: [
+      /* @__PURE__ */ (0, jsxs)(View, { style: tiles ? compact
+        ? { flexDirection: "row", width: 462, marginLeft: 8, gap: 8 }
+        : { flexDirection: "row", gap: 18 }
+        : { flexDirection: "row", flexWrap: "wrap", gap: compact ? 7 : 12 }, children: [
         shown.map((option, index) => {
           const { value } = option;
           const props = {
@@ -101,11 +105,11 @@ import { AnimatePresence, FocusScope, ScrollView, Text, View, useIsFocused } fro
             focusKey: index === 0 ? `filters:${facet.key}` : `filters:${facet.key}:${value}`,
             autoFocus: index === 0 && autoFocus
           };
-          return tiles ? /* @__PURE__ */ (0, jsx)(Tile, { ...props }, value) : /* @__PURE__ */ (0, jsx)(Pill, { value, ...props }, value);
+          return tiles ? /* @__PURE__ */ (0, jsx)(Tile, { ...props, compact }, value) : /* @__PURE__ */ (0, jsx)(Pill, { value, ...props, compact }, value);
         }),
-        folded && /* @__PURE__ */ (0, jsx)(More, { count: facet.options.length - shown.length, onPress: () => {
+        folded && /* @__PURE__ */ (0, jsx)(More, { compact, count: facet.options.length - shown.length, onPress: () => {
           setExpanded(true);
-          focusLater(`filters:${facet.key}:${facet.options[PILL_LIMIT].value}`);
+          focusLater(`filters:${facet.key}:${facet.options[visibleLimit].value}`);
         } })
       ] })
     ] });
@@ -128,7 +132,7 @@ import { AnimatePresence, FocusScope, ScrollView, Text, View, useIsFocused } fro
     return (
       // A modal: the shoulder buttons would switch the header's section under it, so every action stops here.
       /* @__PURE__ */ (0, jsxs)(FocusScope, { trap: true, onBack: close, onAction: (action) => action !== "triangle" && action !== "options" || close(), children: [
-        /* @__PURE__ */ (0, jsxs)(View, { style: { height: 96, flexDirection: "row", alignItems: "center", gap: 18, borderBottomWidth: 2, borderColor: "#2a2a2f" }, children: [
+        /* @__PURE__ */ (0, jsxs)(View, { style: { height: 96, flexDirection: "row", alignItems: "center", gap: 18 }, children: [
           /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 30, fontWeight: 600, color: "#f2f2f3", lineHeight: 42, letterSpacing: -0.75 }, children: t2("filters.title") }),
           count > 0 && /* @__PURE__ */ (0, jsx)(View, { style: { height: 36, minWidth: 36, alignItems: "center", justifyContent: "center", borderRadius: 14999, backgroundColor: "#f2f2f3", paddingHorizontal: 12 }, children: /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 20, fontWeight: 600, color: "#000000" }, children: String(count) }) }),
           /* @__PURE__ */ (0, jsx)(View, { style: { flex: 1 } }),
@@ -161,4 +165,4 @@ import { AnimatePresence, FocusScope, ScrollView, Text, View, useIsFocused } fro
     ) }, "drawer") });
   });
 
-export { FilterDrawer };
+export { Facet, FilterDrawer };

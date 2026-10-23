@@ -52,7 +52,7 @@ import { Image, Text, View, motion, useIsFocused } from '@ps5-react/core';
     const browse = () => {
       setFilters({ ...NO_FILTERS, provider: [CDN_HOST] });
       setQuery("");
-      focusLater("catalog:filters");
+      focusLater("catalog:toggle:filters");
     };
     return /* @__PURE__ */ (0, jsxs)(GameRail, { title: "Overdrive CDN", onSeeAll: browse, seeAllKey: "cdn:all", children: [
       /* @__PURE__ */ (0, jsx)(View, { focusKey: "cdn:card", onPress: browse, children: /* @__PURE__ */ (0, jsx)(CollectionCard, {}) }),

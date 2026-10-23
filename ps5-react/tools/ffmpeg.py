@@ -52,8 +52,9 @@ def source():
         archive = fetch(pinned["url"], DEPS / f"ffmpeg-{pinned['version']}.tar.xz", pinned["sha256"])
         with tarfile.open(archive) as package:
             package.extractall(DEPS, filter="data")
+        patch_env = {**os.environ, "GIT_CEILING_DIRECTORIES": str(DEPS)}
         for patch in pinned.get("patches", ()):
-            run(["git", "apply", "--whitespace=nowarn", ROOT / patch], cwd=directory)
+            run(["git", "apply", "--whitespace=nowarn", ROOT / patch], cwd=directory, env=patch_env)
         marker.write_text(patches_digest())
     return directory
 
@@ -62,6 +63,16 @@ def _build(name, arguments, env=None):
     """Configures and builds into .deps/ffmpeg-<version>-<name>; returns the install prefix."""
     src = source()
     root = DEPS / f"{src.name}-{name}"
+    if any(character.isspace() for character in str(root)):
+        key = hashlib.sha256((str(src) + patches_digest()).encode()).hexdigest()[:16]
+        cache = Path.home() / ".cache" / "ps5-react" / "ffmpeg" / key
+        if not (cache / "ready").exists():
+            shutil.rmtree(cache, ignore_errors=True)
+            cache.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(src, cache / "source")
+            (cache / "ready").touch()
+        src = cache / "source"
+        root = cache / name
     prefix, build = root / "prefix", root / "build"
     stamp = hashlib.sha256("\n".join([*arguments, patches_digest()]).encode()).hexdigest()
     if (root / "stamp").exists() and (root / "stamp").read_text() == stamp and \

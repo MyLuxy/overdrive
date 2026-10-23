@@ -115,10 +115,10 @@ import { FileSystem, FocusScope, ScrollView, Text, View, useIsFocused } from '@p
     const hints = !focused ? RAIL_HINTS : armed === focused.path ? ARMED_HINTS : isPackage(focused.name) ? PACKAGE_HINTS : FILE_HINTS;
     const free = usage ? t2("files.free", { free: formatBytes(usage.free), total: formatBytes(usage.total) }) : "";
     return /* @__PURE__ */ (0, jsx)(FocusScope, { autoFocus: true, onBack: back2, onAction, children: /* @__PURE__ */ (0, jsxs)(View, { style: { flex: 1 }, children: [
-      /* @__PURE__ */ (0, jsxs)(View, { style: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", paddingHorizontal: 48, paddingTop: 48, paddingBottom: 36 }, children: [
-        /* @__PURE__ */ (0, jsxs)(Text, { style: { width: 1140, fontFamily: "Inter-Regular", fontSize: 30, fontWeight: 600, color: "#f2f2f3", numberOfLines: 1, ellipsizeMode: "tail", lineHeight: 42, letterSpacing: -0.75 }, children: [
+      /* @__PURE__ */ (0, jsxs)(View, { style: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", paddingHorizontal: 48, paddingTop: 36, paddingBottom: 36 }, children: [
+        /* @__PURE__ */ (0, jsxs)(Text, { style: { width: 1140, fontFamily: "Inter-Regular", fontSize: 36, fontWeight: 700, color: "#f2f2f3", numberOfLines: 1, ellipsizeMode: "tail", lineHeight: 50, letterSpacing: -0.75 }, children: [
           t2("files.title"),
-          /* @__PURE__ */ (0, jsx)(Text, { style: { fontWeight: 400, color: "#8a8a94" }, children: `  ${t2("files.summary", { count: sums.all.count, size: formatBytes(sums.all.size) })}` })
+          /* @__PURE__ */ (0, jsx)(Text, { style: { fontSize: 22, fontWeight: 400, color: "#8a8a94" }, children: `  ${t2("files.summary", { count: sums.all.count, size: formatBytes(sums.all.size) })}` })
         ] }),
         /* @__PURE__ */ (0, jsx)(Text, { style: { width: 600, textAlign: "end", fontFamily: "Inter-Regular", fontSize: 21, color: "#a3a3ab", numberOfLines: 2, ellipsizeMode: "tail", lineHeight: 30 }, children: notice })
       ] }),

@@ -7,14 +7,17 @@ import { games } from '../data/catalog.js';
 import { prefetchWhenSettled } from '../game/art.js';
 import { latin, useLocale, useT } from '../i18n/index.js';
 import { NO_FILTERS, formatCount, formatDate3, sortGames, sortLabel } from '../state/catalog.js';
+import { activateBrowseSection } from './near.js';
 import { shuffle } from './picks.js';
 import { useNavActions } from '../state/nav.jsx';
 import { useShowLibrary } from '../ui/useSections.js';
 import { Cover } from '../ui/Cover.jsx';
 import { FocusFrame } from '../ui/FocusRing.jsx';
+import { WishBadge } from '../ui/GameCard.jsx';
+import { setFavoriteTarget } from '../ui/favoriteFocus.js';
 import { SectionHeader } from '../ui/SectionHeader.jsx';
 import { lightGame, unlight } from '../ui/lightBar.js';
-import { Text, View } from '@ps5-react/core';
+import { Text, View, useIsFocused } from '@ps5-react/core';
 
   // Each chart ranks the whole catalog, with no preference for Archive.org's games: the most reviewed
   // and the best rated are five drawn on every launch from the fifteen at the top, then ranked, so
@@ -45,24 +48,37 @@ import { Text, View } from '@ps5-react/core';
       /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, color: "#a3a3ab" }, children: "Metacritic" })
     ] });
   }
+  function RankBadge({ rank }) {
+    return /* @__PURE__ */ (0, jsx)(Text, {
+      style: { width: 38, fontFamily: 'Inter-Regular', fontSize: 21,
+        fontWeight: 700, color: '#ffffff', lineHeight: 30, textAlign: 'center' },
+      children: String(rank)
+    });
+  }
   function Row3({ rank, game, chart }) {
     const { rtl } = useLocale();
+    const focused = useIsFocused();
     return /* @__PURE__ */ (0, jsxs)(Fragment, { children: [
       /* @__PURE__ */ (0, jsx)(FocusFrame, {}),
-      /* @__PURE__ */ (0, jsx)(Text, { style: { width: 18, fontFamily: "Inter-Regular", fontSize: 21, color: "#8a8a94", lineHeight: 30 }, children: String(rank) }),
+      /* @__PURE__ */ (0, jsx)(RankBadge, { rank, chart }),
       /* @__PURE__ */ (0, jsx)(Cover, { game, style: thumb, label: false }),
       /* @__PURE__ */ (0, jsxs)(View, { style: { flex: 1 }, children: [
-        /* @__PURE__ */ (0, jsx)(Text, { style: { width: 444, fontFamily: "Inter-Regular", fontSize: 21, color: "#f2f2f3", numberOfLines: 1, ellipsizeMode: "tail", lineHeight: 30 }, children: latin(rtl, game.title) }),
+        /* @__PURE__ */ (0, jsx)(Text, { style: { width: "100%", paddingRight: 42, fontFamily: "Inter-Regular", fontSize: 21, color: "#f2f2f3", numberOfLines: 1, ellipsizeMode: "tail", lineHeight: 30 }, children: latin(rtl, game.title) }),
         /* @__PURE__ */ (0, jsx)(Detail, { chart, game })
-      ] })
+      ] }),
+      /* @__PURE__ */ (0, jsx)(WishBadge, { id: game.id, focused, compact: true, placement: 'row-end' })
     ] });
   }
   function TopCharts() {
     useT();
     const { openGame } = useNavActions();
     const show = useShowLibrary();
-    // "See all" opens Browse with the selected chart sorting, including Top rated.
-    const seeAll = (id) => show(NO_FILTERS, id, "catalog:sort", "browse");
+    // Open Library filters with this chart's sort already selected.
+    const seeAll = (id) => {
+      activateBrowseSection();
+      show(NO_FILTERS, id, "catalog:toggle:filters", "browse", "filters");
+    };
+
     return /* @__PURE__ */ (0, jsx)(View, { scrollAnchor: true, style: { marginBottom: -18, marginTop: -12, flexDirection: "row", gap: 48 }, children: CHARTS.map(
       (chart) => /* @__PURE__ */ (0, jsxs)(View, { style: { flex: 1 }, children: [
         /* @__PURE__ */ (0, jsx)(SectionHeader, { title: sortLabel(chart.id), onSeeAll: () => seeAll(chart.id) }),
@@ -74,6 +90,7 @@ import { Text, View } from '@ps5-react/core';
               focusKey: key,
               onPress: () => openGame(game.id, key),
               onFocus: () => {
+                setFavoriteTarget(key, game.id);
                 prefetchWhenSettled(game);
                 lightGame(key, game);
               },

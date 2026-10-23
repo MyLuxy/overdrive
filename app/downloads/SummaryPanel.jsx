@@ -11,12 +11,11 @@ import { downloadQueue, driveName, storageRoots } from '../state/downloads.js';
 import { formatBytes } from '../state/size.js';
 import { useSpeedLimit } from '../state/speed-limit.js';
 import { ProgressBar } from '../ui/ProgressBar.jsx';
-import { FileSystem, ScrollView, Text, View } from '@ps5-react/core';
+import { FileSystem, Text, View } from '@ps5-react/core';
 
   var WIDTH5 = 280;
   var INSET = 8;
   var INNER = { width: WIDTH5 - 2 * INSET };
-  var PANEL_KEY = "downloads:panel";
   function awake() {
     try {
       return downloadQueue().awake;
@@ -25,7 +24,7 @@ import { FileSystem, ScrollView, Text, View } from '@ps5-react/core';
     }
   }
   function Block({ title, children }) {
-    return /* @__PURE__ */ (0, jsxs)(View, { style: { gap: 18, borderBottomWidth: 2, borderColor: "#2a2a2f", paddingBottom: 30 }, children: [
+    return /* @__PURE__ */ (0, jsxs)(View, { style: { gap: 6, borderBottomWidth: 2, borderColor: "#2a2a2f", paddingBottom: 8 }, children: [
       /* @__PURE__ */ (0, jsx)(Text, { style: { paddingHorizontal: 12, fontFamily: "Inter-Regular", fontSize: 20, fontWeight: 600, color: "#8a8a94", letterSpacing: 1 }, children: title }),
       children
     ] });
@@ -36,13 +35,13 @@ import { FileSystem, ScrollView, Text, View } from '@ps5-react/core';
       /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, color: "#f2f2f3", lineHeight: 30 }, children: value })
     ] });
   }
-  function Activity({ onFocus }) {
+  function Activity() {
     const t2 = useT();
     const { active: active2, speed, left, connections, peak, low, mean, extracting, extractedFiles } = useActivity();
     const limit = useSpeedLimit();
-    return /* @__PURE__ */ (0, jsx)(Block, { title: t2("downloads.panel.activity"), children: /* @__PURE__ */ (0, jsxs)(View, { focusable: true, focusKey: PANEL_KEY, onFocus, style: (_state) => [{ gap: 18, borderRadius: 12, padding: 12 }, _state.focused ? { backgroundColor: "#212125" } : null], children: [
-      /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 45, fontWeight: 600, color: "#f2f2f3", lineHeight: 54, letterSpacing: -1.13 }, children: active2 ? formatSpeed(speed) : t2("downloads.panel.idle") }),
-      /* @__PURE__ */ (0, jsxs)(View, { style: { gap: 9 }, children: [
+    return /* @__PURE__ */ (0, jsx)(Block, { title: t2("downloads.panel.activity"), children: /* @__PURE__ */ (0, jsxs)(View, { style: { gap: 6, borderRadius: 12, padding: 6 }, children: [
+      /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 38, fontWeight: 600, color: "#f2f2f3", lineHeight: 44, letterSpacing: -1.13 }, children: active2 ? formatSpeed(speed) : t2("downloads.panel.idle") }),
+      /* @__PURE__ */ (0, jsxs)(View, { style: { gap: 3 }, children: [
         /* @__PURE__ */ (0, jsx)(
           Figure,
           {
@@ -62,14 +61,14 @@ import { FileSystem, ScrollView, Text, View } from '@ps5-react/core';
       /* @__PURE__ */ (0, jsx)(Text, { style: [{ fontFamily: "Inter-Regular", fontSize: 21, color: "#8a8a94", lineHeight: 30 }, INNER], children: awake() ? t2("downloads.panel.awake") : " " })
     ] }) });
   }
-  function Drive({ root: root2, focusKey, onFocus }) {
+  function Drive({ root: root2 }) {
     const t2 = useT();
     let usage = null;
     try {
       usage = FileSystem.diskUsage(root2);
     } catch {
     }
-    return /* @__PURE__ */ (0, jsxs)(View, { focusable: true, focusKey, onFocus, style: (_state2) => [{ gap: 12, borderRadius: 12, padding: 12 }, _state2.focused ? { backgroundColor: "#212125" } : null], children: [
+    return /* @__PURE__ */ (0, jsxs)(View, { style: { gap: 4, borderRadius: 12, padding: 6 }, children: [
       /* @__PURE__ */ (0, jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
         /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, color: "#f2f2f3", lineHeight: 30 }, children: driveName(root2) }),
         /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, color: "#a3a3ab", lineHeight: 30 }, children: usage ? t2("download.free", { size: formatBytes(usage.free) }) : t2("downloads.panel.unavailable") })
@@ -78,24 +77,23 @@ import { FileSystem, ScrollView, Text, View } from '@ps5-react/core';
       usage ? /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, color: "#8a8a94", lineHeight: 30 }, children: t2("downloads.panel.used", { used: formatBytes(usage.total - usage.free), total: formatBytes(usage.total) }) }) : null
     ] });
   }
-  function SummaryPanel({ error: error2, onFocus }) {
+  function SummaryPanel({ error: error2 }) {
     const t2 = useT();
-    return /* @__PURE__ */ (0, jsx)(ScrollView, { style: { width: 420 }, children: /* @__PURE__ */ (0, jsxs)(View, { style: { gap: 30, paddingBottom: 36 }, children: [
-      error2 ? null : /* @__PURE__ */ (0, jsx)(Activity, { onFocus }),
+    // The entire summary is visible; it must not become a focusable scroll region.
+    return /* @__PURE__ */ (0, jsx)(View, { style: { width: 420 }, children: /* @__PURE__ */ (0, jsxs)(View, { style: { gap: 8, paddingBottom: 6 }, children: [
+      error2 ? null : /* @__PURE__ */ (0, jsx)(Activity, {}),
       /* @__PURE__ */ (0, jsx)(Block, { title: t2("downloads.panel.storage"), children: storageRoots().map((root2, index) => /* @__PURE__ */ (0, jsx)(
         Drive,
         {
-          root: root2,
-          onFocus,
-          focusKey: error2 && !index ? PANEL_KEY : void 0
+          root: root2
         },
         root2
       )) }),
-      /* @__PURE__ */ (0, jsxs)(View, { focusable: true, onFocus, style: (_state3) => [{ gap: 12, borderRadius: 12, padding: 12 }, _state3.focused ? { backgroundColor: "#212125" } : null], children: [
+      /* @__PURE__ */ (0, jsxs)(View, { style: { gap: 4, borderRadius: 12, padding: 6 }, children: [
         /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 20, fontWeight: 600, color: "#8a8a94", letterSpacing: 1 }, children: t2("downloads.panel.installing") }),
         /* @__PURE__ */ (0, jsx)(Text, { style: [{ fontFamily: "Inter-Regular", fontSize: 21, color: "#8a8a94", lineHeight: 30 }, INNER], children: t2("downloads.panel.installNote") })
       ] })
     ] }) });
   }
 
-export { PANEL_KEY, SummaryPanel };
+export { SummaryPanel };

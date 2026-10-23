@@ -17,10 +17,14 @@ import { loadList, saveList } from './saved.js';
     // The library opens on the newest games (2026-10-17); "Most popular" stays a choice.
     const [sort, setSort] = (0, useState)("newest");
     const [query, setQuery] = (0, useState)("");
+    const [browsePanel, setBrowsePanel] = (0, useState)(null);
+    const [favoriteKind, setFavoriteKind] = (0, useState)("all");
     const [actions] = (0, useState)(() => ({
       setFilters,
       setSort,
       setQuery,
+      setBrowsePanel,
+      setFavoriteKind,
       toggleWish: (id) => setWishlist((list) => {
         const next = toggleValue(list, listedId(id));
         saveList("wishlist.json", "wishlist", next);
@@ -28,11 +32,16 @@ import { loadList, saveList } from './saved.js';
       }),
       toggleFilter: (key, value) => setFilters((current) => ({ ...current, [key]: toggleValue(current[key], value) })),
       clearFilters: () => {
-        setFilters(NO_FILTERS);
+        setFilters((current) => ({ ...NO_FILTERS, wishlist: current.wishlist }));
+        setQuery("");
+      },
+      resetBrowse: () => {
+        setFilters((current) => ({ ...NO_FILTERS, wishlist: current.wishlist }));
+        setSort("newest");
         setQuery("");
       }
     }));
-    const state = (0, useMemo)(() => ({ filters, sort }), [filters, sort]);
+    const state = (0, useMemo)(() => ({ filters, sort, browsePanel, favoriteKind }), [filters, sort, browsePanel, favoriteKind]);
     return /* @__PURE__ */ (0, jsx)(ActionsContext.Provider, { value: actions, children: /* @__PURE__ */ (0, jsx)(StateContext.Provider, { value: state, children: /* @__PURE__ */ (0, jsx)(WishlistContext.Provider, { value: wishlist, children: /* @__PURE__ */ (0, jsx)(QueryActiveContext.Provider, { value: query !== "", children: /* @__PURE__ */ (0, jsx)(QueryContext.Provider, { value: query, children }) }) }) }) });
   }
   function StoreFreeze({ frozen, children }) {
