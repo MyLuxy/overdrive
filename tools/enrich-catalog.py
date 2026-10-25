@@ -16,9 +16,14 @@ Sources, in order:
   1. PlayStation Store, by title ID: Sony's unofficial "chihiro" API, which can change or vanish. The
      storefront of the title's own region is asked first (its content ID's prefix, from
      andshrew/PlayStation-Titles, MIT), then the others; then the same game's other title IDs
-     (same concept ID). Its images are asked from image.api.playstation.com resized to 1920 wide, as
-     JPEG: the console decodes JPEG and PNG up to 5 megapixels only, and the originals can be 4K.
-     A description from a storefront not in English is left out; its images and genre are kept.
+     (same concept ID). A title ID the store does not answer for is searched by name, which finds a
+     renamed, delisted or cross-gen product: the game's own product (or its cross-gen sibling) wins,
+     and an enhanced edition is taken only when the store has no product with the game's title ID.
+     Its images are asked from image.api.playstation.com resized to 1920 wide, as JPEG: the console
+     decodes JPEG and PNG up to 5 megapixels only, and the originals can be 4K. Older PS4 titles
+     whose images live on apollo2.dl.playstation.net are used as they are (1920x1080 heroes and
+     1280x720 screenshots). A description from a storefront not in English is left out; its images
+     and genre are kept.
   2. IGDB, by name on PS4/PS5, only for what the store did not give, and only when the name matches
      and the release year agrees. It needs a Twitch app: IGDB_CLIENT_ID and IGDB_CLIENT_SECRET from
      the environment or from --env-file (never written anywhere). Without them, IGDB is skipped.
@@ -52,7 +57,10 @@ except ImportError:
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DATA = ROOT / "app" / "data"
 CHIHIRO = "https://store.playstation.com/store/api/chihiro/00_09_000/titlecontainer/{store}/{lang}/999/{title}_00"
-ANDSHREW = "https://raw.githubusercontent.com/andshrew/PlayStation-Titles/main/{platform}_Titles.tsv"
+# A storefront search for a game the title ID lookup did not give (a renamed, delisted or cross-gen
+# product); ?game_content_type=games keeps add-ons out of the answer.
+SEARCH = "https://store.playstation.com/store/api/chihiro/00_09_000/search/{store}/{lang}/24/{query}{filter}"
+SEARCH_GAMES = "?game_content_type=games"
 # Storefronts by a content ID's region prefix, the title's own first; then the rest.
 REGION_STORES = {"UP": [("US", "en")], "EP": [("GB", "en"), ("DE", "de")], "JP": [("JP", "ja")], "HP": [("HK", "en")],
                  "KP": [("KR", "ko")], "IP": [("US", "en")]}
@@ -66,6 +74,15 @@ STORE_GENRES = {"ACTION": "Action", "ADVENTURE": "Adventure", "ROLE_PLAYING_GAME
                 "FIGHTING": "Fighting", "FAMILY": "Family", "CASUAL": "Casual", "ARCADE": "Arcade", "MUSIC_RHYTHM": "Music/Rhythm",
                 "MUSIC": "Music/Rhythm", "PARTY": "Party", "BRAIN_TRAINING": "Educational", "EDUCATIONAL": "Educational",
                 "QUIZ": "Educational", "FIRST_PERSON_SHOOTER": "Shooter", "THIRD_PERSON_SHOOTER": "Shooter", "SURVIVAL_HORROR": "Horror"}
+# The store's "genre" field is already display text; accept only the names the catalog uses, plus the
+# few spellings the store has for them.
+STORE_GENRES.update({name: name for name in set(STORE_GENRES.values())})
+STORE_GENRES.update({"Role Playing": "Role Playing Games", "Racing": "Driving/Racing", "Sports": "Sport"})
+# Words that can follow a title in a store name without it being another game in the series.
+TITLE_CONNECTORS = {"and", "the", "of", "a", "for"}
+TITLE_EDITIONS = {"enhanced", "director", "s", "cut", "collection", "trilogy", "hd", "bundle", "remaster"}
+STORE_SKIP_CATEGORIES = {"add_on", "demo", "theme", "avatar", "application", "virtual_currency", "season_pass"}
+ROMAN = re.compile(r"(?i)(?:i{1,3}|iv|v|vi{0,3}|ix|x)")
 IGDB_GENRES = {"Role-playing (RPG)": "Role Playing Games", "Shooter": "Shooter", "Adventure": "Adventure", "Indie": "Indie",
                "Puzzle": "Puzzle", "Racing": "Driving/Racing", "Sport": "Sport", "Strategy": "Strategy",
                "Real Time Strategy (RTS)": "Strategy", "Turn-based strategy (TBS)": "Strategy", "Tactical": "Strategy",
@@ -179,7 +196,7 @@ def chihiro(cache, title, region):
             # Only what the catalog takes, so the cache stays small.
             keep = {"name": data.get("name"), "images": data.get("images"), "long_desc": data.get("long_desc"),
                     "release_date": data.get("release_date"), "provider_name": data.get("provider_name"),
-                    "metadata": {k: (data.get("metadata") or {}).get(k) for k in ("game_genre", "game_subgenre")},
+                    "metadata": {k: (data.get("metadata") or {}).get(k) for k in ("genre", "game_genre", "game_subgenre")},
                     "mediaList": {"screenshots": [{"url": s.get("url")} for s in (data.get("mediaList") or {}).get("screenshots") or []]},
                     "star_rating": data.get("star_rating")}
             found = {"store": store, "lang": lang, "data": keep}
@@ -189,9 +206,15 @@ def chihiro(cache, title, region):
 
 
 def resized(url, width):
-    """image.api.playstation.com's resized JPEG for a store image (vulcan.dl.playstation.net/...)."""
+    """A store image the console can load: image.api.playstation.com's resized JPEG, or the older CDN's own."""
     match = re.match(r"https?://(?:vulcan\.dl\.playstation\.net|image\.api\.playstation\.com/vulcan)/(ap/rnd/[^?#]+)", url or "")
-    return f"https://image.api.playstation.com/vulcan/{match.group(1)}?w={width}&thumb=false" if match else None
+    if match:
+        return f"https://image.api.playstation.com/vulcan/{match.group(1)}?w={width}&thumb=false"
+    # Older PS4 titles have their images only on apollo2.dl.playstation.net: 1920x1080 heroes and
+    # 1280x720 screenshots, within what the console decodes, and the CDN ignores ?w=.
+    if re.match(r"https?://[\w.-]+\.dl\.playstation\.net/cdn/", url or ""):
+        return url
+    return None
 
 
 def tint_of(cache, cover):
@@ -242,7 +265,7 @@ def from_store(found):
     data, lang = found["data"], found["lang"]
     images = {image.get("type"): image.get("url") for image in data.get("images") or []}
     genres = []
-    for key in ("game_genre", "game_subgenre"):
+    for key in ("genre", "game_genre", "game_subgenre"):
         for value in ((data.get("metadata") or {}).get(key) or {}).get("values") or []:
             name = STORE_GENRES.get(value)
             if name and name not in genres:
@@ -315,6 +338,129 @@ def fold(text):
     text = re.sub(r"[™®©]", "", (text or "").lower()).replace("&", " and ")
     text = re.sub(r"\b(deluxe|ultimate|definitive|complete|gold|standard|digital|game of the year|goty|remastered|edition|ps4|ps5)\b", " ", text)
     return re.sub(r"[^a-z0-9]+", " ", text).strip()
+
+
+def title_id_of(product):
+    match = re.search(r"(?:CUSA|PPSA)\d+", product or "")
+    return match.group(0) if match else ""
+
+
+def platform_rank(platforms, platform):
+    """How well a product's platforms fit the catalog's: 2 the same, 1 the other one, -1 a PS3-only one."""
+    if isinstance(platforms, str):
+        platforms = [platforms]
+    text = " ".join(platforms or []).lower()
+    if not text:
+        return 0
+    if platform == "ps4":
+        return 2 if "ps4" in text else 1 if "ps5" in text else -1
+    if platform == "ps5":
+        return 2 if "ps5" in text else 1 if "ps4" in text else -1
+    return 0
+
+
+def year_rank(date, year):
+    """1 when the product's year is the catalog's (or close), 0 when one is unknown, -1 otherwise."""
+    if not date or not year:
+        return 0
+    try:
+        return 1 if abs(int(str(date)[:4]) - int(year)) <= 1 else -1
+    except (TypeError, ValueError):
+        return 0
+
+
+def name_rank(store_name, title):
+    """3 the same name, 2 an edition connector ("PS4 & PS5"), 1 an edition, 0 another game."""
+    left, right = fold(store_name), fold(title)
+    if not left or not right:
+        return 0
+    if left == right or left.replace(" ", "") == right.replace(" ", ""):
+        return 3
+    if not left.startswith(right + " "):
+        return 0
+    rest = left[len(right):].split()
+    # A number or a roman numeral after the title is the next game in the series ("… 2", "… II").
+    if any(re.fullmatch(r"\d+", word) or (ROMAN.fullmatch(word) and word not in right.split()) for word in rest):
+        return 0
+    if all(word in TITLE_CONNECTORS for word in rest):
+        return 2
+    return 1 if all(word in TITLE_CONNECTORS | TITLE_EDITIONS for word in rest) else 0
+
+
+def store_candidates(links, game, ids):
+    """The search hits that are this game (its title ID or, failing that, its name), best first."""
+    found = []
+    for link in links or []:
+        if not link.get("url") or link.get("parent_name"):
+            continue
+        if (link.get("top_category") or "").lower() in STORE_SKIP_CATEGORIES:
+            continue
+        places = platform_rank(link.get("playable_platform"), game.get("platform"))
+        if places < 0:
+            continue
+        product = title_id_of(link.get("id"))
+        exact = product == game["id"]
+        same = bool(product and product in ids)
+        score = name_rank(link.get("name"), game.get("title"))
+        # The title ID alone is not enough for a sibling: a double pack of the same concept has a
+        # different name, date and publisher. The game's own title ID always is.
+        if exact or score:
+            found.append((exact, same, score, places, year_rank(link.get("release_date"), game.get("year")), link))
+    return found
+
+
+def search_store(cache, game, ids, names, region, need):
+    """A product for a game the title ID lookup did not give, found by name on the storefronts."""
+    cached = cache.get("search", game["id"])
+    if cached is not None:
+        return cached or None
+    stores = REGION_STORES.get(region, []) + [("US", "en"), ("GB", "en")] + STORES
+    stores = list(dict.fromkeys(stores))
+    queries = list(dict.fromkeys(re.sub(r"[™®©]", "", name).strip() for name in [game.get("title"), *(names or [])] if name))
+    merged, source = {}, ""
+    for store, lang in stores:
+        candidates = []
+        for only_games in (True, False):
+            for query in queries:
+                body = fetch(SEARCH.format(store=store, lang=lang, query=urllib.parse.quote(query),
+                                           filter=SEARCH_GAMES if only_games else ""))
+                try:
+                    data = json.loads(body) if body else {}
+                except ValueError:
+                    data = {}
+                candidates += store_candidates(data.get("links"), game, ids)
+        if not candidates:
+            continue
+        # The game's own product (or its cross-gen sibling) first; another edition only when the store
+        # has no product with the game's title ID. A same-name product from another concept is a remake.
+        chosen = [candidate for candidate in candidates if candidate[1]] or [candidate for candidate in candidates if candidate[2] >= 1]
+        for _exact, _same, _score, _places, _years, link in sorted(chosen, key=lambda candidate: candidate[:5], reverse=True)[:3]:
+            body = fetch(link["url"])
+            try:
+                data = json.loads(body) if body else {}
+            except ValueError:
+                data = {}
+            if not data.get("name"):
+                continue
+            found = {"store": store, "lang": lang, "data": {
+                "name": data.get("name"), "images": data.get("images"), "long_desc": data.get("long_desc"),
+                "release_date": data.get("release_date"), "provider_name": data.get("provider_name"),
+                "metadata": {k: (data.get("metadata") or {}).get(k) for k in ("genre", "game_genre", "game_subgenre")},
+                "mediaList": {"screenshots": [{"url": shot.get("url")} for shot in (data.get("mediaList") or {}).get("screenshots") or []]},
+                "star_rating": data.get("star_rating")}}
+            result = from_store(found)
+            source = source or result["source"]
+            for key, value in result.items():
+                if key != "source" and value and not merged.get(key):
+                    merged[key] = value
+            if all(merged.get(key) for key in need - {"developer", "tint"}):
+                break
+        if merged and all(merged.get(key) for key in need - {"developer", "tint"}):
+            break
+    if merged:
+        merged["source"] = source
+    cache.put("search", game["id"], merged)
+    return merged or None
 
 
 def from_igdb(igdb, game, store_name=None):
@@ -491,6 +637,12 @@ def main(argv=None):
                     if found:
                         break
         results = [from_store(found)] if found else []
+        missing = {key for key in need if key not in {"developer", "tint"} and not any(result.get(key) for result in results)}
+        if missing:
+            ids = {title, *by_concept.get(concept.get(title), [])}
+            searched = search_store(cache, game, ids, [names.get(title)], region.get(title), missing)
+            if searched:
+                results.append(searched)
         if igdb and any(not any(r.get(k) for r in results) for k in need):
             hit = from_igdb(igdb, game, names.get(title))
             if hit:

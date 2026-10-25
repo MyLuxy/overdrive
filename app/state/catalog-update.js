@@ -34,7 +34,7 @@ import { FileSystem, Http } from '@ps5-react/core';
       isNumber(line.recommendations) && isRecord(line.art) && optional(line.art.cover, isArt) && optional(line.art.hero, isArt) &&
       optional(line.art.tint, (tint) => /^#[0-9a-f]{6}$/i.test(tint)) && optional(line.year, isNumber) &&
       optional(line.sizeGb, (size) => size === null || isNumber(size)) && optional(line.work, Number.isSafeInteger) &&
-      optional(line.vr, isTextList) && optional(line.added, (added) => isText(added, 10)) && optional(line.direct, (direct) => typeof direct === "boolean");
+      optional(line.vr, isTextList) && optional(line.added, (added) => isText(added, 10)) && optional(line.updated, (updated) => isText(updated, 10)) && optional(line.direct, (direct) => typeof direct === "boolean");
   }
   var validRelease = (record) => isRecord(record) && isText(record.id, 200) && isText(record.filename, 220) && isText(record.format, 20);
   var validPage = (page) => isRecord(page) && Array.isArray(page.about) && Array.isArray(page.shots);
