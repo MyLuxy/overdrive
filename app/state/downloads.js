@@ -2,6 +2,7 @@
 // reconstructed from the esbuild bundle in eboot.bin
 
 import { getGame } from './catalog.js';
+import { archiveAccount } from './archive-account.js';
 import { driveName, driveShortName } from './drive-names.js';
 import { createDownloadQueue } from './download-queue.js';
 import { createSourceResolver } from './download-sources.js';
@@ -28,7 +29,8 @@ import { Archives, BrowserCapture, DownloadFormats, Downloads, FileSystem, Http,
     sources: createSourceResolver({ http: Http }),
     packages: Packages,
     browserCapture: BrowserCapture,
-    releasesOf: (id) => getGame(id)?.releases || []
+    releasesOf: (id) => getGame(id)?.releases || [],
+    archiveAuth: archiveAccount
   }));
   var shadowMountUp = Platform.OS === "ps5" ? createShadowMountProbe({ http: Http, now: Date.now }) : async () => true;
   function freeBytes(root2) {

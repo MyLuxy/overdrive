@@ -6,7 +6,7 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const react = pathToFileURL(resolvePath(here, '../../ps5-react/node_modules/react/index.js')).href;
-const core = 'data:text/javascript,export const FileSystem = {dataDir:"/data",exists:()=>false,readFile:()=>""};export const Http = {};export const Image = {warm:()=>{}};';
+const core = 'data:text/javascript,export const FileSystem = {dataDir:"/data",exists:()=>false,readFile:()=>""};export const Http = {};export const Image = {warm:()=>{}};export const DeviceInfo = {get:()=>({})};';
 
 export async function resolve(specifier, context, nextResolve) {
   if (specifier === '@ps5-react/core') return {url: core, shortCircuit: true};

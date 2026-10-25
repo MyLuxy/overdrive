@@ -2,6 +2,7 @@
 // reconstructed from the esbuild bundle in eboot.bin
 
 import { t } from '../i18n/core.js';
+import { archiveAccount } from '../state/archive-account.js';
 import { sourceKind } from '../state/download-sources.js';
 import { isPs5Package } from '../state/firmware.js';
 import { isDlc, isPatchOnly } from '../state/release-sets.js';
@@ -55,6 +56,10 @@ import { formatBytes } from '../state/size.js';
   }
   var SPEED = { "archive.org": "sources.speed.archive", mediafire: "sources.speed.mediafire", "overdrive cdn": "sources.cdnFastest" };
   var isOverdriveCdn = (provider) => /^overdrive\s*cdn$/i.test(provider ?? "");
+  // An Archive.org source once refused with HTTP 401 is not dead: the collection opens with the
+  // account's sign-in (state/archive-account.js). With its credentials set the stored reason is
+  // stale, so the source is listed and can be downloaded as any other.
+  var blocked = (release) => Boolean(release.unavailableReason) && !(archiveAccount.enabled() && archiveAccount.isArchive(release.browserUrl || release.url || ""));
   function describeSource(release) {
     const parts = release.parts?.length;
     const detail2 = [
@@ -65,13 +70,14 @@ import { formatBytes } from '../state/size.js';
     ].filter(Boolean).join(" \xB7 ");
     const reach = access(release);
     const speed = SPEED[release.provider.toLowerCase()];
+    const refused = blocked(release);
     return {
       name: release.provider.replace(/^www\./, ""),
       detail: speed ? [detail2, t(speed)].filter(Boolean).join(" \xB7 ") : detail2,
       size: release.sizeBytes ? formatBytes(release.sizeBytes) : null,
-      group: release.unavailableReason ? "unavailable" : reach,
-      reason: release.unavailableReason ?? null,
-      status: release.unavailableReason ? null : compatibility(release)
+      group: refused ? "unavailable" : reach,
+      reason: refused ? release.unavailableReason : null,
+      status: refused ? null : compatibility(release)
     };
   }
   var GROUP_RANK = { direct: 0, page: 1, browser: 2, unavailable: 3 };
@@ -85,7 +91,7 @@ import { formatBytes } from '../state/size.js';
   var hostRank = ({ provider }) => isOverdriveCdn(provider) ? 0 : provider.toLowerCase() === "archive.org" ? 1 : CONFIRMED.test(provider) ? 2 : provider.toLowerCase() === "mediafire" ? 3 : 4;
   var ranked = (release, index) => ({ release, index, rank: [
     isDlc(release) ? 1 : 0,
-    release.unavailableReason ? 1 : 0,
+    blocked(release) ? 1 : 0,
     isPatchOnly(release) ? 1 : 0,
     isPs5Package(release) ? 1 : 0,
     // A backport is the game fixed for older firmware, or only the files to copy over it (a 40 MB

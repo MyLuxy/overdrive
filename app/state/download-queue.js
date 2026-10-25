@@ -4,6 +4,8 @@
 // MODIFIED: an archive the catalog's password doesn't open is tried with the known release passwords.
 // MODIFIED: any provider that needs the console browser (LinkVault's mirrors, Akirabox, Datanodes)
 // has its file link captured from the browser, like Vikingfile's.
+// MODIFIED: an Archive.org download carries the signed-in account's cookies, and signs in again once
+// when the session is refused (archive-account.js).
 
 import { INCOMPLETE_PART, STALE_PARTIAL, cause } from '../downloads/errors.js';
 import { t } from '../i18n/core.js';
@@ -101,6 +103,8 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
       delete job2.captureError;
       delete job2.captureFile;
       delete job2.fallbacks;
+      // A new launch may sign in again once, whatever the last one left behind (archive-account.js).
+      delete job2.reauthTried;
       // Closed while the console was being handed its link: resumed, it downloads here.
       if (job2.state === "installing" && !job2.streaming) return { ...job2, state: "installer-required" };
       delete job2.streaming;
@@ -136,6 +140,7 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
     packages,
     releasesOf,
     browserCapture,
+    archiveAuth,
     stallMs = STALL_MS,
     wait = (ms) => new Promise((resolve2) => setTimeout(resolve2, ms))
   }) {
@@ -530,7 +535,9 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
     async function streamed(job2, signal) {
       const options = job2.options;
       const format = String(job2.release.format || "binary").toLowerCase();
-      if (!canInstall() || job2.streamTried || job2.written || job2.output || !STREAMABLE.includes(format) || !options?.url || options.pieces || Object.keys(options.headers || {}).length) return false;
+      // An authenticated Archive.org download stays here: the console's own downloader cannot send
+      // the account's cookies (archive-account.js), so the file would only be refused.
+      if (!canInstall() || job2.streamTried || job2.written || job2.output || !STREAMABLE.includes(format) || !options?.url || options.pieces || options.archive || Object.keys(options.headers || {}).length) return false;
       // A part file means this job already began downloading here: the console would start from zero.
       if (fs.exists(`${job2.downloadDestination}.part`)) {
         console.log(`[download-queue] ${job2.id}: not streamed, it already has a part file here`);
@@ -637,6 +644,12 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
           job2.total = job2.options.expectedBytes || null;
           change();
         }
+        // Archive.org's restricted items need the account's cookies (archive-account.js). The flag
+        // stays on the job; the cookies themselves go on the transfer alone, never into the queue.
+        if (job2.options) {
+          if (archiveAuth?.enabled?.() && archiveAuth.isArchive(job2.release.browserUrl || job2.release.url || "")) job2.options.archive = true;
+          else delete job2.options.archive;
+        }
         if (job2.state === "pausing") return;
         if (await streamed(job2, signal) || job2.state === "pausing") return;
         const root2 = storageIdentity(job2);
@@ -656,7 +669,27 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
           job2.options.rangeBytes = job2.checkpointRangeBytes = rangeBytes;
           change();
         }
-        task = downloads.enqueue({ ...job2.options, rejectHtml: true, mirrors: void 0, connections: 64, adaptive: true, rangeBytes: job2.options.rangeBytes, destination: job2.downloadDestination, storageRoot: job2.root, recoverCompleted: true });
+        // The account's cookies and the node the archival link redirects to are added to this
+        // transfer alone (archive-account.js): a custom header turns redirects off, so the node is
+        // resolved here, and the job keeps the archival URL for the next launch.
+        let transfer = job2.options;
+        if (job2.options.archive) {
+          const source = job2.options.url || job2.release.url;
+          const headers = { ...job2.options.headers, ...await archiveAuth.headersFor(source) };
+          const url = await archiveAuth.resolve(source, headers, signal);
+          transfer = { ...job2.options, url, headers };
+          if (url !== source) {
+            let host = "its node";
+            try {
+              host = webURL(url).host;
+            } catch {}
+            console.log(`[download-queue] ${job2.id}: Archive.org serves it from ${host}`);
+          }
+        }
+        // Archive.org's nodes shed parallel ranges when many arrive together (an HTTP 503 reads as
+        // "Server is busy"): four connections there, the sixty-four the other hosts take.
+        const connections = job2.options.archive ? 4 : 64;
+        task = downloads.enqueue({ ...transfer, rejectHtml: true, mirrors: void 0, connections, adaptive: true, rangeBytes: job2.options.rangeBytes, destination: job2.downloadDestination, storageRoot: job2.root, recoverCompleted: true });
         active2.task = task;
         const stalled = stallWatch(job2, task);
         unsubscribe = task.subscribe((progress) => {
@@ -669,7 +702,11 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
           job2.received = progress.received || 0;
           job2.connections = progress.connections || 0;
           job2.bytesPerSecond = progress.bytesPerSecond || 0;
-          if (job2.written > 0) delete job2.adopted;
+          if (job2.written > 0) {
+            delete job2.adopted;
+            // Receiving again: a later refusal may sign in again (archive-account.js).
+            delete job2.reauthTried;
+          }
           if (++ticks % 20 === 0) {
             delete job2.launches;
             try {
@@ -701,9 +738,25 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
           return;
         }
         // The engine words every 401/403 as a possible browser check; from Archive.org it is a
-        // restricted or removed item, so it reads as a dead link.
+        // restricted or removed item, so it reads as a dead link — unless the account's session
+        // expired: that signs in again once, then retries from the archival URL (the node may have
+        // changed). The cookies are not the file's problem, so a second refusal stays a dead link.
         const refused = archiveRefusal(job2.parts ? job2.currentSource : job2.release, cause(error2.message));
-        if (refused) error2 = new Error(`Source unavailable: HTTP ${refused}. Choose another source.`);
+        if (refused && job2.options?.archive && archiveAuth && !job2.reauthTried) {
+          job2.reauthTried = true;
+          try {
+            await archiveAuth.refresh();
+            delete job2.options;
+            job2.error = "";
+            job2.state = "queued";
+            active2.restarting = true;
+            console.log(`[download-queue] ${job2.id}: Archive.org refused the session (HTTP ${refused}); signed in again, retrying`);
+            return;
+          } catch (failure) {
+            console.log(`[download-queue] ${job2.id}: Archive.org sign-in failed: ${failure.message}`);
+            error2 = new Error(`Archive.org sign-in failed: ${failure.message}`);
+          }
+        } else if (refused) error2 = new Error(`Source unavailable: HTTP ${refused}. Choose another source.`);
         // A link captured from the browser may wait in the queue past its life: refused before a byte
         // was written, it asks for the page's check again instead of reading as a dead source.
         const unwritten = !(job2.parts ? job2.parts[job2.partIndex]?.written : job2.written);
@@ -1847,7 +1900,9 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
         const id = `${game.id}/${release.id}`;
         const existing = jobs.find((job2) => job2.id === id);
         if (existing) return existing.id;
-        if (release.unavailableReason) throw new Error(release.unavailableReason);
+        // Archive.org's stored refusal is the session's, not the file's: with an account set the
+        // download signs in and tries it (archive-account.js).
+        if (release.unavailableReason && !(archiveAuth?.enabled?.() && archiveAuth.isArchive(release.browserUrl || release.url || ""))) throw new Error(release.unavailableReason);
         const artifact2 = artifactFor(release, root2);
         if (fs.exists(artifact2.destination)) throw new Error("Destination already exists. Choose another release or inspect the existing file.");
         if (jobs.some((job2) => job2.artifact.destination === artifact2.destination)) throw new Error("Another queued release owns this filename.");
