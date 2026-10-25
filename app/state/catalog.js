@@ -192,7 +192,10 @@ import { FileSystem, Image } from '@ps5-react/core';
       key: "platform",
       any: true,
       options: [{ value: "ps5", name: "PS5" }, { value: "ps4", name: "PS4" }],
-      has: (game, value) => game.platform === value
+      // Every edition counts: a game listed as PS5 whose twin is PS4 is a game available on PS4
+      // too (2026-10-25), so the filter finds it under either. `platforms` is [platform] for a game
+      // with no other edition, and the homebrew apps carry it as well.
+      has: (game, value) => (game.platforms ?? [game.platform]).includes(value)
     },
     // A source the app downloads by itself, with no CAPTCHA page to pass in a browser.
     { key: "access", options: [{ value: "direct", label: "filters.access.direct" }], has: (game) => Boolean(game.direct) },

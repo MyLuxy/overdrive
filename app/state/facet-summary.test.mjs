@@ -39,6 +39,20 @@ test('the complete catalog and every option retain exactly the old counts', () =
   assert.equal(facetSummary(state()).total, allGames.length);
 });
 
+test('the platform filter finds a game by every edition it has', () => {
+  const platform = FACETS.find(facet => facet.key === 'platform');
+  // A PS5 listing whose other edition is a PS4 one is a game available on PS4 too (2026-10-25).
+  assert.equal(platform.has({platform: 'ps5', platforms: ['ps4', 'ps5']}, 'ps4'), true);
+  assert.equal(platform.has({platform: 'ps5', platforms: ['ps4', 'ps5']}, 'ps5'), true);
+  // A game with no other edition answers for its own platform only.
+  assert.equal(platform.has({platform: 'ps5'}, 'ps4'), false);
+  const both = allGames.find(game => game.platform === 'ps5' && game.platforms.includes('ps4'));
+  if (both) {
+    assert.equal(platform.has(both, 'ps4'), true);
+    assert.equal(filterGames(state({platform: ['ps4']})).includes(both), true);
+  }
+});
+
 test('OR selections ignore their own facet when counting possible options', () => {
   for (const key of ['platform', 'release', 'size', 'provider']) {
     const values = options(key);
