@@ -12,7 +12,8 @@ import { Icon } from '../ui/Icon.jsx';
 import { colors } from '../ui/colors.js';
 import { Text, View } from '@ps5-react/core';
 
-  var DISABLED = ["unavailable", "no-space", "removing"];
+  // "streamed": the PS5's own Downloads have it, and nothing is left to press here.
+  var DISABLED = ["unavailable", "no-space", "removing", "streamed"];
   var CONTENT = {
     idle: { icon: "download", text: "download.button.idle" },
     unavailable: { icon: "download", text: "download.button.unavailable" },
@@ -37,6 +38,8 @@ import { Text, View } from '@ps5-react/core';
     "installer-required": { icon: "download", text: "download.button.installer-required" },
     installing: { icon: "download", text: "download.button.installing" },
     installed: { icon: "circleCheck", text: "download.button.installed" },
+    // Handed to the PS5's own Downloads: not installed yet, and followed there, not here.
+    streamed: { icon: "controller", text: "download.button.streamed" },
     "extraction-required": { icon: "circleCheck", text: "download.button.extraction-required" },
     removing: { icon: "delete", text: "download.button.removing" }
   };
@@ -45,6 +48,7 @@ import { Text, View } from '@ps5-react/core';
     if (status === "unavailable") return [t("download.status.unavailable"), null];
     if (status === "awaiting-browser") return [t("download.status.awaitingLink"), null];
     if (status === "finishing") return [stateLabel(status), t("downloads.writingToDisk")];
+    if (status === "streamed") return [stateLabel(status), null];
     if (status === "no-space") return [t("download.status.noSpace"), sizeGb && t("download.status.needs", { size: formatSize(sizeGb) })];
     if (COMPLETE.includes(status)) return [stateLabel(status), sizeGb && formatSize(sizeGb)];
     const of = sizeGb && t("download.status.progress", { done: formatSize(sizeGb * progress), total: formatSize(sizeGb) });

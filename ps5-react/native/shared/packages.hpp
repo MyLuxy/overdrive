@@ -16,4 +16,9 @@ std::uint32_t install(std::string path, std::string name, std::string content_id
 void cancel(std::uint32_t id);
 std::vector<Snapshot> poll();
 void stop();
+// The package server's helper payload (native/ps5/payloads/pkg_helper.cpp), started off the render
+// thread: its snapshot ends "ready" with the port it listens on, or "failed" with the reason.
+struct HelperSnapshot { std::uint32_t id = 0; std::string state = "starting", error; std::uint32_t port = 0; };
+std::uint32_t start_helper(std::uint32_t port, std::string secret, std::string log, std::string& error);
+std::vector<HelperSnapshot> poll_helper();
 }

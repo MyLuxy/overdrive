@@ -589,8 +589,10 @@ def main():
         path.unlink()
         assert run("/slow-modified", path, cancel=180)["state"] == "cancelled"
         Handler.modified = "Thu, 02 Jan 2025 00:00:00 GMT"
+        # A changed file can never resume its partial: it is discarded and the download starts over
+        # (issues #110 and #111), instead of failing until someone deletes it by hand.
         changed = run("/slow-modified", path)
-        assert changed["state"] == "failed" and "checkpoint" in changed["error"], changed
+        assert changed["state"] == "completed", changed
         # No validator at all: ranges still resume once the server's tail matches the partial's.
         for endpoint in ("/slow-no-validator", "/slow-no-validator-mutable"):
             path = directory / endpoint.removeprefix("/")

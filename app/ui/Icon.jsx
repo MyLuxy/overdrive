@@ -61,6 +61,8 @@ import { px } from './scale.js';
       "m7.5 4.27 9 5.15"
     ],
     disc: [ring(12, 12, 10), ring(12, 12, 2)],
+    // lucide 0.462 gauge, for the speed limit's tile.
+    gauge: ["m12 14 4-4", "M3.34 19a10 10 0 1 1 17.32 0"],
     // lucide 0.462 cpu, lightbulb and file-minus, for the download tips.
     cpu: ["M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z", "M10 9h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1z", "M15 2v2", "M15 20v2", "M2 15h2", "M2 9h2", "M20 15h2", "M20 9h2", "M9 2v2", "M9 20v2"],
     lightbulb: ["M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5", "M9 18h6", "M10 22h4"],

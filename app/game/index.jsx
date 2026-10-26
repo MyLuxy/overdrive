@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { BrowserCaptureDialog } from '../downloads/BrowserCaptureDialog.jsx';
 import { URLDialog } from '../downloads/URLDialog.jsx';
 import { DownloadTipsDialog } from './DownloadTipsDialog.jsx';
+import { StreamChoiceDialog } from './StreamChoiceDialog.jsx';
 import { About } from './About.jsx';
 import { GameFacts } from './GameFacts.jsx';
 import { GameHero } from './GameHero.jsx';
@@ -51,7 +52,7 @@ import { AnimatePresence, FocusScope, ScrollView, Text, View } from '@ps5-react/
     const [toast, setToast] = (0, useState)(null);
     const [viewing, setViewing] = (0, useState)(null);
     const { focusLater } = useNavActions();
-    const Dialog = { source: SourcePicker, options: OptionsSheet, version: VersionSheet, tips: DownloadTipsDialog }[dialog?.kind] ?? URLDialog;
+    const Dialog = { source: SourcePicker, options: OptionsSheet, version: VersionSheet, tips: DownloadTipsDialog, stream: StreamChoiceDialog }[dialog?.kind] ?? URLDialog;
     const related = relatedGames(game);
     const about = game.about.filter((text) => text.trim());
     (0, useEffect)(() => {

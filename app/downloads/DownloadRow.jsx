@@ -49,6 +49,11 @@ import { Text, View } from '@ps5-react/core';
   // primary already opens the game page, has no info button.
   var keyFor = (id, kind) => kind === "info" ? `downloads-info:${id}` : kind === "delete" ? `downloads-cancel:${id}` : primaryKey(id);
   var infoShown = (job2) => Boolean(getGame(job2.gameId)) && !primary(job2).page;
+  // Where Up or Down lands in a neighbouring row, by the button it leaves from: the same button, or the
+  // primary one where that row has no info button. Plain keys, so a row redraws only when they change:
+  // the jobs themselves are new objects on every progress update.
+  var linksOf = (job2) => ({ info: keyFor(job2.id, infoShown(job2) ? "info" : "primary"), primary: primaryKey(job2.id), delete: keyFor(job2.id, "delete") });
+  var sameLinks = (a, b) => a === b || Boolean(a && b) && a.info === b.info && a.primary === b.primary && a.delete === b.delete;
   function DeleteButton({ id, action, run, onFocus, vertical }) {
     const { rtl } = useLocale();
     const [armed, setArmed] = (0, useState)(false);
@@ -106,10 +111,7 @@ import { Text, View } from '@ps5-react/core';
     // Up and Down go from a button to the same button of the row above or below, instead of letting
     // the D-pad pick whatever is nearest: the summary panel sits right of the list and won, so Up from
     // the first row's X landed on the storage block (2026-10-25).
-    const vertical = (kind) => {
-      const link = (job3) => job3 ? keyFor(job3.id, kind === "info" && !infoShown(job3) ? "primary" : kind) : void 0;
-      return { nextFocusUp: link(up), nextFocusDown: link(down) };
-    };
+    const vertical = (kind) => ({ nextFocusUp: up?.[kind], nextFocusDown: down?.[kind] });
     const onFocus = () => onFocusRow(job2);
     const meta = [shownFormat(job2, release).toUpperCase(), `${release.provider} ${release.version || ""}`.trim(), job2.root].join(" \xB7 ");
     const problem = job2.error && explainError(job2.error, Boolean(release.parts));
@@ -177,7 +179,7 @@ import { Text, View } from '@ps5-react/core';
   }
   var DownloadRow = (0, memo)(
     DownloadRowView,
-    (a, b) => shapeOf(a.job) === shapeOf(b.job) && a.autoFocus === b.autoFocus && a.up === b.up && a.down === b.down
+    (a, b) => shapeOf(a.job) === shapeOf(b.job) && a.autoFocus === b.autoFocus && sameLinks(a.up, b.up) && sameLinks(a.down, b.down)
   );
 
-export { DownloadRow, primaryKey };
+export { DownloadRow, linksOf, primaryKey };

@@ -23,10 +23,11 @@ import { px } from './scale.js';
     const end = left == null ? `L${R} ${H}A${R} ${R} 0 0 1 0 ${H - R}Z` : `L${left - SLANT / 2} ${H}Z`;
     return start + top + end;
   }
-  function PlatformBadge({ platforms, style }) {
+  // `scale` draws the same badge larger, as the download choice's mark of the PS5.
+  function PlatformBadge({ platforms, style, scale = 1 }) {
     const order = [...platforms].sort().reverse();
     const width = order.length * W;
-    return /* @__PURE__ */ (0, jsx)(View, { style, children: /* @__PURE__ */ (0, jsx)(Svg, { width: px(width), height: px(H), viewBox: `0 0 ${width} ${H}`, children: order.map((platform, i) => {
+    return /* @__PURE__ */ (0, jsx)(View, { style, children: /* @__PURE__ */ (0, jsx)(Svg, { width: px(width * scale), height: px(H * scale), viewBox: `0 0 ${width} ${H}`, children: order.map((platform, i) => {
       const { fill: fill2, ink: ink2, edge } = STYLE[platform];
       const word = WORDS[platform], scale = TYPE / CAP2;
       const x = i * W + (W - (word.right - word.left) * scale) / 2 - word.left * scale;

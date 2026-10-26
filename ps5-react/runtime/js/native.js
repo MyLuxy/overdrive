@@ -536,11 +536,41 @@ export const Archives = Object.freeze({
  * package's `contentId`; it completes once the title is playable. Cancelling stops reporting only.
  * `url` in place of `path` (ABI v20) hands an http(s) link to the console's own download queue, which
  * fetches and installs it in the background; a PS4 package needs its `contentId`.
+ * `proxy({url, total, file, token, port})` (ABI v21) serves `url` for that queue and returns
+ * `{url, localUrl, token, port}`: `url` on the console's LAN address (empty without one), `localUrl` on
+ * 127.0.0.1. The HEAD the console asks first is answered by the app, from `total`, and each GET range
+ * is fetched from `url`. It is for a link whose origin refuses that HEAD (a pre-signed S3 or R2 link),
+ * and it works only while the app runs; the `token` and `port` of an earlier session serve the same
+ * link again. `proxyStats()` lists what the console fetched of each, `proxyRemove(token)` forgets one.
  */
 export const Packages = Object.freeze({
   install({path, url, name = '', contentId = ''}) {
     const id = host().packages.install(url ?? path, name, contentId);
     return networkTask(id, 'Packages.install', url ?? path, 'packages');
+  },
+  proxy({url, total, file = '', token = '', port = 0}) {
+    return host().packages.proxy(url, total, file, token, port);
+  },
+  proxyStats() {
+    return host().packages.proxyStats();
+  },
+  proxyRemove(token) {
+    host().packages.proxyRemove(token);
+  },
+  /**
+   * Starts the same server as a payload of its own (PS5 only, through the loader on 9021), which keeps
+   * serving after the app closes. Resolves to `{port}`; the app then adds links to it over HTTP at
+   * `http://127.0.0.1:<port>/control/<secret>/` (docs/NATIVE-API.md). `log` is the file it writes.
+   */
+  async startHelper({port = 0, secret, log = ''}) {
+    const id = host().packages.startHelper(port, secret, log);
+    for (;;) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      const done = host().packages.pollHelper().find(item => item.id === id);
+      if (!done) continue;
+      if (done.state === 'ready') return {port: done.port};
+      throw new Error(`Packages.startHelper: ${done.error}`);
+    }
   },
 });
 

@@ -128,3 +128,102 @@ test('a source that is not the gateway waits out a quiet patch', async () => {
   assert.notEqual(queue.snapshot().find(item => item.id === id).state, 'failed');
   queue.pause(id);
 });
+
+// Elefantex's app.log: FileKeeper's edge01.fetchio.cc gateway sends a few seconds, then answers 503
+// with Retry-After 60, again and again. No gap reaches the stall time, yet the download is idle most
+// of the time; that counts as a stall too.
+test('a gateway that sends in short bursts between long waits is restarted', async () => {
+  const machine = console_();
+  let transfers = 0;
+  const lines = [];
+  const original = console.log;
+  console.log = (...parts) => lines.push(parts.join(' '));
+  try {
+    const enqueue = () => transfer((emit, finish) => {
+      let received = 0;
+      if (++transfers === 1) {
+        const start = Date.now();
+        // Bytes for 20 ms of every 150: each wait is well under the stall time, and together they
+        // are most of it. Timed by the clock, since timers on some systems tick every 15 ms.
+        return setInterval(() => {
+          if ((Date.now() - start) % 150 < 20) received += 10;
+          emit({state: 'downloading', received, completedBytes: 0, total: 1000});
+        }, 5).unref();
+      }
+      return setInterval(() => {
+        received += 100;
+        if (received >= 1000) finish();
+        else emit({state: 'downloading', received, completedBytes: 0, total: 1000});
+      }, 5).unref();
+    });
+    // DataNodes: FileKeeper's own link is asked for again sooner (the tests below).
+    const queue = boot(machine, enqueue, {stallMs: 300});
+    const id = queue.enqueue(game, release('https://datanodes.to/abc123/game.pkg'), ROOT);
+    const job = await settled(queue, id, ['installer-required', 'failed']);
+    assert.equal(job.state, 'installer-required', job.error);
+  } finally {
+    console.log = original;
+  }
+  assert.equal(transfers, 2);
+  assert.ok(lines.some(line => line.includes('in bursts and waits') && line.includes('restart 1 of 10')), lines.join('\n'));
+});
+
+// FileKeeper's form hands out a new link after five seconds, and its gateway's 503 asks for a minute:
+// a few seconds of nothing ask for the new link, and app.log says whether it brought the bytes back.
+function fileKeeperRun(secondFlows) {
+  const machine = console_();
+  let transfers = 0, resolved = 0;
+  const lines = [];
+  const enqueue = () => transfer((emit, finish) => {
+    let received = 0;
+    const flowing = ++transfers > 1 && secondFlows;
+    return setInterval(() => {
+      if (flowing || received < 50) received += 50;
+      if (received >= 1000) finish();
+      else emit({state: 'downloading', received, completedBytes: 0, total: 1000});
+    }, 5).unref();
+  });
+  const queue = createDownloadQueue({
+    fs: machine.fs, downloads: {enqueue}, dataDir: ROOT, platform: 'desktop', stallMs: 300,
+    formats: {artifact: (item, where) => ({directory: where + '/downloads/packages', destination: where + '/downloads/packages/' + item.filename, nextAction: 'installer-required'})},
+    notifications: {show() {}}, power: {keepAwake() {}},
+    sources: {resolve: async () => { resolved++; return {url: 'https://edge01.fetchio.cc/f/token' + resolved}; }},
+  });
+  return {queue, lines, counts: () => ({transfers, resolved})};
+}
+
+test('a quiet FileKeeper gateway gets a new link at once, and the log says it helped', async () => {
+  const lines = [];
+  const original = console.log;
+  console.log = (...parts) => lines.push(parts.join(' '));
+  let run;
+  try {
+    run = fileKeeperRun(true);
+    const id = run.queue.enqueue(game, release('https://filekeeper.net/file/abc'), ROOT);
+    const job = await settled(run.queue, id, ['installer-required', 'failed']);
+    assert.equal(job.state, 'installer-required', job.error);
+  } finally {
+    console.log = original;
+  }
+  assert.deepEqual(run.counts(), {transfers: 2, resolved: 2});
+  assert.ok(lines.some(line => line.includes("a new link instead of waiting its minute out (1 of 30)")), lines.join('\n'));
+  assert.ok(lines.some(line => line.includes('the new link brought it back')), lines.join('\n'));
+});
+
+test('a new link that brings nothing back either is asked for once, then the gateway is waited out', async () => {
+  const lines = [];
+  const original = console.log;
+  console.log = (...parts) => lines.push(parts.join(' '));
+  let run, id;
+  try {
+    run = fileKeeperRun(false);
+    id = run.queue.enqueue(game, release('https://filekeeper.net/file/abc'), ROOT);
+    for (const until = Date.now() + 3000; Date.now() < until && !lines.some(line => line.includes('did not bring it back')); )
+      await new Promise(resolve => setTimeout(resolve, 10));
+  } finally {
+    console.log = original;
+    run?.queue.pause(id);
+  }
+  assert.ok(lines.some(line => line.includes('a new link did not bring it back; waiting')), lines.join('\n'));
+  assert.equal(lines.filter(line => line.includes('a new link instead of waiting')).length, 1);
+});

@@ -10,7 +10,6 @@ import { focusEnd, useLocale, useT } from '../i18n/index.js';
 import { useIsImmersive, useNavActions, useNavState } from '../state/nav.jsx';
 import { DownloadToast } from './DownloadToast.jsx';
 import { DownloadsBadge } from './DownloadsBadge.jsx';
-import { FocusRing } from './FocusRing.jsx';
 import { Logo } from './Logo.jsx';
 import { NavItem } from './NavItem.jsx';
 import { NavPill, useNavLayouts } from './NavPill.jsx';
@@ -52,13 +51,11 @@ import { FocusScope, Text, View } from '@ps5-react/core';
         /* @__PURE__ */ (0, jsx)(NavPill, { section: shown, layouts }),
         /* Original left-side text navigation, now with icons alongside the labels. */
         /* @__PURE__ */ (0, jsxs)(View, { style: { flexDirection: "row", alignItems: "center", gap: 0 }, children: [
+          /* Overdrive's mark is the header's label, not a stop: the D-pad starts on Discover, and no
+             focus ring lands on the word. */
           /* @__PURE__ */ (0, jsxs)(View, {
-            focusKey: "nav:home",
-            onPress: on.discover,
-            nextFocusDown: down,
             style: { marginLeft: 0, flexDirection: "row", alignItems: "center", borderRadius: 6, paddingLeft: 0, paddingRight: 24 },
             children: [
-              /* @__PURE__ */ (0, jsx)(FocusRing, {}),
               /* @__PURE__ */ (0, jsxs)(View, { style: { position: "relative" }, children: [
                 /* @__PURE__ */ (0, jsx)(Logo, { enlarged: true }),
                 /* @__PURE__ */ (0, jsx)(Text, {

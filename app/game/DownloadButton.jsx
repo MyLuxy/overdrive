@@ -28,7 +28,8 @@ import { glide } from '../ui/ProgressBar.jsx';
 import { ShimmerText } from '../ui/ShimmerText.jsx';
 import { Shine } from '../ui/Shine.jsx';
 import { EASE_OUT } from '../ui/ease.js';
-import { DownloadFormats, Text, View, motion } from '@ps5-react/core';
+import { pkgMode } from '../state/pkg-mode.js';
+import { DownloadFormats, Platform, Text, View, motion } from '@ps5-react/core';
 
   var WIDTH6 = 272;
   var GB2 = 1e9;
@@ -67,14 +68,26 @@ import { DownloadFormats, Text, View, motion } from '@ps5-react/core';
     const need = spaceNeeded(release, roots[storage]);
     const lacking = download.status === "idle" && need && free[storage] !== null && free[storage] < need + MARGIN2;
     const stale = ["paused", "failed"].includes(download.status) && STALE_PARTIAL.test(cause(error2));
-    const status = lacking ? "no-space" : stale ? "stale" : download.status;
+    // A PKG the PS5's Downloads took is theirs to install: "Installed" here said what had not happened.
+    const streamedOut = job2?.state === "installed" && job2.streamed;
+    const status = lacking ? "no-space" : stale ? "stale" : streamedOut ? "streamed" : download.status;
     // A new download first shows what the chosen source is and how to use it (DownloadTipsDialog);
     // resuming, installing or pausing one already queued goes straight on.
+    // A PKG goes to the PS5's own Downloads, in the background, or stays in Overdrive: the player says
+    // which before it starts, or once for every PKG (pkg-mode.js). A file that may turn out to be a PKG
+    // (a ".binary") follows what was remembered, and tries the console first otherwise.
+    const startNew = () => {
+      const mode = pkgMode();
+      const pkg = Platform.OS === "ps5" && ["pkg", "fpkg"].includes(String(release?.format || "").toLowerCase()) && !release?.parts;
+      if (pkg && mode === "ask") onRequestDialog({ kind: "stream", game, release, submit: (choice) => download.advance(choice) });
+      else download.advance(mode === "overdrive" ? "here" : mode === "console" ? "console" : void 0);
+    };
     const begin = () => {
       if (stale) restart();
       else if (lacking) return;
       // A homebrew app has one source, its developer's GitHub release: the tips are about choosing hosts.
-      else if (status === "idle" && release && !game.homebrew) onRequestDialog({ kind: "tips", game, release, submit: () => download.advance(), changeSource: () => chooseSource() });
+      else if (status === "idle" && release && !game.homebrew) onRequestDialog({ kind: "tips", game, release, submit: startNew, changeSource: () => chooseSource() });
+      else if (status === "idle") startNew();
       else download.advance();
     };
     const { openEdition, focusLater, push } = useNavActions();
@@ -125,7 +138,7 @@ import { DownloadFormats, Text, View, motion } from '@ps5-react/core';
     const problem = browser ? {
       title: step ? t2("download.browser.partTitle", step) : t2("download.browser.title"),
       action: t2("download.browser.action")
-    } : error2 ? explainError(error2, Boolean(job2?.release.parts)) : lacking ? { title: t2("download.noFit"), action: spaceAdvice(roots, free, storage, need) } : shadowMount || status === "installed" ? null : { title: t2("shadowMount.offTitle"), action: t2("shadowMount.offAction") };
+    } : error2 ? explainError(error2, Boolean(job2?.release.parts)) : lacking ? { title: t2("download.noFit"), action: spaceAdvice(roots, free, storage, need) } : shadowMount || status === "installed" || status === "streamed" ? null : { title: t2("shadowMount.offTitle"), action: t2("shadowMount.offAction") };
     const notice = job2?.message;
     const pick2 = (index) => {
       if (index !== selected && job2 && !written && ["awaiting-browser", "failed", "paused"].includes(job2.state)) downloadQueue().remove(job2.id);

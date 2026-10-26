@@ -7,6 +7,9 @@
 // anywhere else. The REST API answers HTTP errors with { error, error_code }, so both are logged:
 // a user's app.log names the call, the code and Real-Debrid's own message.
 //
+// A token from the phone login (device-login.js) lasts hours: `renew` gets a new one before it runs
+// out, and once more if Real-Debrid refuses the old one; a token typed by hand comes with no `renew`.
+//
 // Written from https://api.real-debrid.com/ (2026-10-24), not against a live account: the flows
 // below follow the documented fields, and any difference shows up in the log lines as the call's
 // own status and error code.
@@ -57,10 +60,24 @@ import { linkInput } from './link-download.js';
     return best;
   }
 
-  function createRealDebrid({ http, key, wait = (ms) => new Promise((resolve2) => setTimeout(resolve2, ms)), now = Date.now, timeoutMs = WAIT_MS }) {
+  function createRealDebrid({ http, key, renew = null, expiresAt = 0, wait = (ms) => new Promise((resolve2) => setTimeout(resolve2, ms)), now = Date.now, timeoutMs = WAIT_MS }) {
     if (!key) throw new Error("Real-Debrid is not set up.");
+    let renewed = null;
+    // One renewal at a time, shared by the calls that wait for it.
+    const fresh = async (signal) => {
+      renewed ?? (renewed = renew({ signal }).then((token) => {
+        key = token.realdebrid;
+        expiresAt = Number(token.realdebridExpires) || 0;
+        return token;
+      }).finally(() => {
+        renewed = null;
+      }));
+      return renewed;
+    };
 
-    async function call(path, { method = "GET", form, signal } = {}) {
+    async function call(path, { method = "GET", form, signal, again = true } = {}) {
+      // A minute early, so no call goes out with a token about to lapse.
+      if (renew && expiresAt && now() > expiresAt - 60e3) await fresh(signal);
       const response = await http.request(API + path, {
         method,
         signal,
@@ -78,6 +95,11 @@ import { linkInput } from './link-download.js';
       } catch {
       }
       if (response.status === 204) return null;
+      if (response.status === 401 && renew && again) {
+        console.log(`[realdebrid] ${path}: HTTP 401, renewing the token`);
+        await fresh(signal);
+        return call(path, { method, form, signal, again: false });
+      }
       if (response.status >= 400) {
         // The one line that makes a user's log enough: which call, what it answered, and the reason.
         console.log(`[realdebrid] ${path}: HTTP ${response.status} ${text.slice(0, 300)}`);

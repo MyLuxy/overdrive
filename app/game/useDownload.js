@@ -33,14 +33,15 @@ import { sameRelease } from '../state/release-sets.js';
       } catch {
       }
     }, [job2?.id]);
-    const advance = () => {
+    // `streamMode` for a new download: "console" or "here" (pkg-mode.js), none to try the console first.
+    const advance = (streamMode) => {
       try {
         setError("");
         const queue = downloadQueue();
         if (!job2) {
           if (release) {
             started.current = true;
-            queue.enqueue(game, release, root2);
+            queue.enqueue(game, release, root2, { streamMode });
           }
         } else if (BUSY.includes(job2.state) && job2.state !== "pausing" && job2.state !== "installing") queue.pause(job2.id);
         else if (job2.state === "installer-required") queue.install(job2.id);

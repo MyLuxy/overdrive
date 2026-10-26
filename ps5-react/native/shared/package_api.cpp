@@ -3,6 +3,7 @@
 // Additional attribution term: see LICENSE-ATTRIBUTION.
 #include "host_api.hpp"
 #include "packages.hpp"
+#include "pkg_proxy.hpp"
 #include <climits>
 #include <cstring>
 
@@ -64,6 +65,76 @@ JSValue install(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
   if (!id) return JS_ThrowPlainError(ctx, "packages.install: %s", error.c_str());
   return JS_NewUint32(ctx, id);
 }
+// ABI v21: the same link served by the app, for a console that refuses the origin's own answers.
+// (url, total, file, token?, port?) -> {url, localUrl, token, port}; a token and port from an earlier
+// session ask for the same link again.
+JSValue proxy(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+  pkg_proxy::Request request;
+  double total = 0;
+  if (argc < 2 || !package_link(ctx, argv[0], request.url) || JS_ToFloat64(ctx, &total, argv[1]) || !(total >= 1) || total > 9e15)
+    return JS_ThrowTypeError(ctx, "packages.proxy: expected an http(s) link and its size in bytes");
+  request.total = static_cast<std::uint64_t>(total);
+  request.file = string_argument(ctx, argc, argv, 2);
+  request.token = string_argument(ctx, argc, argv, 3);
+  std::uint32_t wanted = 0;
+  if (argc > 4 && !JS_IsUndefined(argv[4]) && !JS_IsNull(argv[4]) && (JS_ToUint32(ctx, &wanted, argv[4]) || wanted > 65535))
+    return JS_ThrowTypeError(ctx, "packages.proxy: port must be 0..65535");
+  request.port = static_cast<std::uint16_t>(wanted);
+  pkg_proxy::Served served;
+  std::string error;
+  if (!pkg_proxy::serve(request, served, error)) return JS_ThrowPlainError(ctx, "packages.proxy: %s", error.c_str());
+  JSValue out = JS_NewObject(ctx);
+  JS_SetPropertyStr(ctx, out, "url", JS_NewString(ctx, served.url.c_str()));
+  JS_SetPropertyStr(ctx, out, "localUrl", JS_NewString(ctx, served.local_url.c_str()));
+  JS_SetPropertyStr(ctx, out, "token", JS_NewString(ctx, served.token.c_str()));
+  JS_SetPropertyStr(ctx, out, "port", JS_NewUint32(ctx, served.port));
+  return out;
+}
+// [{token, total, delivered, requests, idleMs}] for every link served.
+JSValue proxy_stats(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+  JSValue out = JS_NewArray(ctx);
+  std::uint32_t index = 0;
+  for (const auto& item : pkg_proxy::stats()) {
+    JSValue entry = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, entry, "token", JS_NewString(ctx, item.token.c_str()));
+    JS_SetPropertyStr(ctx, entry, "total", JS_NewFloat64(ctx, static_cast<double>(item.total)));
+    JS_SetPropertyStr(ctx, entry, "delivered", JS_NewFloat64(ctx, static_cast<double>(item.delivered)));
+    JS_SetPropertyStr(ctx, entry, "requests", JS_NewUint32(ctx, item.requests));
+    JS_SetPropertyStr(ctx, entry, "idleMs", JS_NewFloat64(ctx, static_cast<double>(item.idle_ms)));
+    JS_SetPropertyStr(ctx, entry, "gets", JS_NewFloat64(ctx, static_cast<double>(item.gets)));
+    JS_SetPropertyStr(ctx, entry, "asked", JS_NewFloat64(ctx, static_cast<double>(item.asked)));
+    JS_SetPropertyUint32(ctx, out, index++, entry);
+  }
+  return out;
+}
+// ABI v21: (port, secret, log) -> task id of the helper payload's start; pollHelper() gives its end.
+JSValue start_helper(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+  std::uint32_t port = 0;
+  if (argc < 2 || JS_ToUint32(ctx, &port, argv[0]) || port > 65535)
+    return JS_ThrowTypeError(ctx, "packages.startHelper: expected a port (0..65535) and a secret");
+  std::string error;
+  const auto id = packages::start_helper(port, string_argument(ctx, argc, argv, 1), string_argument(ctx, argc, argv, 2), error);
+  if (!id) return JS_ThrowPlainError(ctx, "packages.startHelper: %s", error.c_str());
+  return JS_NewUint32(ctx, id);
+}
+// [{id, state: "ready" | "failed", port, error}] for each start that ended since the last poll.
+JSValue poll_helper(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+  JSValue out = JS_NewArray(ctx);
+  std::uint32_t index = 0;
+  for (const auto& item : packages::poll_helper()) {
+    JSValue entry = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, entry, "id", JS_NewUint32(ctx, item.id));
+    JS_SetPropertyStr(ctx, entry, "state", JS_NewString(ctx, item.state.c_str()));
+    JS_SetPropertyStr(ctx, entry, "port", JS_NewUint32(ctx, item.port));
+    JS_SetPropertyStr(ctx, entry, "error", JS_NewString(ctx, item.error.c_str()));
+    JS_SetPropertyUint32(ctx, out, index++, entry);
+  }
+  return out;
+}
+JSValue proxy_remove(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+  pkg_proxy::remove(string_argument(ctx, argc, argv, 0));
+  return JS_UNDEFINED;
+}
 JSValue cancel(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
   std::uint32_t id = 0;
   if (!argc || JS_ToUint32(ctx, &id, argv[0])) return JS_ThrowTypeError(ctx, "packages.cancel: expected task id");
@@ -91,6 +162,11 @@ JSValue poll(JSContext* ctx, JSValueConst, int, JSValueConst*) {
 JSValue ps5_react_package_api(JSContext* ctx) {
   JSValue api = JS_NewObject(ctx);
   JS_SetPropertyStr(ctx, api, "install", JS_NewCFunction(ctx, install, "install", 3));
+  JS_SetPropertyStr(ctx, api, "proxy", JS_NewCFunction(ctx, proxy, "proxy", 5));
+  JS_SetPropertyStr(ctx, api, "proxyStats", JS_NewCFunction(ctx, proxy_stats, "proxyStats", 0));
+  JS_SetPropertyStr(ctx, api, "proxyRemove", JS_NewCFunction(ctx, proxy_remove, "proxyRemove", 1));
+  JS_SetPropertyStr(ctx, api, "startHelper", JS_NewCFunction(ctx, start_helper, "startHelper", 3));
+  JS_SetPropertyStr(ctx, api, "pollHelper", JS_NewCFunction(ctx, poll_helper, "pollHelper", 0));
   JS_SetPropertyStr(ctx, api, "cancel", JS_NewCFunction(ctx, cancel, "cancel", 1));
   JS_SetPropertyStr(ctx, api, "poll", JS_NewCFunction(ctx, poll, "poll", 0));
   return api;

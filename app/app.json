@@ -8,7 +8,7 @@
   "surface": { "width": 1920, "height": 1080 },
   "refreshRate": 60,
   "textFonts": ["chinese", "chinese-traditional", "japanese", "bengali", "devanagari", "arabic"],
-  "resources": ["data/releases", "data/pages", "i18n/locales"],
+  "resources": ["data/releases", "data/pages", "i18n/locales", "third_party/qrcodegen-LICENSE.txt"],
   "filesystemAccess": "console",
   "networking": true,
   "timeoutSeconds": 0

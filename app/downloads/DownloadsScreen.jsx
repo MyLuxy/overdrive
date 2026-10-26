@@ -5,7 +5,7 @@ import '../assets/Inter-Regular.ttf';
 import { Fragment, jsx, jsxs } from 'react/jsx-runtime';
 import { useEffect, useRef, useState } from 'react';
 import { useAddDownloads } from './AddDownloads.jsx';
-import { DownloadRow, primaryKey } from './DownloadRow.jsx';
+import { DownloadRow, linksOf, primaryKey } from './DownloadRow.jsx';
 import { SummaryPanel } from './SummaryPanel.jsx';
 import { useJobs } from './useQueue.js';
 import { formatNumber2, t } from '../i18n/core.js';
@@ -30,6 +30,8 @@ import { FocusScope, ScrollView, Text, View } from '@ps5-react/core';
   ];
   var EMPTY_HINTS = [HINT.select, HINT.back];
   var EMPTY_KEY = "downloads:empty";
+  // The strip's right-hand card, the one above a row's buttons.
+  var STRIP_KEY = "downloads:add:debrid";
   function summary(jobs) {
     const count = (states) => jobs.filter((job2) => states.includes(job2.state)).length;
     return [
@@ -51,8 +53,8 @@ import { FocusScope, ScrollView, Text, View } from '@ps5-react/core';
             job: job2,
             game: getGame(job2.gameId) ?? { title: job2.title, art: {} },
             autoFocus: job2 === first,
-            up: links.get(job2.id)?.up,
-            down: links.get(job2.id)?.down,
+            up: links.get(job2.id).up,
+            down: links.get(job2.id).down,
             run: handlers.run,
             onOpenGame: handlers.openGame,
             onFocusRow: handlers.focusRow
@@ -128,9 +130,13 @@ import { FocusScope, ScrollView, Text, View } from '@ps5-react/core';
     const done = jobs.filter((job2) => COMPLETE.includes(placed(job2)));
     const first = active2[0] ?? stopped[0] ?? done[0];
     // The rows in the order they are drawn, across the sections: Up and Down go from a row to the one
-    // above or below it in this list, and Down from the strip's cards goes to the first of them.
+    // above or below it in this list, and Down from the strip's cards goes to the first of them. Up from
+    // the first row goes to the strip's card above its buttons, not to the summary panel on the right,
+    // which the D-pad found nearer (2026-10-25).
     const order = [...active2, ...stopped, ...done];
-    const links = new Map(order.map((job2, index) => [job2.id, { up: order[index - 1], down: order[index + 1] }]));
+    const strip = { info: STRIP_KEY, primary: STRIP_KEY, delete: STRIP_KEY };
+    const near = order.map(linksOf);
+    const links = new Map(order.map((job2, index) => [job2.id, { up: index ? near[index - 1] : strip, down: near[index + 1] }]));
     const add = useAddDownloads({ down: order.length ? primaryKey(order[0].id) : EMPTY_KEY });
     return /* @__PURE__ */ (0, jsx)(FocusScope, { autoFocus: true, onBack: back2, onAction, children: /* @__PURE__ */ (0, jsxs)(View, { style: { flex: 1 }, children: [
       /* @__PURE__ */ (0, jsxs)(View, { style: { flexDirection: "row", alignItems: "flex-end", gap: 48, paddingHorizontal: 48, paddingTop: 48, paddingBottom: 36 }, children: [

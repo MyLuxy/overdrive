@@ -34,16 +34,26 @@
 > recovered the complete source and rebuilt it.
 
 <p align="center">
-  <img src=".github/readme/discover.jpg" alt="Overdrive's Discover page, with a featured game and the Popular now row" width="100%">
+  <img src=".github/readme/discover.jpg" alt="Overdrive's Discover page: a featured game with its description, the picks beside it, and the You might like row" width="100%">
 </p>
 <p align="center">
-  <img src=".github/readme/browse.jpg" alt="Browse library: 1,845 games with filters, sorting, scores and sizes" width="49.5%">
-  <img src=".github/readme/downloads.jpg" alt="Downloads page with activity and storage for internal storage and a USB drive" width="49.5%">
+  <img src=".github/readme/browse.jpg" alt="Browse library: 2,105 games with filters, sorting, scores and sizes" width="49.5%">
+  <img src=".github/readme/downloads.jpg" alt="Downloads page with the From a link, From a torrent and Debrid services cards, activity and storage for internal storage and a USB drive" width="49.5%">
+</p>
+
+## Debrid services
+
+TorBox, Real-Debrid and Premiumize fetch a link or a magnet for you: pick one under
+**Downloads → Debrid services**, paste the link, and the console downloads what the service
+prepares. Each uses your own account key, typed once and kept on the console.
+
+<p align="center">
+  <img src=".github/readme/debrid.webp" alt="Debrid services dialog on the Downloads page: TorBox, Real-Debrid and Premiumize, each asking for its own key" width="70%">
 </p>
 
 ## Features
 
-- **1,800+ games** to discover, with **Top rated**, a hand-picked row and a featured spotlight
+- **2,100+ games** to discover, with **Top rated**, a hand-picked row and a featured spotlight
 - **Homebrew**: native PS5 apps and games from the community catalog at [prosperostore.net](https://prosperostore.net/), always up to date, installed from each developer's GitHub release
 - **Browse the whole library** with filters, sorting, scores and download sizes at a glance
 - **Downloads straight to the console**, to internal storage or any USB drive, with live speed and storage stats
@@ -397,6 +407,7 @@ Nothing else in the framework is changed.
 - **[ShadowMount+](https://github.com/drakmor/ShadowMountPlus)** by drakmor, which installs it.
 - **[kstuff](https://github.com/EchoStretch/kstuff-lite)** by EchoStretch, the kernel payload that lets the console run homebrew and the games it installs.
 - **[PS5 Homebrew Catalog](https://github.com/darkxex/ps5-homebrew-catalog)** by darkxex, the store API behind the Homebrew section, and every developer listed in it.
+- **[QR Code generator](https://github.com/nayuki/QR-Code-generator)** by Project Nayuki (MIT), which draws the QR codes of the phone login; its notice ships in the app as `third_party/qrcodegen-LICENSE.txt`.
 
 `ps5-react/` is GPL-3.0-or-later and carries its own `LICENSE`, `LICENSE-ATTRIBUTION` and
 `NOTICE`. Every dependency notice is copied into `notices/` inside the built app, and

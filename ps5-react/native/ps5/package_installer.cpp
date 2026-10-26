@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional attribution term: see LICENSE-ATTRIBUTION.
 #include "packages.hpp"
+#include "app_config.hpp"
+#include "network.hpp"
 #include "payload_loader.hpp"
 #include "worker_thread.hpp"
 #include <atomic>
@@ -116,7 +118,105 @@ std::vector<Snapshot> poll() {
   return {snapshot};
 }
 
+namespace {
+struct Helper {
+  HelperSnapshot snapshot;
+  std::string secret, log;
+  std::atomic<bool> done{false};
+  WorkerThread worker;
+};
+std::mutex helper_guard;
+std::vector<std::shared_ptr<Helper>> helpers;
+std::uint32_t next_helper = 1;
+
+// Sends the helper and waits for its first line; the loader's connection is closed after it, and the
+// helper goes on alone, logging to its own file.
+void launch(std::shared_ptr<Helper> helper) {
+  std::string error;
+#if PS5_REACT_NETWORKING
+  const std::string store = network::ca_path();
+#else
+  const std::string store;
+#endif
+  const std::string request = "PKH1\n" + std::to_string(helper->snapshot.port) + "\n" + helper->secret + "\n" +
+                              store + "\n" + helper->log + "\n";
+  const int socket = payload_loader::send("pkg-helper.elf", request, 15'000'000, "Packages.startHelper", error);
+  HelperSnapshot result = helper->snapshot;
+  if (socket < 0) {
+    result.state = "failed";
+    result.error = error;
+  } else {
+    // The helper's log lines ("log …") can come before its answer: they go to app.log, and the answer
+    // is the first line that is not one. Taking the first line as the answer turned a helper that had
+    // started into "did not start", and the app served the package itself (2026-10-25).
+    std::string line;
+    for (int lines = 0; lines < 64; ++lines) {
+      line.clear();
+      char byte;
+      bool ended = false;
+      while (payload_loader::receive(socket, &byte, 1) == 1) {
+        if (byte == '\n') { ended = true; break; }
+        if (line.size() < 512) line.push_back(byte);
+      }
+      if (!line.starts_with("log ")) break;
+#if PS5_REACT_NETWORKING
+      network::platform_log(("pkg-helper: " + line.substr(4)).c_str());
+#endif
+      if (!ended) { line.clear(); break; }
+    }
+    payload_loader::close(socket);
+    if (line.starts_with("ready ")) {
+      result.state = "ready";
+      result.port = static_cast<std::uint32_t>(std::strtoul(line.c_str() + 6, nullptr, 10));
+    } else {
+      result.state = "failed";
+      result.error = line.starts_with("fail ") ? line.substr(5) : line.empty() ? "the helper did not answer" : line;
+    }
+  }
+  std::lock_guard lock(helper_guard);
+  helper->snapshot = result;
+  helper->done = true;
+}
+}
+
+std::uint32_t start_helper(std::uint32_t port, std::string secret, std::string log, std::string& error) {
+  if (secret.size() < 16 || secret.find('\n') != std::string::npos || log.find('\n') != std::string::npos) {
+    error = "a control secret of 16 characters or more is needed";
+    return 0;
+  }
+  auto helper = std::make_shared<Helper>();
+  std::lock_guard lock(helper_guard);
+  helper->snapshot.id = next_helper++;
+  helper->snapshot.port = port;
+  helper->secret = std::move(secret);
+  helper->log = std::move(log);
+  if (!helper->worker.start([helper] { launch(helper); }, 512 * 1024)) {
+    error = "Cannot start the helper thread.";
+    return 0;
+  }
+  helpers.push_back(helper);
+  return helper->snapshot.id;
+}
+
+std::vector<HelperSnapshot> poll_helper() {
+  std::lock_guard lock(helper_guard);
+  std::vector<HelperSnapshot> out;
+  for (auto it = helpers.begin(); it != helpers.end();) {
+    if ((*it)->done) {
+      (*it)->worker.join();
+      out.push_back((*it)->snapshot);
+      it = helpers.erase(it);
+    } else ++it;
+  }
+  return out;
+}
+
 void stop() {
+  {
+    std::lock_guard lock(helper_guard);
+    for (auto& helper : helpers) helper->worker.join();
+    helpers.clear();
+  }
   std::shared_ptr<Job> job;
   { std::lock_guard lock(guard); job = active; }
   if (!job) return;

@@ -15,7 +15,8 @@ import { useT } from '../i18n/index.js';
 import { useNavActions } from '../state/nav.jsx';
 import { downloadQueue, storageRoots } from '../state/downloads.js';
 import { downloadRoot } from '../state/download-root.js';
-import { qbittorrent as qbittorrentSettings, services as serviceSettings, setService, useServices } from '../state/download-services.js';
+import { qbittorrent as qbittorrentSettings, services as serviceSettings, setService, setServices, useServices } from '../state/download-services.js';
+import { refreshRealDebrid } from '../state/device-login.js';
 import { useArchiveAccount } from '../state/archive-account.js';
 import { cancellation } from '../state/download-sources.js';
 import { addLink, linkInput } from '../state/link-download.js';
@@ -24,6 +25,7 @@ import { createRealDebrid } from '../state/realdebrid.js';
 import { createPremiumize } from '../state/premiumize.js';
 import { createQBittorrent } from '../state/qbittorrent.js';
 import { URLDialog } from './URLDialog.jsx';
+import { PhoneSetup } from './PhoneSetup.jsx';
 import { primaryKey } from './DownloadRow.jsx';
 import { Button2 } from '../ui/Button.jsx';
 import { FocusRing } from '../ui/FocusRing.jsx';
@@ -103,6 +105,8 @@ import { FocusScope, Http, Text, View } from '@ps5-react/core';
   // The debrid services, in the order the dialog lists them. Each has its own key and its own card
   // row, and none is ever used on another's behalf.
   var DEBRID = ["torbox", "realdebrid", "premiumize"];
+  // The ones linked from the phone with a QR code (device-login.js); the typed key stays beside it.
+  var PHONE = ["torbox", "realdebrid"];
 
   // The guided setup behind a card: its own service's fields, the first time the card is pressed and
   // whenever the user asks to change them. What is already saved shows as it is; Continue goes on.
@@ -168,7 +172,7 @@ import { FocusScope, Http, Text, View } from '@ps5-react/core';
           /* @__PURE__ */ (0, jsx)(FocusRing, {}),
           /* @__PURE__ */ (0, jsx)(Icon, { name: service, size: 52, color: colors.fg }),
           /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 23, fontWeight: 600, color: colors.fg }, children: serviceName(t2, service) }),
-          /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 18, color: services[service] ? colors.fg : colors.subtle }, children: t2(services[service] ? "add.serviceReady" : "add.serviceNeeds") })
+          /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 18, color: services[service] ? colors.fg : colors.subtle }, children: t2(services[service] ? "add.serviceReady" : PHONE.includes(service) ? "add.serviceLink" : "add.serviceNeeds") })
         ]
       }, service)) })
     ] });
@@ -178,7 +182,15 @@ import { FocusScope, Http, Text, View } from '@ps5-react/core';
   // qBittorrent on the home network.
   function preparer(route, settings) {
     if (route === "torbox") return createTorbox({ http: Http, key: settings.torbox });
-    if (route === "realdebrid") return createRealDebrid({ http: Http, key: settings.realdebrid });
+    if (route === "realdebrid") {
+      // A phone login's token lasts hours and is renewed from what the login saved; a typed one never ends.
+      const renew = settings.realdebridRefresh && settings.realdebridClient && settings.realdebridSecret ? async ({ signal }) => {
+        const token = await refreshRealDebrid({ http: Http, client: settings.realdebridClient, secret: settings.realdebridSecret, refresh: settings.realdebridRefresh, signal });
+        setServices(token);
+        return token;
+      } : null;
+      return createRealDebrid({ http: Http, key: settings.realdebrid, renew, expiresAt: Number(settings.realdebridExpires) || 0 });
+    }
     if (route === "premiumize") return createPremiumize({ http: Http, key: settings.premiumize });
     return createQBittorrent({ http: Http, ...qbittorrentSettings() });
   }
@@ -418,7 +430,13 @@ import { FocusScope, Http, Text, View } from '@ps5-react/core';
         },
         onClose: () => setDialog({ kind: "setup", service: dialog.service, next: dialog.next })
       }) : null,
-      dialog && dialog.kind === "setup" ? /* @__PURE__ */ (0, jsx)(SetupDialog, {
+      dialog && dialog.kind === "setup" && PHONE.includes(dialog.service) ? /* @__PURE__ */ (0, jsx)(PhoneSetup, {
+        service: dialog.service,
+        onField: (name) => field(name, dialog),
+        onDone: () => setupDone(dialog.service, dialog.next),
+        onCancel: () => setDialog(null)
+      }) : null,
+      dialog && dialog.kind === "setup" && !PHONE.includes(dialog.service) ? /* @__PURE__ */ (0, jsx)(SetupDialog, {
         service: dialog.service,
         onField: (name) => field(name, dialog),
         onDone: () => setupDone(dialog.service, dialog.next),

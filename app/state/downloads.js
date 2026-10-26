@@ -9,6 +9,7 @@ import { createSourceResolver } from './download-sources.js';
 import { createMockDownloadQueue } from './mock-download-queue.js';
 import { consoleRoots } from './roots.js';
 import { createShadowMountProbe } from './shadowmount.js';
+import { createPkgHelper } from './pkg-helper.js';
 import { Archives, BrowserCapture, DownloadFormats, Downloads, FileSystem, Http, Linking, Notifications, Packages, Platform, Power } from '@ps5-react/core';
 
   var instance;
@@ -28,6 +29,8 @@ import { Archives, BrowserCapture, DownloadFormats, Downloads, FileSystem, Http,
     linking: Linking,
     sources: createSourceResolver({ http: Http }),
     packages: Packages,
+    // On the PS5 the console's Downloads take a package from the helper payload, which outlives the app.
+    helper: Platform.OS === "ps5" && typeof Packages.startHelper === "function" ? createPkgHelper({ packages: Packages, http: Http, fs: FileSystem, dir: "/data/ps5-react/PPSA99058/queue", log: "/data/ps5-react/PPSA99058/pkg-helper.log" }) : null,
     browserCapture: BrowserCapture,
     releasesOf: (id) => getGame(id)?.releases || [],
     archiveAuth: archiveAccount
