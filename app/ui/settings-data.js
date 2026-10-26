@@ -11,12 +11,13 @@ import { LOCALES, isRTL } from '../i18n/locales.js';
 import { driveName } from '../state/drive-names.js';
 import { LIMITS } from '../state/speed-limit.js';
 import { MODES } from '../state/pkg-mode.js';
+import { RETRIES } from '../state/retries.js';
 import { formatBytes } from '../state/size.js';
 import { LEVELS } from './haptics.js';
 
   var GROUPS = [
     { key: "general", title: "settings.group.general", items: ["vibration", "language"] },
-    { key: "downloads", title: "settings.group.downloads", items: ["speed", "disk", "pkg", "cleanup"] },
+    { key: "downloads", title: "settings.group.downloads", items: ["speed", "retries", "disk", "pkg", "cleanup"] },
     { key: "services", title: "settings.group.services", items: ["torbox", "realdebrid", "premiumize", "qbittorrent"] }
   ];
 
@@ -25,6 +26,8 @@ import { LEVELS } from './haptics.js';
     vibration: { icon: "controller", title: "settings.vibration", lead: "settings.vibrationDetail" },
     language: { icon: "languages", title: "language.title", lead: "language.subtitle" },
     speed: { icon: "gauge", title: "settings.speedLimit", lead: "settings.speedLimitDetail" },
+    // A server that answers busy is asked again by itself, as many times as the player chooses here.
+    retries: { icon: "restart", title: "settings.retries", lead: "settings.retriesDetail" },
     disk: { icon: "hardDrive", title: "settings.disk", lead: "settings.diskDetail" },
     pkg: { icon: "package", title: "settings.pkgMode", lead: "settings.pkgModeDetail" },
     cleanup: { icon: "trash", title: "settings.deletePackages", lead: "settings.deletePackagesDetail" },
@@ -60,6 +63,7 @@ import { LEVELS } from './haptics.js';
       case "vibration": return values.vibration;
       case "language": return values.choice ?? "system";
       case "speed": return values.limit;
+      case "retries": return values.retries;
       case "disk": return values.root ?? "auto";
       case "pkg": return values.mode;
       case "cleanup": return values.cleanup;
@@ -73,6 +77,7 @@ import { LEVELS } from './haptics.js';
     if (id === "vibration") return levelText(t2, values.vibration);
     if (id === "language") return values.choice ? localeName(values.choice) : `${t2("language.system")} · ${localeName(ctx.system)}`;
     if (id === "speed") return values.limit ? `${values.limit} MB/s` : t2("settings.speedUnlimited");
+    if (id === "retries") return values.retries === "always" ? t2("settings.retriesAlways") : values.retries ? t2("settings.retriesCount", { n: values.retries }) : t2("settings.off");
     if (id === "disk") return values.root ? driveName(values.root) : t2("settings.diskAuto");
     if (id === "pkg") return t2(`settings.pkgMode.${values.mode}`);
     if (id === "cleanup") return t2(values.cleanup ? "settings.on" : "settings.off");
@@ -116,6 +121,15 @@ import { LEVELS } from './haptics.js';
       label: limit ? `${limit} MB/s` : t2("settings.speedUnlimited"),
       detail: limit ? "" : t2("settings.speedUnlimitedDetail")
     }));
+    if (id === "retries") return RETRIES.map((count) => count === "always" ? {
+      key: "retries:always", value: count,
+      label: t2("settings.retriesAlways"),
+      detail: t2("settings.retriesAlwaysDetail")
+    } : {
+      key: `retries:${count}`, value: count,
+      label: count ? t2("settings.retriesCount", { n: count }) : t2("settings.off"),
+      detail: count ? "" : t2("settings.retriesOffDetail")
+    });
     if (id === "disk") return [
       { key: "auto", label: t2("settings.diskAuto"), detail: t2("settings.diskAutoDetail"), value: "auto" },
       ...ctx.drives.map((drive) => ({
@@ -182,6 +196,11 @@ import { LEVELS } from './haptics.js';
         on: limit === chosen
       })),
       small: t2("settings.speedSideNote")
+    };
+    if (id === "retries") return {
+      eyebrow: t2("settings.retries"),
+      big: chosen === "always" ? t2("settings.retriesAlways") : chosen ? t2("settings.retriesCount", { n: chosen }) : t2("settings.off"),
+      small: chosen === "always" ? t2("settings.retriesAlwaysDetail") : t2("settings.retriesSide")
     };
     if (id === "disk") return {
       eyebrow: t2("settings.diskSide"),

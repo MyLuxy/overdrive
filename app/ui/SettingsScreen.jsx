@@ -19,6 +19,7 @@ import { setDeletePackages, useDeletePackages } from '../state/package-cleanup.j
 import { setDownloadRoot, useDownloadRoot } from '../state/download-root.js';
 import { storageRoots } from '../state/downloads.js';
 import { setPkgMode, usePkgMode } from '../state/pkg-mode.js';
+import { setRetries, useRetries } from '../state/retries.js';
 import { setVibrationLevel, useVibrationLevel } from './haptics.js';
 import { GROUPS, ITEMS, currentOf, optionsOf, selectedIndex, sideOf, valueOf } from './settings-data.js';
 import { Button2 } from './Button.jsx';
@@ -62,6 +63,7 @@ import { FileSystem, FocusScope, ScrollView, Text, View, useIsFocused } from '@p
   function useSettingsValues() {
     const services = useServices();
     const limit = useSpeedLimit();
+    const retries = useRetries();
     const root = useDownloadRoot();
     const mode = usePkgMode();
     const cleanup = useDeletePackages();
@@ -83,7 +85,7 @@ import { FileSystem, FocusScope, ScrollView, Text, View, useIsFocused } from '@p
         }
       });
     });
-    return { services, limit, root, mode, cleanup, vibration, choice: languageChoice(), drives };
+    return { services, limit, retries, root, mode, cleanup, vibration, choice: languageChoice(), drives };
   }
 
   // A tile: its mark, its name, the value it has now, and the chevron into its page.
@@ -283,6 +285,7 @@ import { FileSystem, FocusScope, ScrollView, Text, View, useIsFocused } from '@p
         if (id === "vibration") setVibrationLevel(row.value);
         else if (id === "language") chooseLanguage(row.value === "system" ? null : row.value);
         else if (id === "speed") setSpeedLimit(row.value);
+        else if (id === "retries") setRetries(row.value);
         else if (id === "disk") setDownloadRoot(row.value === "auto" ? null : row.value);
         else if (id === "pkg") setPkgMode(row.value);
         else if (id === "cleanup") setDeletePackages(row.value);

@@ -42,6 +42,13 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
   // received asks the source for a new link; past STALL_RESTARTS the engine's own retries decide.
   var STALL_MS = 9e4;
   var STALL_RESTARTS = 10;
+  // A server that answers busy (HTTP 429 or a 5xx) gets the download tried again by itself, as many
+  // times as the player chose in Settings (three by default). The wait doubles each time, from 30 s
+  // up to five minutes, so a short outage costs the player nothing; once the tries are used up the
+  // download stays failed with Retry, as before.
+  var RETRY_MS = 30e3;
+  var RETRY_MAX_MS = 5 * 60e3;
+  var SERVER_BUSY = /\bHTTP (?:429|5\d\d)\b/;
   // The folder an extraction is written to, and its game's under homebrew: the source's file name
   // without the ".binary" a source of unknown format downloads under. Jobs extracted before used it
   // with that suffix, so ownedPaths claims both.
@@ -101,6 +108,9 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
       delete job2.captureError;
       delete job2.captureFile;
       delete job2.fallbacks;
+      // A wait for a busy server from the last launch does not carry over: Resume starts it now.
+      delete job2.notBefore;
+      delete job2.busyRetries;
       // Closed while the console was being handed its link: resumed, it downloads here.
       if (job2.state === "installing" && !job2.streaming) return { ...job2, state: "installer-required" };
       delete job2.streaming;
@@ -136,6 +146,10 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
     packages,
     releasesOf,
     browserCapture,
+    // How many times a download may ask a busy server again by itself (Settings, 0 for off), read on
+    // each failure so a change applies to running downloads too.
+    retries = () => 0,
+    retryMs = RETRY_MS,
     stallMs = STALL_MS,
     // The package helper (pkg-helper.js), whose links keep working once the app has closed; without
     // one, a package the console takes from the app is served by the app itself.
@@ -153,6 +167,8 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
     const serving = /* @__PURE__ */ new Set();
     let jobs = [];
     let active2 = null;
+    // The timer that starts a download again once its wait on a busy server is over.
+    let retryTimer = null, retryAt = 0;
     let ticks = 0;
     let awake2 = false;
     const modified = (path) => {
@@ -820,6 +836,7 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
       notifications.show(t("downloads.notice.streamed"), job2.title);
       return true;
     }
+
     async function execute(job2) {
       let task;
       let unsubscribe;
@@ -837,6 +854,9 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
         const signal = active2.cancel.signal;
         job2.state = "resolving";
         job2.error = "";
+        // The wait for a busy server is over: this attempt starts now.
+        delete job2.notBefore;
+        if (job2.busyRetries) delete job2.message;
         change();
         if (job2.release.parts) {
           await executeSet(job2, signal);
@@ -919,6 +939,11 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
         job2.bytesPerSecond = 0;
         if ((job2.artifact.nextAction === "extraction-required" || job2.output) && archives) await extract(job2, [job2.downloadDestination]);
         delete job2.reresolved;
+        // Nothing is waiting on a busy server once the download is done. Its note is not cleared here:
+        // extract() has just written the message this state shows, and the attempt that started already
+        // cleared the retry one.
+        delete job2.notBefore;
+        delete job2.busyRetries;
         notifications.show(t("downloads.notice.complete"), job2.title);
         if (job2.state === "installer-required" && canInstall()) await install(job2);
       } catch (error2) {
@@ -939,6 +964,27 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
         const expired = !refused && job2.capturedLink && unwritten && /HTTP (?:401|403|404|410)/.test(cause(error2.message));
         if (expired) console.log("[download-queue] the captured link expired while queued; asking for the check again");
         const browser = !refused && (expired || error2 instanceof BrowserRequired || /browser verification required/i.test(cause(error2.message)));
+        // A host that answers busy is asked again by itself, after a wait that doubles each time, up
+        // to the tries the player set in Settings. The job goes back to the queue, so Pause still
+        // stops it and the row says how long it waits.
+        const busy = !refused && !browser && job2.state !== "pausing" && !job2.cancelling && SERVER_BUSY.test(cause(error2.message));
+        const setting = busy ? retries() : 0;
+        // "always" has no last try: the wait is still capped, so a host that stays down is asked
+        // every five minutes for as long as the app is open.
+        const unlimited = setting === "always";
+        const allowed = unlimited ? Infinity : setting;
+        const attempt = (job2.busyRetries || 0) + 1;
+        if (busy && attempt <= allowed) {
+          const delayMs = Math.min(retryMs * 2 ** (attempt - 1), RETRY_MAX_MS);
+          job2.busyRetries = attempt;
+          job2.notBefore = Date.now() + delayMs;
+          job2.state = "queued";
+          job2.error = "";
+          const seconds = Math.max(1, Math.round(delayMs / 1e3));
+          job2.message = unlimited ? t("downloads.retryingAlways", { seconds: String(seconds), attempt: String(attempt) }) : t("downloads.retrying", { seconds: String(seconds), attempt: String(attempt), total: String(allowed) });
+          console.log(`[download-queue] the server is busy; retry ${attempt}${unlimited ? " (always)" : ` of ${allowed}`} in ${seconds} s`);
+          return;
+        }
         const retried = job2.state !== "pausing" && !job2.cancelling && browser && active2.transferring && reresolve(job2);
         // A source that fails stays failed: the player picks another (the automatic switch to an
         // "equivalent" source was removed on 2026-10-16 at the user's request).
@@ -1513,10 +1559,28 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
     function pump(first) {
       // An open verification no longer holds the queue: what is queued downloads meanwhile.
       if (active2) return;
-      const job2 = first?.state === "queued" ? first : jobs.find((item) => item.state === "queued");
-      if (!job2) return;
+      const now = Date.now();
+      // A job waiting on a busy server is queued too, but only starts when its wait is over.
+      const due = (item) => item.state === "queued" && !(item.notBefore > now);
+      const job2 = first?.state === "queued" && due(first) ? first : jobs.find(due);
+      if (!job2) return wakeRetry();
       active2 = { job: job2, task: null };
       void execute(job2);
+    }
+    // Wakes the queue when the earliest waiting retry is due. The timer does not keep the process
+    // alive on its own, and one already set for an earlier time is kept.
+    function wakeRetry() {
+      const next = jobs.reduce((soonest, item) => item.state === "queued" && item.notBefore > Date.now() && item.notBefore < soonest ? item.notBefore : soonest, Infinity);
+      if (!Number.isFinite(next)) return;
+      if (retryTimer && retryAt <= next) return;
+      if (retryTimer) clearTimeout(retryTimer);
+      retryAt = next;
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        retryAt = 0;
+        pump();
+      }, Math.max(0, next - Date.now()));
+      retryTimer.unref?.();
     }
     // A drive is the id in its downloads/.drive-id, written the first time a download uses it: the
     // root's device:inode changes with every boot on a USB drive (issue #94), the file stays.
@@ -2122,8 +2186,12 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
       },
       pause(id) {
         const job2 = find(id);
-        if (job2.state === "queued") job2.state = "paused";
-        else if (active2?.job === job2 && ACTIVE.includes(job2.state)) {
+        if (job2.state === "queued") {
+          job2.state = "paused";
+          // Pausing during a wait on a busy server ends the wait: Resume starts it at once.
+          delete job2.notBefore;
+          delete job2.message;
+        } else if (active2?.job === job2 && ACTIVE.includes(job2.state)) {
           job2.state = "pausing";
           active2.cancel?.cancel();
           active2.task?.cancel();
@@ -2147,6 +2215,10 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
         const job2 = find(id);
         if (job2.state !== "paused" && job2.state !== "failed") return;
         delete job2.reresolved;
+        // Asking by hand gives the download its automatic tries back.
+        delete job2.notBefore;
+        delete job2.busyRetries;
+        delete job2.message;
         job2.state = "queued";
         job2.error = "";
         change();
@@ -2166,6 +2238,9 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
         if (paths.length) await removing(job2, () => removeAll(paths));
         delete job2.directURL;
         delete job2.reresolved;
+        // Asking by hand gives the download its automatic tries back.
+        delete job2.notBefore;
+        delete job2.busyRetries;
         if (job2.parts?.[job2.partIndex] && !job2.parts[job2.partIndex].completed) {
           job2.parts[job2.partIndex].written = 0;
           delete job2.parts[job2.partIndex].options;

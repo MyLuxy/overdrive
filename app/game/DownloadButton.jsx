@@ -243,7 +243,9 @@ import { DownloadFormats, Platform, Text, View, motion } from '@ps5-react/core';
         WAITING.includes(shown) ? /* @__PURE__ */ (0, jsx)(ShimmerText, { textStyle: STATUS, children: state }) : /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, color: "#8a8a94", lineHeight: 30 }, children: state }),
         detail2 ? /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, color: "#8a8a94", lineHeight: 30 }, children: detail2 }) : null
       ] }),
-      problem ? /* @__PURE__ */ (0, jsx)(ProblemNote, { title: problem.title, action: problem.action }) : notice ? /* @__PURE__ */ (0, jsx)(Text, { style: { width: 408, fontFamily: "Inter-Regular", fontSize: 21, color: "#a3a3ab", numberOfLines: 3, ellipsizeMode: "tail", lineHeight: 30 }, children: notice.slice(0, 160) }) : null,
+      problem ? /* @__PURE__ */ (0, jsx)(ProblemNote, { title: problem.title, action: problem.action }) : // The notice is up to four lines in this 408px column: an install request in the longer locales
+      // needs more than three, and the engine cuts anything past the last line with "…" (2026-10-26).
+      notice ? /* @__PURE__ */ (0, jsx)(Text, { style: { width: 408, fontFamily: "Inter-Regular", fontSize: 21, color: "#a3a3ab", numberOfLines: 4, ellipsizeMode: "tail", lineHeight: 30 }, children: notice.slice(0, 160) }) : null,
       choosing && release ? /* @__PURE__ */ (0, jsx)(
         Choice,
         {
