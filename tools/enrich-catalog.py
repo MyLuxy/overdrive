@@ -4,6 +4,10 @@
     python -I tools/enrich-catalog.py --since HEAD [--write] [--env-file <path>] [--report <file>]
     python -I tools/enrich-catalog.py --ids PPSA01474,CUSA00001 [--write] ...
 
+--no-search skips the by-name storefront search (faster; the misses are reported);
+ENRICH_STORES=US,GB limits the storefronts to those codes;
+--igdb-only skips the PlayStation Store and asks only IGDB (for a backlog the Store has already seen).
+
 It is meant for the games an import adds: --since <git ref> takes the games in catalog.js now that
 were not in it at that ref (after an import, before committing it: --since HEAD), --ids names them.
 The games already in the catalog are left alone. For each it fills only what is missing, never
@@ -66,6 +70,10 @@ REGION_STORES = {"UP": [("US", "en")], "EP": [("GB", "en"), ("DE", "de")], "JP":
                  "KP": [("KR", "ko")], "IP": [("US", "en")]}
 STORES = [("US", "en"), ("GB", "en"), ("HK", "en"), ("AU", "en"), ("CA", "en"), ("SG", "en"), ("DE", "de"), ("FR", "fr"),
           ("JP", "ja"), ("KR", "ko"), ("TW", "zh"), ("IT", "it"), ("ES", "es")]
+if os.environ.get("ENRICH_STORES"):
+    _codes = {code.strip().upper() for code in os.environ["ENRICH_STORES"].split(",") if code.strip()}
+    STORES = [store for store in STORES if store[0] in _codes]
+    REGION_STORES = {region: [store for store in stores if store[0] in _codes] for region, stores in REGION_STORES.items()}
 ENGLISH = {"en"}
 # The catalog's own genre names, so new games join the genres the app already lists.
 STORE_GENRES = {"ACTION": "Action", "ADVENTURE": "Adventure", "ROLE_PLAYING_GAMES": "Role Playing Games", "HORROR": "Horror",
@@ -582,6 +590,8 @@ def main(argv=None):
     parser.add_argument("--env-file", help="a .env file holding IGDB_CLIENT_ID and IGDB_CLIENT_SECRET")
     parser.add_argument("--report", help="save every change as JSON to this file")
     parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--no-search", action="store_true", help="skip the by-name storefront search (faster; misses are reported)")
+    parser.add_argument("--igdb-only", action="store_true", help="ask only IGDB, skipping the PlayStation Store")
     args = parser.parse_args(argv)
 
     env = dict(os.environ)
@@ -629,16 +639,18 @@ def main(argv=None):
     def resolve(target):
         _, game, _, _, need = target
         title = game["id"]
-        found = chihiro(cache, title, region.get(title))
-        if not found:
-            for sibling in by_concept.get(concept.get(title), []):
-                if sibling != title:
-                    found = chihiro(cache, sibling, region.get(sibling))
-                    if found:
-                        break
+        found = None
+        if not args.igdb_only:
+            found = chihiro(cache, title, region.get(title))
+            if not found:
+                for sibling in by_concept.get(concept.get(title), []):
+                    if sibling != title:
+                        found = chihiro(cache, sibling, region.get(sibling))
+                        if found:
+                            break
         results = [from_store(found)] if found else []
         missing = {key for key in need if key not in {"developer", "tint"} and not any(result.get(key) for result in results)}
-        if missing:
+        if missing and not args.no_search and not args.igdb_only:
             ids = {title, *by_concept.get(concept.get(title), [])}
             searched = search_store(cache, game, ids, [names.get(title)], region.get(title), missing)
             if searched:
@@ -667,7 +679,7 @@ def main(argv=None):
         for done, (target, (fill, sources)) in enumerate(zip(targets, pool.map(resolve, targets)), 1):
             if fill:
                 changes.append((target, fill, sources))
-            if done % 50 == 0:
+            if done % 10 == 0:
                 print(f"  {done}/{len(targets)} looked up, {len(changes)} with something to add")
                 cache.save()
     cache.save()
