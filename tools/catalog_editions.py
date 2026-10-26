@@ -23,13 +23,22 @@ def today():
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
 
 
-def edition_key(title):
-    """A title without its edition's words, numerals or punctuation: one game's editions share it."""
+def edition_tokens(title):
+    """A title's words once its edition's words are gone, for comparing titles word by word.
+
+    edition_key joins the words, so "Stray" is a prefix of "Strayed Lights"; the list keeps them
+    apart, and "Stray" is then no prefix of "Strayed Lights" at all.
+    """
     title = html.unescape(title).lower().replace("&", " ")
     title = re.sub(r"[™®©:'’.,!?\-–/|()\[\]+]", " ", title)
     title = EDITION.sub(" ", title)
     title = re.sub(r"\biii\b", "3", re.sub(r"\bii\b", "2", title))
-    return re.sub(r"[^a-z0-9]", "", title)
+    return re.findall(r"[a-z0-9]+", title)
+
+
+def edition_key(title):
+    """A title without its edition's words, numerals or punctuation: one game's editions share it."""
+    return "".join(edition_tokens(title))
 
 
 def block_bounds(lines, name):

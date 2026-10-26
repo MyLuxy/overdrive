@@ -75,6 +75,9 @@ def desktop(app, test=False, target="ps5-react-preview", resolution=None):
         run(["python3", ROOT / "tools/test_video.py"], log=ROOT / ".build/video-test.log")
         run(["python3", ROOT / "tools/test_passthrough.py"], log=ROOT / ".build/passthrough-test.log")
         run(["python3", ROOT / "tools/test_browser_capture.py"], log=ROOT / ".build/browser-capture-test.log")
+        run(["python3", ROOT / "tools/test_torrent_meta.py"], log=ROOT / ".build/torrent-meta-test.log")
+        run(["python3", ROOT / "tools/test_torrent_tracker.py"], log=ROOT / ".build/torrent-tracker-test.log")
+        run(["python3", ROOT / "tools/test_torrent_engine.py"], log=ROOT / ".build/torrent-engine-test.log")
         command.append("--self-test")
     return command, build
 

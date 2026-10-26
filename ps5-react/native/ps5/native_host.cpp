@@ -10,6 +10,7 @@
 #include "removals.hpp"
 #include "browser_capture.hpp"
 #include "lan.hpp"
+#include "torrent_engine.hpp"
 #include "render_workers.hpp"
 #include "thread_name.hpp"
 #include "app_config.hpp"
@@ -683,6 +684,7 @@ bool run_proof() {
   archives::stop();
   browser_capture::stop();
   lan::stop();
+  torrent::stop();
   packages::stop();
   pkg_proxy::stop();
   removals::stop();

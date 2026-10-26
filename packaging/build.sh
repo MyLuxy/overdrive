@@ -22,7 +22,7 @@ if [ -z "$llvm" ]; then
     done
 fi
 if [ -z "$llvm" ] || [ ! -x "$llvm/clang" ]; then
-    echo "error: LLVM 18 not found. Install it (apt: clang-18 llvm-18 llvm-18-dev; brew: llvm@18)" >&2
+    echo "error: LLVM 18 not found. Install it (apt: clang-18 llvm-18 llvm-18-dev lld-18; brew: llvm@18)" >&2
     echo "       or set LLVM=<directory holding its clang and llvm-config>" >&2
     exit 1
 fi
@@ -35,6 +35,15 @@ if [ "$package" = 1 ] && ! command -v mkfs.exfat >/dev/null; then missing+=("mkf
 if [ "${#missing[@]}" -gt 0 ]; then
     echo "error: missing tools: ${missing[*]}" >&2
     echo "       apt: cmake ninja-build nasm curl unzip zip exfatprogs" >&2
+    exit 1
+fi
+
+# The PS5 link goes through prospero-lld, which calls ld.lld next to this clang. Report it here,
+# where the fix is one apt command, instead of from inside a dependency build. Homebrew's lld can
+# serve a macOS LLVM whose own bindir lacks it, so only Linux is checked.
+if [ "$(uname -s)" = Linux ] && [ ! -x "$llvm/ld.lld" ]; then
+    echo "error: the LLVM 18 linker is missing: $llvm/ld.lld" >&2
+    echo "       apt: lld-18    (or set LLVM=<a directory holding clang and ld.lld>)" >&2
     exit 1
 fi
 

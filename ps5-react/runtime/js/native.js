@@ -419,9 +419,21 @@ function pollNetwork() {
       try { listener(task.snapshot); }
       catch (error) { console.error('Download progress listener failed:', error); }
     }
+    // A completed torrent that seeds stays in the poll: the native side keeps the job alive until
+    // its seeder stops, and every poll reports the upload total. Its promise settles once, at
+    // completion; the subscription ends with the final snapshot, where `seeding` is false.
+    if (snapshot.state === 'completed' && snapshot.seeding === true) {
+      if (!task.settled) {
+        task.settled = true;
+        task.resolve({...snapshot, destination: task.destination});
+      }
+      continue;
+    }
     if (snapshot.state === 'completed' || snapshot.state === 'failed' || snapshot.state === 'cancelled') {
       networkTasks.delete(key);
       task.listeners.clear();
+      if (task.settled) continue;
+      task.settled = true;
       if (snapshot.state === 'completed') task.resolve({...snapshot, destination: task.destination});
       else task.reject(taskError(task, snapshot));
     }
@@ -431,7 +443,7 @@ function pollNetwork() {
 
 function networkTask(id, call, destination = '', backend = 'network') {
   const key = `${backend}:${id}`;
-  const task = {id, backend, call, destination, listeners: new Set(),
+  const task = {id, backend, call, destination, listeners: new Set(), settled: false,
     snapshot: Object.freeze({id, destination, state: 'queued', received: 0, written: 0, total: null,
       bytesPerSecond: 0, connections: 0, retries: 0, bufferedBytes: 0})};
   const done = new Promise((resolve, reject) => { task.resolve = resolve; task.reject = reject; });
@@ -604,6 +616,41 @@ export const LocalNetwork = Object.freeze({
       if (signal) signal.removeEventListener('abort', abort);
     }
   },
+});
+
+/**
+ * The app's own BitTorrent client (ABI v21), with no external client or service. One job fetches a
+ * magnet's metadata (BEP 9) or reads a `.torrent`, downloads the wanted file's pieces, verifies each
+ * by SHA-1 and writes them straight to `destination`. There is no DHT or web seed: a magnet needs its
+ * trackers and/or `x.pe` peers. Progress reaches the snapshot every 250 ms, including while running:
+ * `state` is `starting`, `metadata`, `downloading`, `completed`, `failed` or `cancelled`; it adds
+ * `size`, `total`, `downloaded`, `verified`, `uploaded`, `bytesPerSecond`, `pieces`, `piecesDone`,
+ * `peers`, `seeds`, `leechers`, `swarmSeeds`, `swarmLeechers`, `listenPort`, and `metadata`/`seeding`
+ * flags. A cancelled or failed job keeps a `<destination>.torrent-parts` sidecar and resumes from it.
+ * A completed job keeps seeding only when `seeding` is set and the user's setting allows it
+ * (`setSeeding`), and stops when the app closes.
+ */
+export const Torrents = Object.freeze({
+  /**
+   * @param {{magnet?: string, torrentPath?: string, destination: string, wanted?: string,
+   *   seeding?: boolean, connections?: number, listenPort?: number}} options
+   * @returns {{id: number, done: Promise<object>, cancel(): void, snapshot: object,
+   *   subscribe(listener: (snapshot: object) => void): () => void}}
+   */
+  download({magnet = '', torrentPath = '', destination, wanted = '', seeding = false,
+    connections = 16, listenPort = 0}) {
+    if (typeof destination !== 'string' || !destination)
+      throw new TypeError('Torrents.download: destination must be a non-empty path.');
+    if ((magnet ? 1 : 0) + (torrentPath ? 1 : 0) !== 1)
+      throw new TypeError('Torrents.download: pass exactly one of magnet or torrentPath.');
+    const id = host().torrent.start({magnet, torrentPath, destination, wanted,
+      seeding: seeding === true, connections, listenPort});
+    return networkTask(id, 'Torrents.download', destination, 'torrent');
+  },
+  /** Whether completed jobs seed while the app is open; it applies to running jobs too. */
+  setSeeding(enabled) { host().torrent.setSeeding(enabled === true); },
+  /** Whether this host carries the engine (ABI v21); older hosts return false. */
+  get supported() { return typeof globalThis.__ps5ReactNative?.torrent?.start === 'function'; },
 });
 
 /** Read-only, filename-bound Vikingfile capture on PS5; no browser data is retained. */

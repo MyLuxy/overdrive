@@ -41,7 +41,7 @@ target_compile_options(sheenbidi PRIVATE -w)
 target_include_directories(sheenbidi PUBLIC "${SB_ROOT}/Headers" PRIVATE "${SB_ROOT}/Source")
 # Same engine options on desktop and PS5, rather than the upstream demo's profile.
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../ps5" runtime)
-add_executable(ps5-react-preview host.cpp host_platform.cpp network_platform.cpp ../shared/network.cpp ../shared/network_api.cpp ../shared/archives.cpp ../shared/archive_writer.cpp rar_worker_process.cpp ../shared/archive_preflight.cpp ../shared/rar5_password.cpp ../shared/archive_api.cpp ../shared/package_api.cpp ../shared/pkg_proxy.cpp package_installer.cpp ../shared/browser_capture_api.cpp browser_capture.cpp ../shared/lan.cpp ../shared/lan_api.cpp ../shared/image_loader.cpp ../shared/image_api.cpp ../shared/sound_api.cpp ../shared/audio_sink.cpp ../shared/audio_output_api.cpp ../shared/host_api.cpp ../shared/removals.cpp "${HUI_ROOT}/src/audio/mixer.cpp" ../shared/gl_presenter.cpp ../shared/frame_stats.cpp ../shared/js_heap.cpp ../shared/js_profiler.cpp ../shared/damage_tracker.cpp ../shared/render_workers.cpp ../shared/input_script.cpp ../shared/screenshot.cpp ../shared/text_shaper.cpp ../shared/video_player.cpp ../shared/video_subtitles.cpp ../shared/video_api.cpp ../shared/gl_video.cpp ../shared/gl_upscale.cpp video_decoder.cpp control.cpp "${APP_LAYOUT}/assets.generated.c" "${APP_LAYOUT}/sounds.generated.c")
+add_executable(ps5-react-preview host.cpp host_platform.cpp network_platform.cpp ../shared/network.cpp ../shared/network_api.cpp ../shared/archives.cpp ../shared/archive_writer.cpp rar_worker_process.cpp ../shared/archive_preflight.cpp ../shared/rar5_password.cpp ../shared/archive_api.cpp ../shared/package_api.cpp ../shared/pkg_proxy.cpp package_installer.cpp ../shared/browser_capture_api.cpp browser_capture.cpp ../shared/lan.cpp ../shared/lan_api.cpp ../shared/torrent_bencode.cpp ../shared/torrent_meta.cpp ../shared/torrent_peer.cpp ../shared/torrent_tracker.cpp ../shared/torrent_engine.cpp ../shared/torrent_api.cpp ../shared/image_loader.cpp ../shared/image_api.cpp ../shared/sound_api.cpp ../shared/audio_sink.cpp ../shared/audio_output_api.cpp ../shared/host_api.cpp ../shared/removals.cpp "${HUI_ROOT}/src/audio/mixer.cpp" ../shared/gl_presenter.cpp ../shared/frame_stats.cpp ../shared/js_heap.cpp ../shared/js_profiler.cpp ../shared/damage_tracker.cpp ../shared/render_workers.cpp ../shared/input_script.cpp ../shared/screenshot.cpp ../shared/text_shaper.cpp ../shared/video_player.cpp ../shared/video_subtitles.cpp ../shared/video_api.cpp ../shared/gl_video.cpp ../shared/gl_upscale.cpp video_decoder.cpp control.cpp "${APP_LAYOUT}/assets.generated.c" "${APP_LAYOUT}/sounds.generated.c")
 target_compile_features(ps5-react-preview PRIVATE cxx_std_20)
 target_compile_options(ps5-react-preview PRIVATE -Wall -Wextra -Werror)
 target_include_directories(ps5-react-preview PRIVATE ../shared "${APP_GENERATED}" "${STB_IMAGE_DIR}" "${HUI_ROOT}/src" "${ER_ROOT}/engine/text")
@@ -78,6 +78,9 @@ target_link_libraries(ps5-react-video-test PRIVATE Threads::Threads)
 if(APPLE)
   target_link_libraries(ps5-react-video-test PRIVATE "-framework VideoToolbox" "-framework CoreFoundation" "-framework CoreMedia"
                         "-framework CoreVideo" "-framework CoreServices" "-framework Security")
+else()
+  # The same TLS symbols the preview needs: libavformat's tls_openssl.o is part of the archive.
+  target_link_libraries(ps5-react-video-test PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 endif()
 # tools/test_passthrough.py: the IEC 61937 packer against FFmpeg's spdif muxer, and the EDID audio parser.
 add_executable(ps5-react-passthrough-test EXCLUDE_FROM_ALL ../../tools/tests/passthrough_client.cpp ../shared/audio_sink.cpp)

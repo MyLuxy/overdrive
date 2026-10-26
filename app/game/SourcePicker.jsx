@@ -16,6 +16,7 @@ import { Text, View, useIsFocused } from '@ps5-react/core';
 
   var SECTION = {
     direct: { title: "sources.section.direct", icon: "download" },
+    torrent: { title: "sources.section.torrent", icon: "globe", note: "sources.section.torrentNote" },
     page: { title: "sources.section.page", icon: "download", note: "sources.section.pageNote" },
     browser: { title: "sources.section.browser", icon: "external" },
     dlc: { title: "sources.section.dlc", icon: "download", note: "sources.section.dlcNote" }
@@ -111,7 +112,7 @@ import { Text, View, useIsFocused } from '@ps5-react/core';
     const recommended = preferredRelease(releases);
     const sections = sourceSections(releases);
     const count = (group) => sections.find((section) => section.group === group)?.items.length ?? 0;
-    const [browser, setBrowser] = (0, useState)(() => !count("direct") && !count("page") || describeSource(releases[selected]).group === "browser");
+    const [browser, setBrowser] = (0, useState)(() => !count("direct") && !count("torrent") && !count("page") || describeSource(releases[selected]).group === "browser");
     const [revealed, setRevealed] = (0, useState)(false);
     const pick2 = (index) => {
       submit(index);
@@ -130,7 +131,7 @@ import { Text, View, useIsFocused } from '@ps5-react/core';
           }
         }
       ) : null,
-      sections.filter(({ group }) => group === "direct" || group === "page" || browser && group === "browser").map(
+      sections.filter(({ group }) => group === "direct" || group === "torrent" || group === "page" || browser && group === "browser").map(
         ({ group, items }) => /* @__PURE__ */ (0, jsx)(
           Section2,
           {

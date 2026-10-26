@@ -3,7 +3,7 @@
 // Additional attribution term: see LICENSE-ATTRIBUTION.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {acquireImage, Archives, BrowserCapture, Controller, Downloads, FileSystem, Http, LocalNetwork, Power, Sound} from './native.js';
+import {acquireImage, Archives, BrowserCapture, Controller, Downloads, FileSystem, Http, LocalNetwork, Power, Sound, Torrents} from './native.js';
 import {setFrameBatcher} from './frame.js';
 
 test('native network tasks deliver progress, release listeners and stop polling', async () => {
@@ -53,6 +53,50 @@ test('native network tasks deliver progress, release listeners and stop polling'
     assert.deepEqual(await result.json(), {value: 42});
     assert.equal(await result.text(), '{"value":42}');
     assert.equal(clears, 3);
+  } finally {
+    globalThis.setInterval = originalInterval;
+    globalThis.clearInterval = originalClear;
+    delete globalThis.__ps5ReactNative;
+  }
+});
+
+test('a completed torrent keeps polling while it seeds and ends on the snapshot that stops seeding', async () => {
+  let tick;
+  let clears = 0;
+  let snapshots = [];
+  const started = [];
+  const cancelled = [];
+  const originalInterval = globalThis.setInterval;
+  const originalClear = globalThis.clearInterval;
+  globalThis.setInterval = callback => { tick = callback; return 1; };
+  globalThis.clearInterval = () => { clears++; };
+  globalThis.__ps5ReactNative = {torrent: {
+    start: options => { started.push(options); return 7; },
+    cancel: id => cancelled.push(id), poll: () => snapshots, setSeeding: () => {},
+  }};
+  try {
+    const task = Torrents.download({magnet: 'magnet:?xt=urn:btih:0123&tr=udp%3A%2F%2Ft.example%3A6969',
+      destination: '/download0/Game.pkg', seeding: true});
+    assert.equal(started[0].seeding, true);
+    const seen = [];
+    task.subscribe(progress => seen.push([progress.state, progress.seeding === true, progress.uploaded ?? 0]));
+    snapshots = [{id: 7, state: 'completed', downloaded: 100, uploaded: 0, seeding: true}];
+    tick();
+    // The download is over, so `done` settles; the engine is still serving pieces.
+    assert.equal((await task.done).uploaded, 0);
+    assert.equal(clears, 0);
+    snapshots = [{id: 7, state: 'completed', downloaded: 100, uploaded: 4096, seeding: true}];
+    tick();
+    assert.equal(task.snapshot.uploaded, 4096);
+    assert.equal(clears, 0);
+    snapshots = [{id: 7, state: 'completed', downloaded: 100, uploaded: 8192, seeding: false}];
+    tick();
+    assert.equal(clears, 1);
+    assert.deepEqual(seen, [['queued', false, 0], ['completed', true, 0],
+      ['completed', true, 4096], ['completed', false, 8192]]);
+    // The job is gone from the poll, so there is nothing left to cancel.
+    task.cancel();
+    assert.deepEqual(cancelled, []);
   } finally {
     globalThis.setInterval = originalInterval;
     globalThis.clearInterval = originalClear;

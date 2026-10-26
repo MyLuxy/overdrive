@@ -97,11 +97,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 def compile_client(directory):
     binary = directory / "client"
+    # network.cpp verifies pieces with OpenSSL on Linux; macOS uses CommonCrypto instead.
+    crypto = [] if sys.platform == "darwin" else ["-lcrypto"]
     subprocess.run(["clang++", "-std=c++20", "-O2", "-Wall", "-Wextra", "-Werror", "-pthread",
                     "-I", str(ROOT / "native/shared"), "-I", str(stb_image()),
                     str(ROOT / "tools/tests/image_client.cpp"), str(ROOT / "native/shared/image_loader.cpp"),
                     str(ROOT / "native/shared/network.cpp"), str(ROOT / "native/desktop/network_platform.cpp"),
-                    "-lcurl", "-o", str(binary)], check=True)
+                    "-lcurl", *crypto, "-o", str(binary)], check=True)
     return binary
 
 

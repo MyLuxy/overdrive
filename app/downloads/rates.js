@@ -31,7 +31,8 @@
       return {
         active: moving.length,
         speed,
-        connections: sum((job2) => job2.connections || 0),
+        // A torrent counts the peers the engine is connected to; an HTTP download its connections.
+        connections: sum((job2) => job2.connections || job2.peers || 0),
         left: sum((job2) => Math.max(0, (job2.total || 0) - job2.written)),
         peak,
         low,

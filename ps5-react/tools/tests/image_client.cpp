@@ -14,7 +14,21 @@
 #include <string>
 #include <thread>
 #include <vector>
+#ifdef __APPLE__
 #include <malloc/malloc.h>
+// The system allocator, reached without going through the interposed malloc symbols below.
+#define ZONE_MALLOC(size) malloc_zone_malloc(malloc_default_zone(), size)
+#define ZONE_CALLOC(count, size) malloc_zone_calloc(malloc_default_zone(), count, size)
+#define ZONE_REALLOC(address, size) malloc_zone_realloc(malloc_default_zone(), address, size)
+#else
+// glibc exports its allocator under these names; <malloc.h> does not declare them.
+extern "C" void* __libc_malloc(std::size_t) noexcept;
+extern "C" void* __libc_calloc(std::size_t, std::size_t) noexcept;
+extern "C" void* __libc_realloc(void*, std::size_t) noexcept;
+#define ZONE_MALLOC(size) __libc_malloc(size)
+#define ZONE_CALLOC(count, size) __libc_calloc(count, size)
+#define ZONE_REALLOC(address, size) __libc_realloc(address, size)
+#endif
 
 // The loader's own allocations (bodies, stb_image buffers, pixels) bind to these, not libc's, so
 // IMAGE_FAIL_LARGE_MS can refuse every allocation of 128 KiB or more for that many milliseconds
@@ -29,12 +43,12 @@ bool refused(std::size_t size) {
   return size >= 128 * 1024 && (until < 0 || (until > 0 && now_ms() < until));
 }
 } // namespace
-extern "C" void* malloc(std::size_t size) { return refused(size) ? nullptr : malloc_zone_malloc(malloc_default_zone(), size); }
+extern "C" void* malloc(std::size_t size) { return refused(size) ? nullptr : ZONE_MALLOC(size); }
 extern "C" void* calloc(std::size_t count, std::size_t size) {
-  return refused(count * size) ? nullptr : malloc_zone_calloc(malloc_default_zone(), count, size);
+  return refused(count * size) ? nullptr : ZONE_CALLOC(count, size);
 }
 extern "C" void* realloc(void* address, std::size_t size) {
-  return refused(size) ? nullptr : malloc_zone_realloc(malloc_default_zone(), address, size);
+  return refused(size) ? nullptr : ZONE_REALLOC(address, size);
 }
 
 namespace {

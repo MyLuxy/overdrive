@@ -1,0 +1,8 @@
+# Bash reads these files on Linux and in WSL, where a CRLF shebang or a trailing \r in
+# `set -euo pipefail` is a syntax error; core.autocrlf=true would otherwise hand out CRLF.
+*.sh text eol=lf
+*.py text eol=lf
+*.mjs text eol=lf
+# `git apply` compares a patch's context lines against the pinned dependency byte for byte,
+# and those clones are LF; a CRLF patch fails on the first hunk.
+*.patch text eol=lf

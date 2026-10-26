@@ -86,6 +86,8 @@ import { DownloadFormats, Platform, Text, View, motion } from '@ps5-react/core';
       if (stale) restart();
       else if (lacking) return;
       // A homebrew app has one source, its developer's GitHub release: the tips are about choosing hosts.
+      // A torrent has no host either: the queue hands it to the engine in the app, and its tips come
+      // afterwards, with its file.
       else if (status === "idle" && release && !game.homebrew) onRequestDialog({ kind: "tips", game, release, submit: startNew, changeSource: () => chooseSource() });
       else if (status === "idle") startNew();
       else download.advance();

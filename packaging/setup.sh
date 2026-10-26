@@ -22,8 +22,11 @@ Linux)
     sudo apt-get install -y \
         build-essential cmake clang ninja-build nasm pkg-config git curl unzip zip zstd \
         libsdl2-dev libgl-dev libcurl4-openssl-dev libarchive-dev libarchive-tools liblzma-dev libssl-dev zlib1g-dev \
-        clang-18 llvm-18 llvm-18-dev exfatprogs \
-        nodejs npm python3 python3-pil
+        clang-18 llvm-18 llvm-18-dev lld-18 exfatprogs \
+        nodejs python3 python3-pil
+    # A NodeSource nodejs brings npm; Ubuntu's own does not. Ask apt only when npm is absent, so
+    # a NodeSource install is not dragged back to the distro's older nodejs.
+    command -v npm >/dev/null || sudo apt-get install -y npm
     ;;
 Darwin)
     command -v brew >/dev/null || { echo "error: Homebrew is needed: https://brew.sh" >&2; exit 1; }
@@ -57,6 +60,8 @@ esac
 for tool in $tools; do
     printf '%-10s %s\n' "$tool" "$(command -v "$tool" || echo MISSING)"
 done
+# prospero-lld calls this absolute path, so `command -v ld.lld` cannot stand in for it.
+[ "$(uname -s)" = Linux ] && printf '%-10s %s\n' ld.lld "$([ -x /usr/lib/llvm-18/bin/ld.lld ] && echo /usr/lib/llvm-18/bin/ld.lld || echo MISSING)"
 echo
 echo "Ready. Next: npm run preview (desktop window), npm run build (Overdrive.exfat)."
 echo "On macOS the :mac variants (preview:mac, dev:mac, build:mac) use ps5-react/.venv."

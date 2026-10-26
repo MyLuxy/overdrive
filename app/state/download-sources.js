@@ -30,6 +30,9 @@
   }
   function sourceKind(release) {
     if (release.manifestUrl) return "manifest";
+    // A torrent names no file this resolver can fetch: the queue hands it to the app's own engine,
+    // which reads the metadata and writes the file itself.
+    if (release.flow === "torrent" || release.magnet || /^magnet:/i.test(release.browserUrl || release.url || "")) return "torrent";
     const value = release.browserUrl || release.url;
     if (!value) return "unavailable";
     const { host: host2, path } = webURL(value);
@@ -125,6 +128,9 @@
       const url = release.browserUrl || release.url;
       const kind = sourceKind(release);
       if (kind === "unavailable") throw new Error("Source unavailable: no download URL.");
+      // A torrent never reaches this resolver: the queue hands it to the engine before resolving.
+      // The guard stays for a release that slipped through, with a reason instead of a broken fetch.
+      if (kind === "torrent") throw new Error("This is a torrent: the app's own engine fetches it.");
       // A pasted link may be behind the password of the service it came from (a qBittorrent WebUI):
       // the release then carries the headers to send with it.
       if (kind === "direct") return { url: webURL(url).url, rejectHtml: true, headers: release.headers };

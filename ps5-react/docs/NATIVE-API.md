@@ -17,7 +17,7 @@ Controller.setLightBar('#38bdf8');
 ## Contract
 
 The modules in `runtime/js/native.js` wrap `globalThis.__ps5ReactNative`, which
-each host installs before the bundle runs. Its exact shape (ABI v15) is
+each host installs before the bundle runs. Its exact shape (ABI v21) is
 documented in [`native/shared/host_api.hpp`](../native/shared/host_api.hpp).
 `native/shared/host_api.cpp` implements the filesystem with POSIX and the object
 itself; `native/ps5/` and `native/desktop/` implement the platform functions.
@@ -187,6 +187,52 @@ query and rejects with an `AbortError`. Anyone on the network can reply with any
 check a reply against its sender before using an address it names. It needs
 `networking: true` (and on PS5 `filesystemAccess: "console"`), like HTTP. Only IPv4
 limited broadcast is sent; multicast (SSDP, mDNS) and unicast UDP are not available.
+
+## Torrents (ABI v21)
+
+The app carries its own BitTorrent client: no external client, daemon or service
+is involved. `Torrents.download({magnet, torrentPath, destination, wanted, seeding,
+connections, listenPort})` starts one job and returns a task like the download
+tasks (`id`, `done`, `cancel()`, `snapshot`, `subscribe(listener)`); pass exactly one of
+`magnet` or `torrentPath`. `destination` and `torrentPath` are app paths, named as
+everywhere else (`/download0`, `/app0`), and the host resolves them — on the desktop
+preview they land inside its sandbox.
+
+```js
+import {Torrents} from '@ps5-react/core';
+const job = Torrents.download({magnet, destination: `${FileSystem.dataDir}/Game.pkg`});
+job.subscribe(({state, verified, total, pieces, piecesDone, seeds, leechers}) => { /* draw it */ });
+await job.done;
+```
+
+The task snapshot updates every 250 ms, while the job runs too. `state` is
+`starting`, `metadata` (reading a magnet's info dictionary, BEP 9), `downloading`,
+`completed`, `failed` or `cancelled`. It also carries `name`, `file`, `infoHash`,
+`metadata` and `seeding` flags, `size` (the wanted file), `total` (the torrent),
+`downloaded`, `verified` (SHA-1-checked bytes), `uploaded`, `bytesPerSecond`,
+`pieces`, `piecesDone`, `peers` (connected), `seeds`/`leechers` (how many of those
+we can download from / upload to) and the tracker's `swarmSeeds`/`swarmLeechers`
+(0 until a tracker answers). `listenPort` is nonzero once inbound peers are accepted.
+
+Limits are deliberate: one file per job (`wanted` picks it by path or basename,
+else the largest), IPv4 peers only, HTTP(S) and UDP trackers from the torrent or
+magnet plus the magnet's `x.pe` peers — there is no DHT, PEX-only discovery or
+web seed, so a magnet with neither trackers nor peers fails. A cancelled or failed
+job leaves `<destination>.torrent-parts` and the next job for that destination
+resumes from it; completing one deletes it. Files are written as pieces verify, so
+a partial destination is usable only through a resumed job.
+
+A completed job keeps serving its pieces while the app is open, but only when its
+`seeding` option is set and `Torrents.setSeeding(true)` is in force — the user's
+setting, which applies to running jobs. While it seeds, the task keeps reporting
+snapshots (`uploaded` grows) and its `done` resolves at completion; the subscription
+ends with one final snapshot whose `seeding` is false, when the seeder stops. Up to 8 jobs transfer at once, and up to
+16 in all count finished jobs that still seed; when that table is full the oldest
+finished seeder stops to make room for a new download (nobody is polling it any
+more). `Torrents.supported` is false on hosts
+older than ABI v21. It needs `networking: true` (and on PS5
+`filesystemAccess: "console"`), like HTTP. Seeding is exercised by
+`tools/test_torrent_engine.py` against a local peer, not on hardware.
 
 ## Images
 

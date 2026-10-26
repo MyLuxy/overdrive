@@ -33,6 +33,7 @@ import { formatBytes } from '../state/size.js';
       return "browser";
     }
     if (kind === "direct" || kind === "manifest") return "direct";
+    if (kind === "torrent") return "torrent";
     return kind === "browser" || kind === "datanodes" || kind === "unavailable" || GATED.has(kind) ? "browser" : "page";
   }
   // The firmware a source needs, from its label ("USA 10.xx Base", "10.xx BackPort 4.xx"): a backport
@@ -74,7 +75,9 @@ import { formatBytes } from '../state/size.js';
       status: release.unavailableReason ? null : compatibility(release)
     };
   }
-  var GROUP_RANK = { direct: 0, page: 1, browser: 2, unavailable: 3 };
+  // A torrent comes after the app's own direct links (the queue holds nothing to fetch), ahead of
+  // the host pages and the browser ones.
+  var GROUP_RANK = { direct: 0, torrent: 1, page: 2, browser: 3, unavailable: 4 };
   var HEALTH_RANK = { ok: 0, flaky: 2 };
   var isBackport = ({ label }) => /\bback\s*port\b/i.test(label || "");
   // After the direct hosts, the browser hosts confirmed on the console (Vikingfile, DataNodes, FileKeeper),
@@ -102,14 +105,15 @@ import { formatBytes } from '../state/size.js';
     return releases.map(ranked).sort(compare)[0]?.index ?? 0;
   }
   function sourceSections(releases) {
-    const sections = ["direct", "page", "browser", "dlc", "unavailable"].map((group) => ({ group, items: [] }));
+    const sections = ["direct", "torrent", "page", "browser", "dlc", "unavailable"].map((group) => ({ group, items: [] }));
     releases.forEach((release, index) => {
       const { group } = describeSource(release);
       const into = group !== "unavailable" && isDlc(release) ? "dlc" : group;
       sections.find((section) => section.group === into).items.push({ release, index });
     });
     const links = ({ release }) => release.parts?.length ?? 1;
-    sections[2].items.sort((a, b) => links(a) - links(b));
+    const browser2 = sections.find((section) => section.group === "browser");
+    browser2?.items.sort((a, b) => links(a) - links(b));
     return sections.filter((section) => section.items.length);
   }
 

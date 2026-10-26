@@ -77,6 +77,14 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
   }
   // A host's web page is kilobytes; a file this big with no known headers is the game itself.
   var WEB_PAGE_BYTES = 4 * 1024 ** 2;
+  // The torrent a release names: a magnet link (which carries its trackers), or the ".torrent"
+  // file a catalog entry or a pasted link points at. A page that lists it is neither.
+  function torrentOf(release) {
+    const magnet = release.magnet || [release.url, release.browserUrl].find((value) => /^magnet:/i.test(value || "")) || "";
+    if (magnet) return { magnet };
+    const file = [release.torrentUrl, release.url, release.browserUrl].find((value) => typeof value === "string" && /^https?:\/\/\S+\.torrent(?:[?#]\S*)?$/i.test(value));
+    return file ? { url: file } : null;
+  }
   function durable(fs, stateDir2) {
     try {
       fs.mkdir(stateDir2, { recursive: true });
@@ -112,6 +120,13 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
       delete job2.phase;
       delete job2.removingFrom;
       const interrupted = BUSY.includes(job2.state);
+      // A torrent seeds only while the launch that downloaded it is open: a finished job restored in
+      // a new launch is not sharing anything, so it must not claim it is.
+      if (!interrupted) {
+        delete job2.seeding;
+        delete job2.uploaded;
+        delete job2.listenPort;
+      }
       return {
         ...job2,
         state: interrupted ? "paused" : job2.state,
@@ -136,6 +151,8 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
     packages,
     releasesOf,
     browserCapture,
+    torrents,
+    seeding = () => false,
     stallMs = STALL_MS,
     // The package helper (pkg-helper.js), whose links keep working once the app has closed; without
     // one, a package the console takes from the app is served by the app itself.
@@ -148,6 +165,9 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
     const listeners4 = /* @__PURE__ */ new Set();
     sources ?? (sources = createSourceResolver({ http }));
     const captures = /* @__PURE__ */ new Map();
+    // Finished torrents still being seeded: each holds its engine task and its subscription, so the
+    // row keeps showing the live upload total and removing the job can stop the seeder.
+    const seeders = /* @__PURE__ */ new Map();
     // The packages this session serves to the console's own download: rest mode would suspend the app
     // and cut them, so the console stays awake while the app runs with one.
     const serving = /* @__PURE__ */ new Set();
@@ -820,6 +840,119 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
       notifications.show(t("downloads.notice.streamed"), job2.title);
       return true;
     }
+    // What every finished transfer shares: the file's headers choose the route, the route the
+    // state, and archives extract and packages install from there.
+    async function finishJob(job2) {
+      // A "binary" source is what its headers say it is: those it must have (finishedHeaders).
+      if (job2.artifact.nextAction === "downloaded") route(job2, archives?.inspect && await (job2.release.format === "binary" ? finishedHeaders : optionalHeaders)(archives, [job2.downloadDestination], "downloaded"));
+      job2.state = job2.artifact.nextAction === "shadowmount" ? "downloaded" : job2.artifact.nextAction === "downloaded" ? "file-downloaded" : job2.artifact.nextAction;
+      job2.written = job2.total || job2.written;
+      job2.bytesPerSecond = 0;
+      if ((job2.artifact.nextAction === "extraction-required" || job2.output) && archives) await extract(job2, [job2.downloadDestination]);
+      delete job2.reresolved;
+      notifications.show(t("downloads.notice.complete"), job2.title);
+      if (job2.state === "installer-required" && canInstall()) await install(job2);
+    }
+    // A torrent's file comes from the app's own engine, which speaks the protocol itself: no
+    // external client, WebUI or debrid service is involved. The wanted file is written straight to
+    // its destination, and "<destination>.torrent-parts" says which pieces are done, so Pause and
+    // Resume continue where they stopped. A ".torrent" URL is binary, so the download engine fetches
+    // it beside the file; a magnet needs no file.
+    async function executeTorrent(job2, signal) {
+      if (!torrents?.supported) throw new Error("This build has no torrent engine. Update the app.");
+      job2.state = "connecting";
+      job2.error = "";
+      change();
+      job2.downloadDestination || (job2.downloadDestination = job2.artifact.destination);
+      fs.mkdir(job2.artifact.directory, { recursive: true });
+      let torrentPath = job2.torrent.path || "";
+      if (!job2.torrent.magnet) {
+        torrentPath || (torrentPath = `${job2.downloadDestination}.torrent`);
+        if (!fs.exists(torrentPath)) {
+          const fetch = downloads.enqueue({ url: job2.torrent.url, destination: torrentPath, rejectHtml: true, connections: 2 });
+          active2.task = fetch;
+          try {
+            await fetch.done;
+          } finally {
+            if (active2?.task === fetch) active2.task = null;
+          }
+          if (job2.state === "pausing" || signal?.aborted) return;
+          job2.torrent = { ...job2.torrent, path: torrentPath };
+          change();
+        }
+      }
+      if (job2.state === "pausing" || signal?.aborted) return;
+      const root2 = storageIdentity(job2);
+      if (!job2.rootIdentity) {
+        job2.rootIdentity = root2;
+        change();
+      }
+      const held = Math.max(job2.written || 0, fs.stat(job2.downloadDestination)?.size || 0);
+      if (!fs.exists(job2.downloadDestination) && fs.diskUsage(job2.root).free < stillNeeded({ ...job2, written: held }) + MARGIN2)
+        throw new Error("Not enough space on the selected drive. Free space and retry.");
+      const task = torrents.download({
+        magnet: job2.torrent.magnet || "",
+        torrentPath: job2.torrent.magnet ? "" : torrentPath,
+        destination: job2.downloadDestination,
+        // A pasted torrent names no file inside itself: the engine takes the largest one, and the
+        // headers route it once it is complete. A catalog release names the file it wants.
+        wanted: job2.release.link ? "" : job2.release.filename || "",
+        seeding: Boolean(seeding())
+      });
+      active2.task = task;
+      active2.transferring = true;
+      const unsubscribe3 = task.subscribe((progress) => {
+        if (job2.state === "pausing") return;
+        if (progress.state === "starting") job2.state = "connecting";
+        else if (progress.state === "metadata") job2.state = "resolving";
+        else if (progress.state === "downloading") job2.state = "downloading";
+        const verified = progress.verified ?? progress.downloaded ?? 0;
+        if (verified > 0 || !job2.written) job2.written = verified;
+        job2.received = progress.downloaded || 0;
+        job2.total = progress.size || job2.total;
+        job2.bytesPerSecond = progress.bytesPerSecond || 0;
+        // The swarm's health, as the trackers and the peer wire report it: what the download shows
+        // instead of another client's numbers.
+        job2.peers = progress.peers || 0;
+        job2.seeds = progress.seeds || 0;
+        job2.leechers = progress.leechers || 0;
+        job2.swarmSeeds = progress.swarmSeeds || 0;
+        job2.swarmLeechers = progress.swarmLeechers || 0;
+        job2.uploaded = progress.uploaded || 0;
+        job2.seeding = progress.seeding === true;
+        // The seeder stopped (setting turned off, cancelled or removed): drop the subscription the
+        // job kept after completion. There is no entry yet on the immediate first snapshot.
+        if ((progress.state === "completed" || progress.state === "cancelled" || progress.state === "failed") && progress.seeding !== true && seeders.get(job2)?.task === task) {
+          seeders.delete(job2);
+          unsubscribe3();
+        }
+        if (progress.listenPort) job2.listenPort = progress.listenPort;
+        if (job2.written > 0) delete job2.adopted;
+        if (++ticks % 20 === 0) {
+          delete job2.launches;
+          try {
+            save({ sync: false });
+          } catch (error2) {
+            job2.error = `Queue save failed: ${error2.message}`;
+            task.cancel();
+          }
+        }
+        emit2();
+      });
+      try {
+        await task.done;
+      } catch (error2) {
+        unsubscribe3();
+        if (active2?.task === task) active2.task = null;
+        throw error2;
+      }
+      if (active2?.task === task) active2.task = null;
+      // A completed torrent may keep seeding while the app is open: its task stays subscribed so the
+      // row shows the upload total as it grows. Removing the job or turning the setting off ends it.
+      if (task.snapshot?.seeding === true) seeders.set(job2, { task, unsubscribe: unsubscribe3 });
+      else unsubscribe3();
+      await finishJob(job2);
+    }
     async function execute(job2) {
       let task;
       let unsubscribe;
@@ -842,6 +975,14 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
           await executeSet(job2, signal);
           return;
         }
+        // The catalog's torrent releases, and a pasted magnet or ".torrent" link, name a file the
+        // app's own engine fetches. Nothing after this point applies: there is no HTTP source to
+        // resolve, range or hand to the console.
+        job2.torrent || (job2.torrent = torrentOf(job2.release));
+        if (job2.torrent) {
+          await executeTorrent(job2, signal);
+          return;
+        }
         job2.downloadDestination || (job2.downloadDestination = job2.artifact.destination);
         if (job2.routing) finishRouting(job2);
         if (!job2.options) {
@@ -851,8 +992,9 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
             job2.options = formats.manifest(await response.json());
           } else {
             if (!job2.release.url && !job2.release.browserUrl) throw new Error("This release has no download URL.");
-            // A pasted link may come from a service of the user's own (a qBittorrent's WebUI), whose
-            // file is behind its password: the release carries the headers for it (link-download.js).
+            // A pasted link the queue already holds the final address for skips resolution; any other
+            // goes through the host's own resolver. A link from a service of the user's own (a
+            // qBittorrent's WebUI) is behind its password: the release carries the headers for it.
             const resolved = job2.directURL || sourceKind(job2.release) !== "direct" ? await sources.resolve(job2.release, { signal, directURL: job2.directURL }) : { url: webURL(job2.release.url).url, headers: job2.release.headers };
             job2.options = {
               ...resolved,
@@ -912,15 +1054,7 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
           emit2();
         });
         await task.done;
-        // A "binary" source is what its headers say it is: those it must have (finishedHeaders).
-        if (job2.artifact.nextAction === "downloaded") route(job2, archives?.inspect && await (job2.release.format === "binary" ? finishedHeaders : optionalHeaders)(archives, [job2.downloadDestination], "downloaded"));
-        job2.state = job2.artifact.nextAction === "shadowmount" ? "downloaded" : job2.artifact.nextAction === "downloaded" ? "file-downloaded" : job2.artifact.nextAction;
-        job2.written = job2.total || job2.written;
-        job2.bytesPerSecond = 0;
-        if ((job2.artifact.nextAction === "extraction-required" || job2.output) && archives) await extract(job2, [job2.downloadDestination]);
-        delete job2.reresolved;
-        notifications.show(t("downloads.notice.complete"), job2.title);
-        if (job2.state === "installer-required" && canInstall()) await install(job2);
+        await finishJob(job2);
       } catch (error2) {
         console.log("[download-queue] transfer stopped:", error2.message);
         // Stopped by stallWatch: it starts over at once, as Pause and Resume would.
@@ -1388,7 +1522,7 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
         ...job2.published || [],
         ...extracted || [],
         job2.release.parts && setDirectory(job2)
-      ].filter(Boolean).flatMap((path) => [path, ...[".complete", ".complete.tmp", ".part", ".resume", ".resume.tmp"].map((suffix) => path + suffix)]);
+      ].filter(Boolean).flatMap((path) => [path, ...[".complete", ".complete.tmp", ".part", ".resume", ".resume.tmp", ".torrent-parts", ".torrent"].map((suffix) => path + suffix)]);
       return [...new Set(paths)].filter((path) => managed(path) && !jobs.some((other) => other !== job2 && [other.artifact.destination, other.downloadDestination, other.output, other.publishTo].some((owned2) => owned2 && (owned2 === path || owned2.startsWith(`${path}/`)))));
     }
     async function executeSet(job2, signal) {
@@ -1542,6 +1676,16 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
     function partialFiles(job2) {
       storageIdentity(job2);
       if (!job2.rootIdentity) throw new Error("This older task has no storage identity. Preserve and inspect its partial files.");
+      // The engine writes verified pieces straight into the file, so what Restart and Cancel discard
+      // is that file itself, its piece sidecar and the ".torrent" it was read from.
+      if (job2.torrent || torrentOf(job2.release)) {
+        const destination2 = job2.downloadDestination || job2.artifact.destination;
+        return [destination2, `${destination2}.torrent-parts`, `${destination2}.torrent`].filter((path) => {
+          const info = fs.stat(path);
+          if (info && !info.isFile) throw new Error(`Cannot discard a non-file: ${path}`);
+          return Boolean(info);
+        });
+      }
       if (fs.exists(job2.parts?.[job2.partIndex]?.destination || job2.downloadDestination || job2.artifact.destination)) throw new Error("A final file exists. Retry to verify and recover it.");
       const destination = job2.parts?.[job2.partIndex]?.destination || job2.downloadDestination || job2.artifact.destination;
       const paths = [".part", ".resume", ".resume.tmp", ".complete", ".complete.tmp"].map((suffix) => destination + suffix);
@@ -2065,6 +2209,14 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
         pump();
       }
     }
+    // Stops a finished job's seeder and drops its subscription; a no-op for anything else.
+    function stopSeeder(job2) {
+      const seeder = seeders.get(job2);
+      if (!seeder) return;
+      seeders.delete(job2);
+      seeder.unsubscribe();
+      seeder.task.cancel();
+    }
     return {
       snapshot,
       subscribe(listener) {
@@ -2185,6 +2337,8 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
         const job2 = find(id);
         if (!["paused", "failed", "awaiting-browser", ...COMPLETE].includes(job2.state) || active2?.job === job2) return;
         stopCapture(job2);
+        // Leaving the queue ends its seeding: the file stays, but nothing more is shared.
+        stopSeeder(job2);
         // A removed row stops serving its package: the console's download of it stops too.
         if (job2.proxy && !job2.proxy.done) {
           unwatch(job2.id);
@@ -2210,6 +2364,8 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
         const job2 = find(id);
         if (deletions.has(job2)) return deletions.get(job2);
         if (!COMPLETE.includes(job2.state)) return;
+        // Stop sharing before the file goes, so the seeder never reads a file being unlinked.
+        stopSeeder(job2);
         const deletion = (async () => {
           storageIdentity(job2);
           const uninstall = await removing(job2, () => deleteJob(job2));

@@ -13,6 +13,7 @@ import socket
 import ssl
 import struct
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -69,8 +70,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             with self.guard:
                 first = ("refuse", self.headers["Range"]) not in self.retried
                 self.retried.add(("refuse", self.headers["Range"]))
-            # The first range's first answer is archive.org's HTML error page; it must not read as a web page.
-            if busy > 6 or (first and self.headers["Range"].startswith("bytes=0-")):
+            # The first three ranges are refused once each, cycling 500, 503 and 429 like a storage
+            # node shedding concurrent reads; each must read as congestion and be retried, not as a
+            # damaged file. The first answer is archive.org's HTML error page, which must not read
+            # as a web page. Requests past the window's start are refused while the origin is busy.
+            if busy > 6 or (first and len(self.refused) < 3):
                 status = (500, 503, 429)[len(self.refused) % 3]
                 self.refused.append(status)
                 body = b"<html><body>Internal Server Error</body></html>" if status == 500 else b""
@@ -264,10 +268,12 @@ class Refusing(http.server.ThreadingHTTPServer):
 
 def compile_client(directory):
     binary = directory / "client"
+    # network.cpp verifies pieces with OpenSSL on Linux; macOS uses CommonCrypto instead.
+    crypto = [] if sys.platform == "darwin" else ["-lcrypto"]
     subprocess.run(["clang++", "-std=c++20", "-O2", "-Wall", "-Wextra", "-Werror", "-pthread",
                     "-I", str(ROOT / "native/shared"), str(ROOT / "tools/tests/network_client.cpp"),
                     str(ROOT / "native/shared/network.cpp"), str(ROOT / "tools/tests/network_test_platform.cpp"),
-                    "-lcurl", "-o", str(binary)], check=True)
+                    "-lcurl", *crypto, "-o", str(binary)], check=True)
     return binary
 
 
@@ -589,10 +595,16 @@ def main():
         path.unlink()
         assert run("/slow-modified", path, cancel=180)["state"] == "cancelled"
         Handler.modified = "Thu, 02 Jan 2025 00:00:00 GMT"
-        # A changed file can never resume its partial: it is discarded and the download starts over
-        # (issues #110 and #111), instead of failing until someone deletes it by hand.
+        # A partial whose validator changed can never resume. The checkpoint no longer matches, so the
+        # bytes go and the transfer starts over from zero instead of failing for good (issues #110
+        # and #111); the destination still lands byte-identical.
+        before = len(Handler.requests)
         changed = run("/slow-modified", path)
         assert changed["state"] == "completed", changed
+        assert path.read_bytes() == DATA
+        assert any(r[1].startswith("bytes=0-") and r[1] != "bytes=0-0" for r in Handler.requests[before:]), \
+            Handler.requests[before:]
+        path.unlink()
         # No validator at all: ranges still resume once the server's tail matches the partial's.
         for endpoint in ("/slow-no-validator", "/slow-no-validator-mutable"):
             path = directory / endpoint.removeprefix("/")
@@ -650,8 +662,16 @@ def main():
         assert path.read_bytes() == LARGE
         path.unlink()
         # The handshakes in flight when the burst began fail together; after them, one at a time.
+        # Connections opened together are refused together — network.cpp's Window::refuse steps the
+        # gap once per pacing window, not once per socket — so attempts within a few milliseconds of
+        # each other are one retry, and only separate attempts must clear the spacing floor.
         later = [at for at in refusing.refused if at-refusing.refused[0] > 1]
-        assert all(b-a > 0.1 for a, b in zip(later, later[1:])), (refusing.refused, log[-2000:])
+        cohorts = []
+        for at in later:
+            if not cohorts or at-cohorts[-1][0] > 0.01: cohorts.append([at])
+            else: cohorts[-1].append(at)
+        starts = [cohort[0] for cohort in cohorts]
+        assert all(b-a > 0.1 for a, b in zip(starts, starts[1:])), (refusing.refused, log[-2000:])
         assert len(refusing.refused) <= 20 and refusing.handshakes <= 40, (refusing.handshakes, refusing.refused)
 
         path = directory / "refused-forever"

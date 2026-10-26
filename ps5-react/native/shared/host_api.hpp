@@ -82,6 +82,22 @@
 //   lan.cancel(id)                 stops gathering; the replies so far are kept
 //   lan.poll()                     [{id, state, error, replies: [{address, port, body}]}] finished
 //                                  since the last poll; state 'completed' | 'failed' | 'cancelled'
+//   torrent.start(options)         ABI v21; task ID; downloads inside the app. options: magnet or
+//                                  torrentPath, destination, wanted (an in-torrent file path; empty
+//                                  picks the largest file), seeding, connections (1..16, default 16),
+//                                  listenPort (0 lets the system choose). HTTP and BEP 15 UDP
+//                                  trackers, BEP 9 metadata from magnets, PEX, SHA-1 verification and
+//                                  resume; no DHT, no web seeds, IPv4 peers
+//   torrent.cancel(id)             stops the sockets; verified pieces stay for a resume
+//   torrent.poll()                 running jobs too: [{id, state, error, name, file, infoHash,
+//                                  metadata, seeding, size, total, downloaded, verified, uploaded,
+//                                  bytesPerSecond, pieces, piecesDone, peers, seeds, leechers,
+//                                  swarmSeeds, swarmLeechers, listenPort}]; state 'starting' |
+//                                  'metadata' | 'downloading' | 'completed' | 'failed' | 'cancelled';
+//                                  a finished job is reported once, a completed one that keeps seeding
+//                                  stays until setSeeding(false)
+//   torrent.setSeeding(enabled)    ABI v21; turns seeding on or off for every job at once; seeding only
+//                                  ever lasts while the app runs
 //   packages.install(path, name, contentId) task ID; installs a .pkg under /data, /mnt/usb or /mnt/ext through
 //                                  the console's install service (PS5 only, needs the payload loader on 9021);
 //                                  ABI v20: `path` may be an http(s) link the console downloads itself, with
@@ -287,6 +303,8 @@ JSValue ps5_react_package_api(JSContext* ctx);
 JSValue ps5_react_browser_capture_api(JSContext* ctx);
 // ABI v9: UDP broadcast queries on the local network (lan.hpp).
 JSValue ps5_react_lan_api(JSContext* ctx);
+// ABI v21: the in-app BitTorrent engine (torrent_engine.hpp).
+JSValue ps5_react_torrent_api(JSContext* ctx);
 // ABI v10: video playback (video_api.hpp).
 JSValue ps5_react_video_api(JSContext* ctx);
 // ABI v13: the connected sink's audio capabilities (audio_output_api.cpp).

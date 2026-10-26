@@ -15,8 +15,8 @@ import { FocusScope, Text, View, motion, useIsFocused } from '@ps5-react/core';
   var COLUMNS2 = 6;
   var LTR2 = { direction: "ltr" };
   var CHARACTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".split("");
-  // What the letters miss, for a password or a key: the URL keyboard had no "! ( ) [ ] { } ; , < > '"
-  // and the like, so a qBittorrent password with one could not be typed at all. A second page,
+  // What the letters miss, for an address or a key: the URL keyboard had no "! ( ) [ ] { } ; , < > '"
+  // and the like, so a link or magnet carrying one could not be typed at all. A second page,
   // since 32 more keys on the first would not fit the dialog.
   var SYMBOLS = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~".split("");
   var MAX_QUERY = 40;

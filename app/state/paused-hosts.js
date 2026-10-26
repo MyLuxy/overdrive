@@ -32,6 +32,9 @@ import { vikingLinkPage } from './viking-capture.js';
   // Its sources leave every game as a paused host's do, and a game with no other host leaves the catalog.
   var DISABLED_FILTERS = /* @__PURE__ */ new Set(["mediafire"]);
   function disabled(release) {
+    // A torrent's page lives on MediaFire, but the file comes from the user's own client: the
+    // paused host is only where its .torrent was published.
+    if (release.flow === "torrent" || release.magnet) return false;
     try {
       return /(?:^|\.)mediafire\.com$/i.test(webURL(release.browserUrl || release.url).host);
     } catch {

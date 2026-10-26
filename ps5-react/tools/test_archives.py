@@ -703,9 +703,10 @@ def main():
   (staging/".ps5-react-stage").write_text("P5ST001:"+hashlib.sha256(identity.encode()).hexdigest()+"\n")
   assert run("interrupted",[zip])[0]=="completed"
   assert (root/"interrupted/game.ffpfsc").read_bytes()==DATA
+  # Staging no run owns is discarded instead of blocking every retry (issue #110).
   orphan=root/"orphan.extracting";orphan.mkdir();(orphan/"keep").write_bytes(b"unowned")
-  assert run("orphan",[zip])[0]=="failed"
-  assert (orphan/"keep").read_bytes()==b"unowned"
+  assert run("orphan",[zip])[0]=="completed"
+  assert (root/"orphan/game.ffpfsc").read_bytes()==DATA
   # A crash before the ownership record leaves empty staging, which the next extraction takes over.
   (root/"abandoned.extracting").mkdir()
   assert run("abandoned",[zip])[0]=="completed"

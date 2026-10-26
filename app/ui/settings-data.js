@@ -16,7 +16,7 @@ import { LEVELS } from './haptics.js';
 
   var GROUPS = [
     { key: "general", title: "settings.group.general", items: ["vibration", "language"] },
-    { key: "downloads", title: "settings.group.downloads", items: ["speed", "disk", "pkg", "cleanup"] },
+    { key: "downloads", title: "settings.group.downloads", items: ["speed", "disk", "pkg", "cleanup", "seeding"] },
     { key: "services", title: "settings.group.services", items: ["torbox", "realdebrid", "premiumize", "qbittorrent"] }
   ];
 
@@ -28,6 +28,8 @@ import { LEVELS } from './haptics.js';
     disk: { icon: "hardDrive", title: "settings.disk", lead: "settings.diskDetail" },
     pkg: { icon: "package", title: "settings.pkgMode", lead: "settings.pkgModeDetail" },
     cleanup: { icon: "trash", title: "settings.deletePackages", lead: "settings.deletePackagesDetail" },
+    // The torrent engine's own switch: it shares what it downloaded only while the app is open.
+    seeding: { icon: "globe", title: "settings.seeding", lead: "settings.seedingDetail" },
     torbox: { brand: "torbox", title: "add.torboxName", lead: "settings.torboxLead" },
     realdebrid: { brand: "realdebrid", title: "add.realdebridName", lead: "settings.realdebridLead" },
     premiumize: { brand: "premiumize", title: "add.premiumizeName", lead: "settings.premiumizeLead" },
@@ -63,6 +65,7 @@ import { LEVELS } from './haptics.js';
       case "disk": return values.root ?? "auto";
       case "pkg": return values.mode;
       case "cleanup": return values.cleanup;
+      case "seeding": return values.seeding;
       default: return null;
     }
   }
@@ -76,6 +79,7 @@ import { LEVELS } from './haptics.js';
     if (id === "disk") return values.root ? driveName(values.root) : t2("settings.diskAuto");
     if (id === "pkg") return t2(`settings.pkgMode.${values.mode}`);
     if (id === "cleanup") return t2(values.cleanup ? "settings.on" : "settings.off");
+    if (id === "seeding") return t2(values.seeding ? "settings.on" : "settings.off");
     if (id === "qbittorrent") return values.services.address || t2("add.notSet");
     if (SERVICES.includes(id)) {
       const key = values.services[id];
@@ -132,6 +136,10 @@ import { LEVELS } from './haptics.js';
     if (id === "cleanup") return [
       { key: "on", label: t2("settings.on"), value: true },
       { key: "off", label: t2("settings.off"), detail: t2("settings.cleanupOffDetail"), value: false }
+    ];
+    if (id === "seeding") return [
+      { key: "on", label: t2("settings.on"), value: true },
+      { key: "off", label: t2("settings.off"), value: false }
     ];
     if (SERVICES.includes(id)) return serviceRows(id, values, t2);
     return [];
@@ -199,6 +207,11 @@ import { LEVELS } from './haptics.js';
       eyebrow: t2("settings.cleanupSide"),
       big: t2(chosen ? "settings.on" : "settings.off"),
       small: t2(chosen ? "settings.cleanupSideOn" : "settings.cleanupSideOff")
+    };
+    if (id === "seeding") return {
+      eyebrow: t2("settings.seeding"),
+      big: t2(chosen ? "settings.on" : "settings.off"),
+      small: t2("settings.seedingDetail")
     };
     if (id === "qbittorrent") {
       const { address, user } = values.services;

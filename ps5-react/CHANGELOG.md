@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased — the app carries a BitTorrent engine
+
+- `Torrents.download({magnet, torrentPath, destination, wanted, seeding, connections,
+  listenPort})` (ABI v21) fetches a torrent inside the app, from the trackers and peers the
+  torrent or magnet names: BEP 9 metadata from a magnet, pieces checked against the metainfo's
+  SHA-1, up to 8 transfers at once, IPv4 only, and a resumable `<destination>.torrent-parts`
+  sidecar. Its snapshot reports the swarm's seeds, leechers, peers and uploaded bytes. There is no
+  DHT or web seed, so a magnet with neither trackers nor peers fails with that reason.
+- `Torrents.setSeeding(enabled)` turns seeding off for every job; a finished torrent seeds only
+  while the setting is on and the app stays open. The app shows the swarm's health on the
+  download row and offers the setting in Settings; the debrid and WebUI sources stay available
+  beside the in-app torrent engine.
+- `Torrents.download` resolves `destination` and `torrentPath` the way every other native call
+  does, so the app's paths (`/download0/...`, `/app0/...`) reach the desktop preview's sandbox.
+  A preview download used to take `/download0` literally and fail with "could not create the
+  destination's folder"; the console, where those paths are real mounts, was unaffected.
+
 ## Unreleased — package links served by the app
 
 - `Packages.proxy({url, total, file, token, port})` (ABI v21) serves `url` for the console's

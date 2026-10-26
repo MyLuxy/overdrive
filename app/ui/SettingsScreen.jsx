@@ -19,6 +19,7 @@ import { setDeletePackages, useDeletePackages } from '../state/package-cleanup.j
 import { setDownloadRoot, useDownloadRoot } from '../state/download-root.js';
 import { storageRoots } from '../state/downloads.js';
 import { setPkgMode, usePkgMode } from '../state/pkg-mode.js';
+import { setSeeding, useSeeding } from '../state/seeding.js';
 import { setVibrationLevel, useVibrationLevel } from './haptics.js';
 import { GROUPS, ITEMS, currentOf, optionsOf, selectedIndex, sideOf, valueOf } from './settings-data.js';
 import { Button2 } from './Button.jsx';
@@ -66,6 +67,7 @@ import { FileSystem, FocusScope, ScrollView, Text, View, useIsFocused } from '@p
     const mode = usePkgMode();
     const cleanup = useDeletePackages();
     const vibration = useVibrationLevel();
+    const seeding = useSeeding();
     const [drives] = useState(() => {
       let roots = [];
       try {
@@ -83,7 +85,7 @@ import { FileSystem, FocusScope, ScrollView, Text, View, useIsFocused } from '@p
         }
       });
     });
-    return { services, limit, root, mode, cleanup, vibration, choice: languageChoice(), drives };
+    return { services, limit, root, mode, cleanup, vibration, seeding, choice: languageChoice(), drives };
   }
 
   // A tile: its mark, its name, the value it has now, and the chevron into its page.
@@ -286,6 +288,7 @@ import { FileSystem, FocusScope, ScrollView, Text, View, useIsFocused } from '@p
         else if (id === "disk") setDownloadRoot(row.value === "auto" ? null : row.value);
         else if (id === "pkg") setPkgMode(row.value);
         else if (id === "cleanup") setDeletePackages(row.value);
+        else if (id === "seeding") setSeeding(row.value);
         return;
       }
       if (row.phone) return setDialog({ type: "phone", service: row.phone, index });

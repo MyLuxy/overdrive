@@ -56,7 +56,7 @@ prepares. Each uses your own account key, typed once and kept on the console.
 - **2,100+ games** to discover, with **Top rated**, a hand-picked row and a featured spotlight
 - **Homebrew**: native PS5 apps and games from the community catalog at [prosperostore.net](https://prosperostore.net/), always up to date, installed from each developer's GitHub release
 - **Browse the whole library** with filters, sorting, scores and download sizes at a glance
-- **Downloads straight to the console**, to internal storage or any USB drive, with live speed and storage stats
+- **Downloads straight to the console**, to internal storage or any USB drive, with live speed and storage stats; **torrents use Overdrive's own engine** and seed only while the app is open
 - **Favorites**, **search** with an on-screen keyboard, and a **Files** page to see and clean up what's on your drives
 - **18 languages**: English, Deutsch, Español, Français, Italiano, Nederlands, Português (Brasil), Português (Portugal), Русский, Bahasa Indonesia, 日本語, 简体中文, 繁體中文, العربية, فارسی, اردو, हिन्दी, বাংলা
 - **Updates itself**: a new version installs from the console, no PC needed
@@ -262,7 +262,8 @@ Everything runs from the repository root through npm. Once after cloning, `npm r
 (`packaging/setup.sh`) installs every dependency: on Linux the apt packages for the desktop preview,
 the PS5 build and the tests (it asks for `sudo` once); on macOS the Homebrew formulae, a
 `ps5-react/.venv` with Pillow (Homebrew's `python3` refuses a global `pip install`) and the
-framework's npm packages. Read the script first if you'd rather install them yourself.
+framework's npm packages. On Windows the `:windows` commands run the same steps inside WSL 2
+(see "Developing on Windows"). Read the script first if you'd rather install them yourself.
 
 ```sh
 git clone https://github.com/MyLuxy/overdrive.git
@@ -334,6 +335,39 @@ If the preview does not start: `npm run doctor:mac` first; `brew install llvm@18
 missing; `brew install sdl2` or `CMAKE_PREFIX_PATH=$HOME/.local/overdrive-sdl2` when SDL2 is
 missing; and keep Homebrew's `/usr/local/bin` out of `PATH` when a link error mentions OpenSSL or
 CURL and MacPorts supplies CMake.
+
+</details>
+
+<details>
+<summary><b>Developing on Windows</b></summary>
+<br>
+
+The preview and the PS5 build are POSIX C++ and shell work, so on Windows they run inside WSL 2,
+with this checkout seen as `/mnt/<drive>/<path>`. Install WSL 2 with an Ubuntu distro
+(`wsl --install -d Ubuntu`), then run the `:windows` commands from the repository root with the
+Windows Node; they hand the same steps to the Node and npm installed in the distro:
+
+```sh
+npm run setup:windows     # once; installs the toolchain in the distro (asks for sudo)
+npm run preview:windows   # the desktop preview, in a WSLg window
+```
+
+The unsuffixed commands stay the Linux ones and the `:mac` commands stay macOS-only. The
+`:windows` commands go through `tools/launch.mjs`; `OVERDRIVE_WSL_DISTRO` picks a distro when more
+than one is installed, and `npm run <command>:windows -- --print` shows the WSL command without
+running it.
+
+| Command | What it does |
+| --- | --- |
+| `npm run setup:windows` | Installs the toolchain in the WSL distro |
+| `npm run doctor:windows` | Reports what the distro is missing |
+| `npm run preview:windows` | Opens the desktop preview once |
+| `npm run dev:windows` | Opens it and rebuilds on every save under `app/` |
+| `npm run test:windows` | The framework's checks, then `app/state`'s tests |
+| `npm run build:windows` | The PS5 app, then `Overdrive.exfat` and `update.zip` |
+| `npm run build:app:windows` | The PS5 app only, in `ps5-react/dist/PPSA99058` |
+
+The window uses WSLg. If the preview does not start, run `npm run doctor:windows` first.
 
 </details>
 

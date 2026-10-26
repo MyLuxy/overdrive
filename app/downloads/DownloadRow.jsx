@@ -14,7 +14,9 @@ import { shapeOf } from './useQueue.js';
 import { isOverdriveCdn } from '../game/sources.js';
 import { focusEnd, useLocale, useT } from '../i18n/index.js';
 import { getGame } from '../state/catalog.js';
+import { useSeeding } from '../state/seeding.js';
 import { BUSY, COMPLETE } from '../state/download-queue.js';
+import { formatBytes } from '../state/size.js';
 import { Button2 } from '../ui/Button.jsx';
 import { CdnAura, CdnSpark } from '../ui/CdnAura.jsx';
 import { Cover } from '../ui/Cover.jsx';
@@ -101,6 +103,9 @@ import { Text, View } from '@ps5-react/core';
   function DownloadRowView({ job: job2, game, autoFocus, up, down, run, onOpenGame, onFocusRow }) {
     const t2 = useT();
     const { state, release } = job2;
+    // A finished torrent shares only while the player's setting is on; turning it off stops it at once.
+    const seedingOn = useSeeding();
+    const sharing = job2.seeding && seedingOn;
     const shown = shownState(job2);
     const complete = COMPLETE.includes(state);
     const openGame = () => onOpenGame(job2);
@@ -117,7 +122,10 @@ import { Text, View } from '@ps5-react/core';
     const problem = job2.error && explainError(job2.error, Boolean(release.parts));
     // The files' own title id differs from the game chosen: said before anything else but an error.
     const mismatch = job2.titleMismatch ? t2("downloads.titleMismatch", { found: job2.titleMismatch, expected: job2.titleId }) : "";
-    const note = problem ? problem.action ? t2("downloads.problem", { title: problem.title, action: problem.action }) : problem.title : mismatch || (state === "downloaded" ? job2.message || t2("downloads.installHint") : state === "extracted" || job2.streamed ? job2.message || "" : "");
+    // A torrent's health is what the engine reports right now: the seeds and leechers it is connected
+    // to and its peers in all. A finished one says that it is sharing instead.
+    const health = job2.torrent && !problem ? sharing ? t2("downloads.seeding", { size: formatBytes(job2.uploaded || 0) }) : state === "downloading" ? t2("downloads.torrentHealth", { seeds: String(job2.seeds || 0), leechers: String(job2.leechers || 0), peers: String(job2.peers || 0) }) : "" : "";
+    const note = problem ? problem.action ? t2("downloads.problem", { title: problem.title, action: problem.action }) : problem.title : mismatch || health || (state === "downloaded" ? job2.message || t2("downloads.installHint") : state === "extracted" || job2.streamed ? job2.message || "" : "");
     const cdn = isOverdriveCdn(release.provider);
     return /* @__PURE__ */ (0, jsxs)(View, { style: cdn ? { position: "relative", borderRadius: 18, backgroundColor: "#17171a" } : { overflow: "hidden", borderRadius: 18, borderWidth: 2, borderColor: "#2a2a2f", backgroundColor: "#17171a" }, children: [
       cdn ? /* @__PURE__ */ (0, jsx)(CdnAura, { radius: 12, width: 904 }) : null,
