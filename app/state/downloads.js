@@ -9,6 +9,7 @@ import { createMockDownloadQueue } from './mock-download-queue.js';
 import { consoleRoots } from './roots.js';
 import { createShadowMountProbe } from './shadowmount.js';
 import { createPkgHelper } from './pkg-helper.js';
+import { autoRetries } from './retries.js';
 import { seedingEnabled } from './seeding.js';
 import { Archives, BrowserCapture, DownloadFormats, Downloads, FileSystem, Http, Linking, Notifications, Packages, Platform, Power, Torrents } from '@ps5-react/core';
 
@@ -34,6 +35,7 @@ import { Archives, BrowserCapture, DownloadFormats, Downloads, FileSystem, Http,
     browserCapture: BrowserCapture,
     torrents: Torrents,
     seeding: seedingEnabled,
+    retries: autoRetries,
     releasesOf: (id) => getGame(id)?.releases || []
   }));
   var shadowMountUp = Platform.OS === "ps5" ? createShadowMountProbe({ http: Http, now: Date.now }) : async () => true;

@@ -125,7 +125,7 @@ import { Text, View } from '@ps5-react/core';
     // A torrent's health is what the engine reports right now: the seeds and leechers it is connected
     // to and its peers in all. A finished one says that it is sharing instead.
     const health = job2.torrent && !problem ? sharing ? t2("downloads.seeding", { size: formatBytes(job2.uploaded || 0) }) : state === "downloading" ? t2("downloads.torrentHealth", { seeds: String(job2.seeds || 0), leechers: String(job2.leechers || 0), peers: String(job2.peers || 0) }) : "" : "";
-    const note = problem ? problem.action ? t2("downloads.problem", { title: problem.title, action: problem.action }) : problem.title : mismatch || health || (state === "downloaded" ? job2.message || t2("downloads.installHint") : state === "extracted" || job2.streamed ? job2.message || "" : "");
+    const note = problem ? problem.action ? t2("downloads.problem", { title: problem.title, action: problem.action }) : problem.title : mismatch || health || (state === "downloaded" ? job2.message || t2("downloads.installHint") : state === "extracted" || job2.streamed ? job2.message || "" : state === "queued" && job2.message ? job2.message : "");
     const cdn = isOverdriveCdn(release.provider);
     return /* @__PURE__ */ (0, jsxs)(View, { style: cdn ? { position: "relative", borderRadius: 18, backgroundColor: "#17171a" } : { overflow: "hidden", borderRadius: 18, borderWidth: 2, borderColor: "#2a2a2f", backgroundColor: "#17171a" }, children: [
       cdn ? /* @__PURE__ */ (0, jsx)(CdnAura, { radius: 12, width: 904 }) : null,
