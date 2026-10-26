@@ -22,7 +22,13 @@ import { isDlcPack, isPatchOnly, releaseSets } from './release-sets.js';
         // A DLC pack (the scene's dlc_emu kits) or a backport's files alone go too: nothing on the
         // console installs them, so offering them only leads to a download that then says there was
         // nothing to install. A DLC in a PS5 package stays, as does anything holding the game itself.
-        releases = releaseSets(parsed.filter((release) => !pausedSource(release) && !isDlcPack(release) && !isPatchOnly(release)).map((release) => ({ titleId, ...release })));
+        releases = releaseSets(parsed.filter((release) => !pausedSource(release) && !isDlcPack(release) && !isPatchOnly(release)).map((release) => ({
+          titleId,
+          ...release,
+          platform: String(release.platform || "").toLowerCase() === "ps5" ? "ps5"
+            : String(release.platform || "").toLowerCase() === "ps4" ? "ps4"
+            : (release.titleId || titleId).startsWith("PPSA") ? "ps5" : "ps4"
+        })));
         if (games2.size === KEPT2) games2.delete(games2.keys().next().value);
       }
       games2.delete(file);

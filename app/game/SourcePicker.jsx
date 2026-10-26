@@ -10,6 +10,7 @@ import { useT } from '../i18n/index.js';
 import { CdnAura, CdnSpark } from '../ui/CdnAura.jsx';
 import { FocusRing } from '../ui/FocusRing.jsx';
 import { Icon } from '../ui/Icon.jsx';
+import { PlatformBadge } from '../ui/PlatformBadge.jsx';
 import { SideSheet } from '../ui/SideSheet.jsx';
 import { colors } from '../ui/colors.js';
 import { Text, View, useIsFocused } from '@ps5-react/core';
@@ -30,7 +31,7 @@ import { Text, View, useIsFocused } from '@ps5-react/core';
       /* @__PURE__ */ (0, jsx)(Text, { style: { width: 423, fontFamily: "Inter-Regular", fontSize: 20, color: tint, numberOfLines: 1, ellipsizeMode: "tail", lineHeight: 28 }, children: status.text })
     ] });
   }
-  function RowFace({ icon, name, detail: detail2, size, recommended, current, cdn, status }) {
+  function RowFace({ icon, name, detail: detail2, size, recommended, current, cdn, status, platform }) {
     const t2 = useT();
     const focused = useIsFocused();
     const ink2 = focused ? colors.fg : colors.muted;
@@ -41,6 +42,7 @@ import { Text, View, useIsFocused } from '@ps5-react/core';
       /* @__PURE__ */ (0, jsxs)(View, { style: { flex: 1, gap: 3 }, children: [
         /* @__PURE__ */ (0, jsxs)(View, { style: { flexDirection: "row", alignItems: "center", gap: 12 }, children: [
           /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 23, fontWeight: 600, color: "#f2f2f3" }, children: name }),
+          platform ? /* @__PURE__ */ (0, jsx)(PlatformBadge, { platforms: [platform], scale: 0.8 }) : null,
           recommended ? /* @__PURE__ */ (0, jsx)(View, { style: { borderRadius: 3, backgroundColor: "#f2f2f3", paddingHorizontal: 9, paddingVertical: 2 }, children: /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 18, fontWeight: 600, color: "#000000", lineHeight: 24 }, children: t2("sources.recommended") }) }) : null
         ] }),
         /* @__PURE__ */ (0, jsx)(Text, { style: [{ width: 450, fontFamily: "Inter-Regular", fontSize: 21, numberOfLines: 2, ellipsizeMode: "tail", lineHeight: 30 }, { color: ink2 }], children: detail2 || t2("sources.noDetails") }),
@@ -59,7 +61,7 @@ import { Text, View, useIsFocused } from '@ps5-react/core';
         note ? /* @__PURE__ */ (0, jsx)(Text, { style: { width: 660, fontFamily: "Inter-Regular", fontSize: 21, color: "#8a8a94", numberOfLines: 2, ellipsizeMode: "tail", lineHeight: 30 }, children: t2(note) }) : null
       ] }),
       items.map(({ release, index }, row) => {
-        const { name, detail: detail2, size, status } = describeSource(release);
+        const { name, detail: detail2, size, status, platform } = describeSource(release);
         return /* @__PURE__ */ (0, jsx)(View, { autoFocus: index === selected || revealed && row === 0, onPress: () => onPick(index), style: (_state) => [{ position: "relative", minHeight: 84, flexDirection: "row", alignItems: "center", gap: 18, borderRadius: 12, paddingHorizontal: 18, paddingVertical: 12 }, _state.focused ? { backgroundColor: "#212125" } : null], children: /* @__PURE__ */ (0, jsx)(
           RowFace,
           {
@@ -68,6 +70,7 @@ import { Text, View, useIsFocused } from '@ps5-react/core';
             detail: detail2,
             size,
             status,
+            platform,
             cdn: isOverdriveCdn(release.provider),
             recommended: index === recommended && group !== "browser",
             current: index === selected
