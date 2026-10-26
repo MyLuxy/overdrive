@@ -45,8 +45,7 @@ import { FocusScope, Http, Text, View } from '@ps5-react/core';
     }
   }
 
-  // Four cards share the strip's width, so they stay equal whatever the section holds.
-  var CARD = { flex: 1, height: 124, flexDirection: "row", alignItems: "center", gap: 18, borderRadius: 16, paddingHorizontal: 20, backgroundColor: colors.surface };
+  var CARD = { width: 430, height: 124, flexDirection: "row", alignItems: "center", gap: 18, borderRadius: 16, paddingHorizontal: 20, backgroundColor: colors.surface };
   function AddCard({ icon, title, detail, onPress, focusKey, nextFocusDown }) {
     return /* @__PURE__ */ (0, jsxs)(View, {
       focusKey, onPress, nextFocusDown,
@@ -430,8 +429,7 @@ import { FocusScope, Http, Text, View } from '@ps5-react/core';
       /* @__PURE__ */ (0, jsxs)(View, { style: { flexDirection: "row", gap: 14, paddingLeft: 12 }, children: [
         /* @__PURE__ */ (0, jsx)(AddCard, { icon: "link", title: t2("add.link"), detail: t2("add.linkCardDetail"), focusKey: "downloads:add:link", nextFocusDown: down, onPress: () => setDialog({ kind: "linkChoose" }) }),
         /* @__PURE__ */ (0, jsx)(AddCard, { icon: "qbittorrent", title: t2("add.torrent"), detail: services.address ? t2("add.torrentDetail") : t2("add.torrentSetup"), focusKey: "downloads:add:torrent", nextFocusDown: down, onPress: card }),
-        /* @__PURE__ */ (0, jsx)(AddCard, { icon: "layers", title: t2("add.debrid"), detail: t2("add.debridDetail"), focusKey: "downloads:add:debrid", nextFocusDown: down, onPress: () => setDialog({ kind: "services" }) }),
-        /* @__PURE__ */ (0, jsx)(AddCard, { icon: "globe", title: t2("add.archive"), detail: account.passwordSet ? t2("add.archiveDetail") : t2("add.archiveSetup"), focusKey: "downloads:add:archive", nextFocusDown: down, onPress: () => setDialog({ kind: "archive" }) })
+        /* @__PURE__ */ (0, jsx)(AddCard, { icon: "layers", title: t2("add.debrid"), detail: t2("add.debridDetail"), focusKey: "downloads:add:debrid", nextFocusDown: down, onPress: () => setDialog({ kind: "services" }) })
       ] })
     ] });
 
