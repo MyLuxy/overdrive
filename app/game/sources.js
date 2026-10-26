@@ -60,14 +60,6 @@ import { formatBytes } from '../state/size.js';
   // account's sign-in (state/archive-account.js). With its credentials set the stored reason is
   // stale, so the source is listed and can be downloaded as any other.
   var blocked = (release) => Boolean(release.unavailableReason) && !(archiveAccount.enabled() && archiveAccount.isArchive(release.browserUrl || release.url || ""));
-  function platformOf(release) {
-    const platform = String(release.platform || "").toLowerCase();
-    if (platform === "ps4" || platform === "ps5") return platform;
-    const titleId = String(release.titleId || "");
-    if (titleId.startsWith("PPSA")) return "ps5";
-    if (titleId.startsWith("CUSA")) return "ps4";
-    return null;
-  }
   function describeSource(release) {
     const parts = release.parts?.length;
     const detail2 = [
@@ -83,7 +75,6 @@ import { formatBytes } from '../state/size.js';
       name: release.provider.replace(/^www\./, ""),
       detail: speed ? [detail2, t(speed)].filter(Boolean).join(" \xB7 ") : detail2,
       size: release.sizeBytes ? formatBytes(release.sizeBytes) : null,
-      platform: platformOf(release),
       group: refused ? "unavailable" : reach,
       reason: refused ? release.unavailableReason : null,
       status: refused ? null : compatibility(release)

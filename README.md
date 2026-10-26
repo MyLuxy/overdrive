@@ -30,8 +30,8 @@
 </p>
 
 > [!NOTE]
-> The original Overdrive project has been shut down so I decompiled the last released build,
-> recovered the complete source and rebuilt it.
+> This project does not support piracy. We host no copyrighted material
+> and are not responsible for any third-party content.
 
 <p align="center">
   <img src=".github/readme/discover.jpg" alt="Overdrive's Discover page: a featured game with its description, the picks beside it, and the You might like row" width="100%">
