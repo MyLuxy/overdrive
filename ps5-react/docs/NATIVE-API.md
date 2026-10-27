@@ -632,7 +632,10 @@ takes that memory and writes to every page; when the console needs over a second
 freeing memory from everything else: a probe froze a console from 512 MiB on), it fails with "The console
 has too little free memory to extract this archive now. Close other apps and retry." before decoding.
 Without a payload loader it fails with "This archive needs the payload loader to extract: none answered
-on port 9021." Over 288 MiB the memory refusal stands. Self-extracting executables are refused. This API does not install PKGs or
+on port 9021." A 7z under the 64 MiB budget goes this way too when the title's heap has no room for it as
+its extraction starts, which the app's own screen can have taken (decoded images on screen are never
+trimmed): the archive is extracted rather than failed. In the app, the hold reserves the memory the
+archive declares, not the whole 64 MiB. Over 288 MiB the memory refusal stands. Self-extracting executables are refused. This API does not install PKGs or
 register games. Desktop extraction and successful PS5 linking are not console
 execution evidence.
 

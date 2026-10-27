@@ -848,11 +848,15 @@ void run(const std::shared_ptr<Job>& pointer) {
   // and the title's own UI can have taken it (covers on screen are never trimmed; browsing to the queue
   // left 34 MiB of them decoded). Rather than fail the extraction there, the worker decodes the archive,
   // as it already does the larger ones.
+  const char* worker_trace = "preflight 7z for the worker, MiB";
   if (refusal.empty() && worker_can) {
     const MemoryHold probe{seven_zip_memory};
-    if (!probe.room) seven_zip_worker = true;
+    if (!probe.room) {
+      seven_zip_worker = true;
+      worker_trace = "no heap room, 7z for the worker, MiB";
+    }
   }
-  if (seven_zip_worker) trace("preflight 7z for the worker, MiB", std::to_string(seven_zip_memory >> 20).c_str());
+  if (seven_zip_worker) trace(worker_trace, std::to_string(seven_zip_memory >> 20).c_str());
   else trace("preflight ok");
   if (!lstat(staging.c_str(), &st)) {
     std::string owner;
