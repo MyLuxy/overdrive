@@ -1,0 +1,25 @@
+name: archive tests
+
+# Temporary: runs the extraction suite on Linux (libarchive, liblzma, OpenSSL), then goes away with
+# its branch. Not part of the release pipeline.
+on:
+  push:
+    branches: [tmp-archive-tests]
+  workflow_dispatch:
+
+jobs:
+  archives:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the archives' libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libarchive-dev liblzma-dev libssl-dev libarchive-tools patch
+          clang++ --version | head -1
+
+      - name: Extract every fixture
+        working-directory: ps5-react
+        run: python3 tools/test_archives.py
