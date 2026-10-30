@@ -13,11 +13,6 @@
 </div>
 
 <div align="center" dir="ltr">
-  <a href="https://github.com/MyLuxy/overdrive/releases/latest"><img src="https://img.shields.io/github/v/release/MyLuxy/overdrive?style=for-the-badge&label=release&labelColor=0b0b0d&color=2a2a2f" alt="Latest release" width="236"></a>
-  <a href="https://github.com/MyLuxy/overdrive/releases"><img src="https://img.shields.io/github/downloads/MyLuxy/overdrive/total?style=for-the-badge&label=downloads&labelColor=0b0b0d&color=2a2a2f" alt="Downloads" width="220"></a>
-</div>
-
-<div align="center" dir="ltr">
   <a href="#install-in-four-steps">Install</a> ·
   <a href="#features">Features</a> ·
   <a href="#updates">Updates</a> ·
@@ -25,9 +20,9 @@
   <a href="#build-it-yourself">Build it yourself</a>
 </div>
 
-> [!NOTE]
-> This project is provided as-is. We host no copyrighted material
-> and are not responsible for any third-party content.
+> [!WARNING]
+> This is a backup mirror for the source code. If the primary repository on GitHub goes down
+> updates will not work and you will need to manually reinstall Overdrive.
 
 <div align="center" dir="ltr">
   <img src=".github/readme/discover.jpg" alt="Overdrive's Discover page: a featured game with its description, the picks beside it, and the You might like row" width="100%">
