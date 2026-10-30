@@ -1,21 +1,20 @@
 <div align="center" dir="ltr">
-  <img src=".github/readme/logo.svg" alt="Overdrive" width="440">
+  <img src=".github/readme/logo.svg" alt="Overdrive" width="520">
 </div>
 
 <div align="center" dir="ltr">
-  <a href="README.md">English</a> ·
-  <b>Русский</b>
+  <h5><a href="README.md">English</a> ·
+  <b>Русский</b></h5>
 </div>
 
 <div align="center" dir="ltr">
-  <b>Ваш игровой магазин для PS5.</b><br>
-  Восставший из мёртвых, собранный заново из собственного бинарника, с полностью открытым исходным кодом.
+  <h3><b>Ваш игровой магазин для PS5.</b><br>
+  Восставший из мёртвых, собранный заново из собственного бинарника, с полностью открытым исходным кодом.</h3>
 </div>
 
 <div align="center" dir="ltr">
-  <a href="https://github.com/MyLuxy/overdrive/releases/latest"><img src="https://img.shields.io/github/v/release/MyLuxy/overdrive?style=for-the-badge&label=release&labelColor=0b0b0d&color=2a2a2f" alt="Последний релиз" width="197"></a>
-  <a href="https://github.com/MyLuxy/overdrive/releases"><img src="https://img.shields.io/github/downloads/MyLuxy/overdrive/total?style=for-the-badge&label=downloads&labelColor=0b0b0d&color=2a2a2f" alt="Скачивания" width="183"></a>
-  <a href="https://github.com/sponsors/MyLuxy"><img src="https://img.shields.io/badge/sponsor-%E2%9D%A4-db61a2?style=for-the-badge&logo=githubsponsors&logoColor=white&labelColor=0b0b0d" alt="Поддержать MyLuxy на GitHub" width="180"></a>
+  <a href="https://github.com/MyLuxy/overdrive/releases/latest"><img src="https://img.shields.io/github/v/release/MyLuxy/overdrive?style=for-the-badge&label=release&labelColor=0b0b0d&color=2a2a2f" alt="Последний релиз" width="236"></a>
+  <a href="https://github.com/MyLuxy/overdrive/releases"><img src="https://img.shields.io/github/downloads/MyLuxy/overdrive/total?style=for-the-badge&label=downloads&labelColor=0b0b0d&color=2a2a2f" alt="Скачивания" width="220"></a>
 </div>
 
 <div align="center" dir="ltr">
@@ -142,14 +141,6 @@ Overdrive нужно установить вручную только один �
 Для обновления нужно около **600 МБ свободного места** на накопителе, где лежит Overdrive.
 Файл `update.zip` в каждом релизе — это тот самый пакет, который скачивает приложение; вам он
 самому не нужен.
-
-## Поддержать проект
-
-Overdrive бесплатный и с открытым исходным кодом. Если он вам нравится, спонсорство помогает мне его обновлять.
-
-<div align="center" dir="ltr">
-  <a href="https://github.com/sponsors/MyLuxy"><img src=".github/readme/sponsor.ru.svg" alt="Поддержать Overdrive через GitHub Sponsors" width="414"></a>
-</div>
 
 ## Решение проблем
 

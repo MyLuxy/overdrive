@@ -1,21 +1,20 @@
 <div align="center" dir="ltr">
-  <img src=".github/readme/logo.svg" alt="Overdrive" width="440">
+  <img src=".github/readme/logo.svg" alt="Overdrive" width="520">
 </div>
 
 <div align="center" dir="ltr">
-  <b>English</b> ·
-  <a href="README.ru.md">Русский</a>
+  <h5><b>English</b> ·
+  <a href="README.ru.md">Русский</a></h5>
 </div>
 
 <div align="center" dir="ltr">
-  <b>Your PS5 game store.</b><br>
-  Back from the dead, rebuilt from its own binary, with every line of source in the open.
+  <h3><b>Your PS5 game store.</b><br>
+  Back from the dead, rebuilt from its own binary, with every line of source in the open.</h3>
 </div>
 
 <div align="center" dir="ltr">
-  <a href="https://github.com/MyLuxy/overdrive/releases/latest"><img src="https://img.shields.io/github/v/release/MyLuxy/overdrive?style=for-the-badge&label=release&labelColor=0b0b0d&color=2a2a2f" alt="Latest release" width="197"></a>
-  <a href="https://github.com/MyLuxy/overdrive/releases"><img src="https://img.shields.io/github/downloads/MyLuxy/overdrive/total?style=for-the-badge&label=downloads&labelColor=0b0b0d&color=2a2a2f" alt="Downloads" width="183"></a>
-  <a href="https://github.com/sponsors/MyLuxy"><img src="https://img.shields.io/badge/sponsor-%E2%9D%A4-db61a2?style=for-the-badge&logo=githubsponsors&logoColor=white&labelColor=0b0b0d" alt="Sponsor MyLuxy on GitHub" width="180"></a>
+  <a href="https://github.com/MyLuxy/overdrive/releases/latest"><img src="https://img.shields.io/github/v/release/MyLuxy/overdrive?style=for-the-badge&label=release&labelColor=0b0b0d&color=2a2a2f" alt="Latest release" width="236"></a>
+  <a href="https://github.com/MyLuxy/overdrive/releases"><img src="https://img.shields.io/github/downloads/MyLuxy/overdrive/total?style=for-the-badge&label=downloads&labelColor=0b0b0d&color=2a2a2f" alt="Downloads" width="220"></a>
 </div>
 
 <div align="center" dir="ltr">
@@ -160,14 +159,6 @@ itself a few seconds after it opens:
 
 The update needs about **600 MB free** on the drive that holds Overdrive. `update.zip` in each
 release is the package the app downloads for this; you never need it yourself.
-
-## Support the project
-
-Overdrive is free and open source. If you enjoy it, sponsoring helps me keep it updated.
-
-<div align="center" dir="ltr">
-  <a href="https://github.com/sponsors/MyLuxy"><img src=".github/readme/sponsor.svg" alt="Sponsor Overdrive on GitHub Sponsors" width="358"></a>
-</div>
 
 ## Troubleshooting
 
