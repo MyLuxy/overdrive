@@ -1,27 +1,24 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset=".github/readme/logo-dark.svg">
-    <img src=".github/readme/logo-light.svg" alt="Overdrive" width="440">
-  </picture>
+<p align="center" class="text-center">
+  <img src=".github/readme/logo.svg" alt="Overdrive" width="440">
 </p>
 
-<p align="center">
+<p align="center" class="text-center">
   <b>English</b> ·
   <a href="README.ru.md">Русский</a>
 </p>
 
-<p align="center">
+<p align="center" class="text-center">
   <b>Your PS5 game store.</b><br>
   Back from the dead, rebuilt from its own binary, with every line of source in the open.
 </p>
 
-<p align="center">
+<p align="center" class="text-center">
   <a href="https://github.com/MyLuxy/overdrive/releases/latest"><img src="https://img.shields.io/github/v/release/MyLuxy/overdrive?style=for-the-badge&label=release&labelColor=0b0b0d&color=2a2a2f" alt="Latest release" width="197"></a>
   <a href="https://github.com/MyLuxy/overdrive/releases"><img src="https://img.shields.io/github/downloads/MyLuxy/overdrive/total?style=for-the-badge&label=downloads&labelColor=0b0b0d&color=2a2a2f" alt="Downloads" width="183"></a>
   <a href="https://github.com/sponsors/MyLuxy"><img src="https://img.shields.io/badge/sponsor-%E2%9D%A4-db61a2?style=for-the-badge&logo=githubsponsors&logoColor=white&labelColor=0b0b0d" alt="Sponsor MyLuxy on GitHub" width="180"></a>
 </p>
 
-<p align="center">
+<p align="center" class="text-center">
   <a href="#install-in-four-steps">Install</a> ·
   <a href="#features">Features</a> ·
   <a href="#updates">Updates</a> ·
@@ -33,10 +30,10 @@
 > This project is provided as-is. We host no copyrighted material
 > and are not responsible for any third-party content.
 
-<p align="center">
+<p align="center" class="text-center">
   <img src=".github/readme/discover.jpg" alt="Overdrive's Discover page: a featured game with its description, the picks beside it, and the You might like row" width="100%">
 </p>
-<p align="center">
+<p align="center" class="text-center">
   <img src=".github/readme/browse.jpg" alt="Browse library: 2,105 games with filters, sorting, scores and sizes" width="49.5%">
   <img src=".github/readme/downloads.jpg" alt="Downloads page with the From a link, From a torrent and Debrid services cards, activity and storage for internal storage and a USB drive" width="49.5%">
 </p>
@@ -47,7 +44,7 @@ TorBox, Real-Debrid and Premiumize fetch a link or a magnet for you: pick one un
 **Downloads → Debrid services**, paste the link, and the console downloads what the service
 prepares. Each uses your own account key, typed once and kept on the console.
 
-<p align="center">
+<p align="center" class="text-center">
   <img src=".github/readme/debrid.webp" alt="Debrid services dialog on the Downloads page: TorBox, Real-Debrid and Premiumize, each asking for its own key" width="70%">
 </p>
 
@@ -83,7 +80,7 @@ passwords are preserved. Malformed one-byte CDN probes retry with a bounded
 
 ## Install in four steps
 
-<p align="center">
+<p align="center" class="text-center">
   <img src=".github/readme/install-steps.svg" alt="1 Download Overdrive.exfat · 2 Copy it into a homebrew folder on a USB drive · 3 Plug it in: ShadowMount+ installs it · 4 Play" width="100%">
 </p>
 
@@ -94,13 +91,13 @@ which installs `.exfat` images by itself, and **[kstuff](https://github.com/Echo
 If ShadowMount+ shows its notification when the console starts, you are ready. You also need a
 **USB drive** and a **PC**.
 
-<p align="center">
+<p align="center" class="text-center">
   <a href="https://github.com/MyLuxy/overdrive/releases/latest/download/Overdrive.exfat"><img src="https://img.shields.io/badge/Download-Overdrive.exfat-f2f2f3?style=for-the-badge&labelColor=0b0b0d" alt="Download Overdrive.exfat" width="347"></a>
 </p>
 
 <table>
 <tr>
-<td width="64" align="center" valign="top"><img src=".github/readme/step-1.svg" alt="1" width="40"></td>
+<td width="64" align="center" valign="top" class="text-center"><img src=".github/readme/step-1.svg" alt="1" width="40"></td>
 <td>
 
 **Download `Overdrive.exfat`** with the button above, or from the
@@ -110,7 +107,7 @@ need. Leave it as it is: don't unzip it and don't change the `.exfat` at the end
 </td>
 </tr>
 <tr>
-<td align="center" valign="top"><img src=".github/readme/step-2.svg" alt="2" width="40"></td>
+<td align="center" valign="top" class="text-center"><img src=".github/readme/step-2.svg" alt="2" width="40"></td>
 <td>
 
 **Copy it onto a USB drive, inside a folder called `homebrew`.** Plug the drive into your PC,
@@ -128,7 +125,7 @@ The drive must be formatted as **exFAT**, which is how most drives come and what
 </td>
 </tr>
 <tr>
-<td align="center" valign="top"><img src=".github/readme/step-3.svg" alt="3" width="40"></td>
+<td align="center" valign="top" class="text-center"><img src=".github/readme/step-3.svg" alt="3" width="40"></td>
 <td>
 
 **Plug the drive into the PS5.** ShadowMount+ checks for new files every few seconds: it finds
@@ -138,7 +135,7 @@ nothing to click.
 </td>
 </tr>
 <tr>
-<td align="center" valign="top"><img src=".github/readme/step-4.svg" alt="4" width="40"></td>
+<td align="center" valign="top" class="text-center"><img src=".github/readme/step-4.svg" alt="4" width="40"></td>
 <td>
 
 <img src="app/sce_sys/icon0.png" alt="Overdrive's icon" width="64" align="right">
@@ -168,7 +165,7 @@ release is the package the app downloads for this; you never need it yourself.
 
 Overdrive is free and open source. If you enjoy it, sponsoring helps me keep it updated.
 
-<p align="center">
+<p align="center" class="text-center">
   <a href="https://github.com/sponsors/MyLuxy"><img src=".github/readme/sponsor.svg" alt="Sponsor Overdrive on GitHub Sponsors" width="358"></a>
 </p>
 
