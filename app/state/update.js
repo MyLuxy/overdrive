@@ -12,7 +12,15 @@ import { Archives, Downloads, FileSystem, Http, Platform } from '@ps5-react/core
   // Not overridable by a file: an older Overdrive leaves `overdrive/update-feed` in the data
   // directory naming its own releases repository, which no longer exists — every install upgraded
   // in place then asked a dead feed for updates instead of this one (issue #122).
-  var FEED = "https://api.github.com/repos/MyLuxy/overdrive/releases/latest";
+  //
+  // Two feeds, both asked at once: GitHub's release API while the account answers, and this
+  // project's own feed on GitLab, which carries the same shape (the release, its notes, and the
+  // asset's size and sha256). The newest release of the two wins, so one host going quiet never
+  // leaves an installed Overdrive without a way to update.
+  var FEEDS = [
+    { name: "github", url: "https://api.github.com/repos/MyLuxy/overdrive/releases/latest" },
+    { name: "gitlab", url: "https://gitlab.com/myluxy/overdrive/-/raw/main/update-feed.json" }
+  ];
   function location() {
     if (Platform.OS !== "ps5") return { installDir: `${FileSystem.dataDir}/homebrew/${TITLE}`, workDir: `${FileSystem.dataDir}/overdrive-update` };
     return locateInstall({ http: Http, fs: FileSystem, title: TITLE, roots: storageRoots });
@@ -38,7 +46,7 @@ import { Archives, Downloads, FileSystem, Http, Platform } from '@ps5-react/core
       archives: Archives,
       fs: FileSystem,
       version: VERSION,
-      feed: FEED,
+      feeds: FEEDS,
       asset: assetFor(install),
       marker: `${FileSystem.dataDir}/overdrive/pending-image.json`,
       ...install

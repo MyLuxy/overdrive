@@ -20,18 +20,39 @@ import { formatBytes } from './size.js';
       if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
     return false;
   }
-  function createUpdater({ http, downloads, archives, fs, version: version2, feed, asset, installDir, image, workDir, marker, now = Date.now }) {
+  function createUpdater({ http, downloads, archives, fs, version: version2, feeds, asset, installDir, image, workDir, marker, now = Date.now }) {
+    // Every feed is asked, a feed that fails is only said in the log, and the newest release among
+    // those that answered is the update: GitHub being down, or gone, must not make an install that
+    // could update look current. A release is still refused without its sha256, whichever feed
+    // carried it, because installing one replaces the app's image.
     async function check() {
       const installed = installedImage();
       if (installed) return installed;
-      const response = await http.request(feed, { headers: { Accept: "application/vnd.github+json", "User-Agent": "Overdrive" }, maxBytes: 1024 ** 2 });
-      if (!response.ok) throw new Error(`Update feed ${feed} answered HTTP ${response.status}`);
-      const release = await response.json();
-      if (!release.tag_name || !newer(release.tag_name, version2)) return null;
-      const file = (release.assets || []).find((item) => item.name === asset);
-      const sha256 = /^sha256:([0-9a-f]{64})$/i.exec(file?.digest || "")?.[1];
-      if (!file || !sha256) return null;
-      return { version: release.tag_name.replace(/^v/, ""), notes: release.body || "", url: file.browser_download_url, size: file.size, sha256 };
+      const answers = await Promise.allSettled(feeds.map(async ({ url }) => {
+        const response = await http.request(url, { headers: { Accept: "application/vnd.github+json", "User-Agent": "Overdrive" }, maxBytes: 1024 ** 2 });
+        if (!response.ok) throw new Error(`Update feed ${url} answered HTTP ${response.status}`);
+        return response.json();
+      }));
+      const said = [];
+      const found = [];
+      answers.forEach((answer, index) => {
+        const { name } = feeds[index];
+        if (answer.status === "rejected") {
+          said.push(`${name} ${answer.reason?.message ?? answer.reason}`);
+          return;
+        }
+        const release = answer.value;
+        const file = (release.assets || []).find((item) => item.name === asset);
+        const sha256 = /^sha256:([0-9a-f]{64})$/i.exec(file?.digest || "")?.[1];
+        if (!release.tag_name || !newer(release.tag_name, version2) || !file || !sha256) {
+          said.push(`${name}: nothing to offer`);
+          return;
+        }
+        said.push(`${name}: v${release.tag_name.replace(/^v/, "")}`);
+        found.push({ version: release.tag_name.replace(/^v/, ""), notes: release.body || "", url: file.browser_download_url, size: file.size, sha256 });
+      });
+      log(said.join("; "));
+      return found.reduce((best, item) => (!best || newer(item.version, best.version) ? item : best), null);
     }
     const entriesOf = (dir2) => fs.readDir(dir2).filter((entry2) => !entry2.name.startsWith(".ps5-react-"));
     function contentOf(dir2) {
