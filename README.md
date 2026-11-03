@@ -86,7 +86,7 @@ If ShadowMount+ shows its notification when the console starts, you are ready. Y
 **USB drive** and a **PC**.
 
 <div align="center" dir="ltr">
-  <a href="https://github.com/MyLuxy/overdrive/releases/latest/download/Overdrive.exfat"><img src="https://img.shields.io/badge/Download-Overdrive.exfat-f2f2f3?style=for-the-badge&labelColor=0b0b0d" alt="Download Overdrive.exfat" width="347"></a>
+  <a href="https://gitlab.com/myluxy/overdrive/-/releases"><img src="https://img.shields.io/badge/Download-Overdrive.exfat-f2f2f3?style=for-the-badge&labelColor=0b0b0d" alt="Download Overdrive.exfat" width="347"></a>
 </div>
 
 <table>
