@@ -1,0 +1,12 @@
+{
+  "tag_name": "v1.1.0",
+  "body": "PKG downloads keep going with Overdrive closed.\n- New: PKG downloads run in the background\n- New: TorBox, Real-Debrid and Premiumize\n- New: sign in to Archive.org for collections\n- New: Polish, and a filter by file format\n- Fixed: a 7z too big for the heap now extracts\n- Improved: a smaller, faster image (8K clusters)\n\n**New to Overdrive?** Download `Overdrive.exfat` below and follow the\n[install guide](https://gitlab.com/myluxy/overdrive#install-in-four-steps).\n\n### New\n- **PKGs download in the background.** The console's own download queue fetches the package,\n  so Overdrive can be closed while it runs, and it survives a console restart.\n- **Three debrid services.** TorBox, Real-Debrid and Premiumize share one card, with a QR\n  login from the phone; a saved Real-Debrid key converts catalog downloads by itself.\n- **Archive.org account.** Sign in once under \"Link e account\" and collections that need an\n  account download straight away.\n- **A Downloads page of your own.** Paste a link, a torrent (qBittorrent) or a magnet, and\n  choose the disk; the choice is remembered.\n- **Polish**, and the download cards' titles in all 18 languages.\n- **Browse filters by file format**: PKG, exFAT, FFPFS and archives.\n- **PS4 games from DLPSGame** join the catalog (PR #129).\n\n### Fixed\n- A 7z whose dictionary the heap cannot hold is extracted by the worker instead of failing.\n- Downloads restart themselves after a stall, and FileKeeper's gateways get 16 connections.\n- The nightly catalog update is read again, and drops no VR flags.\n- The exFAT image reads its own boot sector correctly: 8K clusters, 184 MB instead of 715.\n- A free TorBox plan is no longer mistaken for a refused key.\n\n### Updates\nThis build also asks GitLab for updates, not only GitHub: if one host goes quiet, the app\nstill finds the newest release.\n",
+  "assets": [
+    {
+      "name": "update.zip",
+      "size": 32833728,
+      "digest": "sha256:e4a33a837fe2f0653265d85fe64158a57b4043996332ba4fee75ff9a79057019",
+      "browser_download_url": "https://gitlab.com/api/v4/projects/88312516/packages/generic/overdrive-update/1.1.0/update.zip"
+    }
+  ]
+}
