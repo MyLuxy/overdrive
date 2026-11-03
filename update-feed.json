@@ -4,8 +4,8 @@
   "assets": [
     {
       "name": "update.zip",
-      "size": 32833728,
-      "digest": "sha256:e4a33a837fe2f0653265d85fe64158a57b4043996332ba4fee75ff9a79057019",
+      "size": 32836448,
+      "digest": "sha256:9efa67b3b7dfd05ef796c7d8066069029cf6a3325a3c7b618a07af88c3c2b86e",
       "browser_download_url": "https://gitlab.com/api/v4/projects/88312516/packages/generic/overdrive-update/1.1.0/update.zip"
     }
   ]
