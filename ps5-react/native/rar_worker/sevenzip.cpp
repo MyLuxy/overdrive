@@ -6,11 +6,12 @@
 // libarchive, in this process's memory, which goes back to the console when the process exits. The
 // engine sends one only when the archive's headers declare no more than the budget it names.
 //
-// Request, after the "7ZX1" line: "memory <bytes>" (what the headers declare the decoder needs), "limit
-// <bytes>", "flatten <extension>"..., "reserved <text>", "dest <directory>", "source <path>"... in volume
-// order, then "end". The engine can then write "cancel" at any time. Answers as for a RAR set: "ready",
-// "p <bytes written>", "k" every second, "f <sha256> <size> <path>" once a file is on disk and synced,
-// "s" once every file is decoded, "t <key>=<value>...", then "ok", "cancelled" or "fail <reason>".
+// Request, after the "7ZX1" line: "memory <bytes>" (what the headers declare the decoder needs, 0 when the
+// archive stores its files), "limit <bytes>", "flatten <extension>"..., "reserved <text>", "dest <directory>",
+// "source <path>"... in volume order, then "end". The engine can then write "cancel" at any time. Answers as
+// for a RAR set: "ready", "p <bytes written>", "k" every second, "f <sha256> <size> <path>" once a file is on
+// disk and synced, "s" once every file is decoded, "t <key>=<value>...", then "ok", "cancelled" or
+// "fail <reason>".
 //
 // A program's malloc on the console has no ceiling of its own: the system hands over memory it takes
 // from everything else, slowly (a probe on a console took 8.5 s for 512 MiB and froze its interface
@@ -48,12 +49,17 @@ bool cancelled = false;  // Only the decoding thread reads and sets it.
 
 bool read_options(Options& options) {
   std::string line;
+  // A 7z that stores its files declares no decoder memory at all. That is a measured 0, not a missing line:
+  // the engine always sends "memory", so the line present is what makes the request complete.
+  bool memory_seen = false;
   while (read_line(line)) {
     const auto space = line.find(' ');
     const std::string key = line.substr(0, space), value = space == std::string::npos ? "" : line.substr(space + 1);
-    if (key == "end") return !options.destination.empty() && !options.sources.empty() && options.limit && options.memory;
-    if (key == "memory") options.memory = strtoull(value.c_str(), nullptr, 10);
-    else if (key == "limit") options.limit = strtoull(value.c_str(), nullptr, 10);
+    if (key == "end") return !options.destination.empty() && !options.sources.empty() && options.limit && memory_seen;
+    if (key == "memory") {
+      memory_seen = true;
+      options.memory = strtoull(value.c_str(), nullptr, 10);
+    } else if (key == "limit") options.limit = strtoull(value.c_str(), nullptr, 10);
     else if (key == "flatten") options.flatten.push_back(value);
     else if (key == "reserved") options.reserved = value;
     else if (key == "dest") options.destination = value;

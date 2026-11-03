@@ -21,9 +21,9 @@ void archives::trace(const char* step,const char* detail){
  if(unlink((staging+"/"+removed).c_str()))std::abort();
 }
 // ARCHIVE_PIPELINE_BYTES=0 exercises the inline writer.
-std::size_t archives::pipeline_bytes(std::uint64_t){const char* v=std::getenv("ARCHIVE_PIPELINE_BYTES");return v?std::strtoull(v,nullptr,10):32u<<20;}
+std::size_t archives::pipeline_bytes(std::uint64_t,bool){const char* v=std::getenv("ARCHIVE_PIPELINE_BYTES");return v?std::strtoull(v,nullptr,10):32u<<20;}
 // ARCHIVE_NO_MEMORY=1 reports a heap without room for an in-process extraction.
-bool archives::hold_memory(bool hold,std::uint64_t){return !hold||!std::getenv("ARCHIVE_NO_MEMORY");}
+bool archives::hold_memory(bool hold,std::uint64_t,bool){return !hold||!std::getenv("ARCHIVE_NO_MEMORY");}
 // ARCHIVE_DOWNLOADING=1 asks rar-extract for the thread count used while downloads run.
 bool archives::downloading(){return std::getenv("ARCHIVE_DOWNLOADING")!=nullptr;}
 // True once `s` has ended. ARCHIVE_PHASES=1 prints to stderr each phase the polls see, then the files synced

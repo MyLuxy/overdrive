@@ -336,19 +336,20 @@ bool empty_directory(const std::string& path) {
   }, &count) && !count;
 }
 // Removes what is under `path` without following links. Names come from the host's listing: opendir
-// and the *at calls are unusable in a console title.
-bool clear_directory(const std::string& path, unsigned depth = 0) {
+// and the *at calls are unusable in a console title. `keep_metadata` leaves this run's own `.ps5-react-`
+// files, which is what clearing the staging a failed first attempt left needs.
+bool clear_directory(const std::string& path, bool keep_metadata, unsigned depth = 0) {
   if (depth > max_depth) return false;
   std::vector<std::string> names;
   if (!list_directory(path.c_str(), [](const char* name, void* out) { static_cast<std::vector<std::string>*>(out)->emplace_back(name); }, &names))
     return false;
   for (const auto& name : names) {
-    if (name == "." || name == "..") continue;
+    if (name == "." || name == ".." || (keep_metadata && name.rfind(".ps5-react-", 0) == 0)) continue;
     const std::string child = path + "/" + name;
     struct stat st;
     if (lstat(child.c_str(), &st)) return false;
     if (S_ISDIR(st.st_mode)) {
-      if (!clear_directory(child, depth + 1) || rmdir(child.c_str())) return false;
+      if (!clear_directory(child, keep_metadata, depth + 1) || rmdir(child.c_str())) return false;
     } else if (unlink(child.c_str())) {
       return false;
     }
@@ -413,7 +414,7 @@ bool restart_staging(const std::string& staging, const struct stat& expected) {
   const int previous = open(staging.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
   struct stat opened;
   const bool owned = previous >= 0 && !fstat(previous, &opened) && opened.st_dev == expected.st_dev && opened.st_ino == expected.st_ino;
-  const bool cleared = owned && clear_directory(staging);
+  const bool cleared = owned && clear_directory(staging, false);
   if (previous >= 0) close(previous);
   return cleared && !rmdir(staging.c_str());
 }
@@ -521,7 +522,7 @@ void use_utf8_names() {
 }
 // The host's memory hold for the libarchive path, released once the archive is freed.
 struct MemoryHold {
-  explicit MemoryHold(std::uint64_t decoder) : room(hold_memory(true, decoder)) {}
+  MemoryHold(std::uint64_t decoder, bool measured) : room(hold_memory(true, decoder, measured)) {}
   ~MemoryHold() { hold_memory(false); }
   const bool room;
 };
@@ -784,7 +785,7 @@ void remove_leftover_staging(const Request& request, const std::string& identity
     const bool recorded = read_metadata(staging + "/" + stage_name, owner);
     if ((recorded && owner != "P5ST001:" + identity + "\n" && owner != "P5ST001:" + stream_identity(request) + "\n") ||
         (!recorded && !empty_directory(staging))) return true;
-    if (clear_directory(staging)) rmdir(staging.c_str());
+    if (clear_directory(staging, false)) rmdir(staging.c_str());
     return true;
   };
   struct stat st;
@@ -794,7 +795,7 @@ void remove_leftover_staging(const Request& request, const std::string& identity
 void remove_owned_staging(const std::string& staging, const struct stat& owned) {
   struct stat current;
   if (lstat(staging.c_str(), &current) || current.st_dev != owned.st_dev || current.st_ino != owned.st_ino) return;
-  if (clear_directory(staging)) rmdir(staging.c_str());
+  if (clear_directory(staging, false)) rmdir(staging.c_str());
 }
 void run(const std::shared_ptr<Job>& pointer) {
   name_thread("archive");
@@ -832,12 +833,15 @@ void run(const std::shared_ptr<Job>& pointer) {
     return found.kind != "rar" || !lines ? std::string("Only a RAR set can be extracted while it downloads.") : found.refusal;
   };
   std::uint64_t seven_zip_memory = 0;
-  const auto refusal = request.stream ? streamed() : preflight(request.sources, seven_zip_memory);
+  bool seven_zip_measured = false;
+  const auto refusal = request.stream ? streamed() : preflight(request.sources, seven_zip_memory, seven_zip_measured);
   // A 7z within rar-extract's budget goes to the worker; its paths go to the worker's line protocol.
-  // Without a worker the refusal stands.
+  // Without a worker the refusal stands. A measured 0 is a 7z that stores its files: it needs no decoder
+  // memory in this heap, but the worker can still take it, which is what the retry below relies on.
+  const bool seven_zip = seven_zip_memory || seven_zip_measured;
   const bool lines = request.destination.find('\n') == std::string::npos &&
       std::none_of(request.sources.begin(), request.sources.end(), [](const std::string& path) { return path.find('\n') != std::string::npos; });
-  const bool worker_can = seven_zip_memory && seven_zip_memory <= seven_zip_worker_memory && lines;
+  const bool worker_can = seven_zip && seven_zip_memory <= seven_zip_worker_memory && lines;
   bool seven_zip_worker = !refusal.empty() && worker_can;
   if (!refusal.empty() && !seven_zip_worker) {
     trace("preflight refused", refusal.c_str());
@@ -850,7 +854,7 @@ void run(const std::shared_ptr<Job>& pointer) {
   // as it already does the larger ones.
   const char* worker_trace = "preflight 7z for the worker, MiB";
   if (refusal.empty() && worker_can) {
-    const MemoryHold probe{seven_zip_memory};
+    const MemoryHold probe{seven_zip_memory, seven_zip_measured};
     if (!probe.room) {
       seven_zip_worker = true;
       worker_trace = "no heap room, 7z for the worker, MiB";
@@ -915,13 +919,15 @@ void run(const std::shared_ptr<Job>& pointer) {
   // RAR sets go to rar-extract; everything else, and RAR when the worker cannot start, to libarchive. Only
   // the worker waits for volumes: a streamed set it cannot take fails with nothing written, and the app
   // extracts it once every volume is there.
+  bool inlined = false;
   if (request.stream) {
     if (!extract_rar(job, staging, receipt, error) && error.empty()) error = "Extracting while downloading needs the RAR worker.";
   } else if (seven_zip_worker) {
     if (!extract_worker(job, staging, receipt, error, seven_zip_request(request, staging, seven_zip_memory), "7z") && error.empty())
       error = "This archive needs the payload loader to extract: none answered on port 9021.";
   } else if (!rar_volumes(request) || !extract_rar(job, staging, receipt, error)) {
-    const MemoryHold memory(seven_zip_memory);
+    inlined = true;
+    const MemoryHold memory(seven_zip_memory, seven_zip_measured);
     std::unique_ptr<Rar5PasswordReader> decrypted;
     auto* archive = open_archive(job, error, decrypted);
     if (!memory.room) error = no_memory;
@@ -929,7 +935,7 @@ void run(const std::shared_ptr<Job>& pointer) {
     {
       // Without the ring or its threads, files are written inline as before.
       Writer writer(job.cancelled, job.timings);
-      const bool pipelined = writer.start(pipeline_bytes(seven_zip_memory), receipt);
+      const bool pipelined = writer.start(pipeline_bytes(seven_zip_memory, seven_zip_measured), receipt);
       trace("writer", pipelined ? "pipelined" : "inline");
       const auto started = std::chrono::steady_clock::now();
       const auto cpu_started = thread_cpu_us();
@@ -957,6 +963,28 @@ void run(const std::shared_ptr<Job>& pointer) {
     if (decrypted && !decrypted->error().empty()) error = decrypted->error();
     trace("read", error.c_str());
     archive_read_free(archive);
+  }
+  // libarchive decodes in this heap, and an allocation it needs can still fail where the probe said there
+  // was room: the free memory is in fragments too small for the decoder's dictionary (a 32 MiB LZMA2 one
+  // failed on a console with 76 MiB free). The worker decodes the same archive in a process of its own,
+  // claiming that memory before it starts, so a 7z that wrote nothing is retried there rather than failing.
+  // A password stays here: the worker's 7ZX1 request carries none.
+  if (inlined && !error.empty() && !job.cancelled && worker_can && request.password.empty() &&
+      error.find("memory") != std::string::npos) {
+    bool nothing_written = false;
+    {
+      std::lock_guard lock(job.mutex);
+      nothing_written = !job.snapshot.written && !job.snapshot.entries;
+    }
+    // The attempt can still have created the file it was decoding, empty, and the worker creates each one
+    // only when it is absent: staging keeps this run's metadata and loses anything else.
+    if (nothing_written && clear_directory(staging, true)) {
+      trace("inline 7z out of memory, retrying with the worker", error.c_str());
+      const std::string failure = error;
+      error.clear();
+      if (!extract_worker(job, staging, receipt, error, seven_zip_request(request, staging, seven_zip_memory), "7z"))
+        error = failure;
+    }
   }
   // A RAR worker from before the "s" line never said it was finishing.
   if (error.empty() && !job.cancelled) enter(job, "finishing");

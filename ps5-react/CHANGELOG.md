@@ -106,6 +106,16 @@
   heap that has room for it and no more; `extraction memory:` logs that `decoder=` beside the heap.
 - What both extractors share (report lines, path rule, SHA-256, the writer thread) moved from
   `rar_worker.cpp` to `worker_io.hpp`.
+- A 7z that stores its files declares no decoder memory at all, and a 0 the preflight reported read as
+  a size nobody knew: the host held its 64 MiB ceiling back even so, and a title on its Downloads page
+  (128 MiB live) refused the archive with "Not enough memory to extract." every time (Poppy Playtime).
+  The preflight now also reports whether the figure was measured, so a measured 0 reserves nothing.
+- A 7z the in-process decoder runs out of memory on, where the preflight and the probe both saw room,
+  is retried in `rar-extract` rather than failed: free memory in fragments libarchive cannot use failed
+  a 32 MiB LZMA2 dictionary on a heap with 76 MiB free (art of rally), and the worker claims that
+  memory before it decodes. A 7z that stores its files goes there the same way, `memory 0` being a
+  valid request. Only a run that wrote nothing is retried, and the staging keeps this run's own
+  metadata and loses whatever the attempt left half-made.
 
 ## Unreleased — home-screen backgrounds
 

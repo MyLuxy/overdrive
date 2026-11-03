@@ -14,8 +14,8 @@
 #include <unistd.h>
 #include <vector>
 
-std::size_t archives::pipeline_bytes(std::uint64_t) { return 0; }
-bool archives::hold_memory(bool, std::uint64_t) { return true; }
+std::size_t archives::pipeline_bytes(std::uint64_t, bool) { return 0; }
+bool archives::hold_memory(bool, std::uint64_t, bool) { return true; }
 void archives::trace(const char*, const char*) {}
 bool archives::list_directory(const char*, void (*)(const char*, void*), void*) { return false; }
 

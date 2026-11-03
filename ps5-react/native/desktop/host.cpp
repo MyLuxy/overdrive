@@ -913,7 +913,7 @@ int main(int argc, char** argv) {
 }
 
 void archives::trace(const char*, const char*) {}
-std::size_t archives::pipeline_bytes(std::uint64_t) { return 32 * 1024 * 1024; }
-bool archives::hold_memory(bool hold, std::uint64_t) { images::hold_memory(hold); return true; }
+std::size_t archives::pipeline_bytes(std::uint64_t, bool) { return 32 * 1024 * 1024; }
+bool archives::hold_memory(bool hold, std::uint64_t, bool) { images::hold_memory(hold); return true; }
 bool archives::downloading() { return network::downloading(); }
 bool archives::list_directory(const char* path, void (*visit)(const char*, void*), void* user) { return host::read_dir(path, visit, user); }

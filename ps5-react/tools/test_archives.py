@@ -613,6 +613,14 @@ def main():
   assert lines[0]=="ready" and lines[-1]=="ok" and any(line.startswith("f ") and line.endswith(" payload.bin") for line in lines),lines
   assert any(line.startswith("t ") and " claim=" in line for line in lines),lines
   assert (root/"raw-7z/payload.bin").read_bytes()==DATA
+  # A 7z that stores its files declares no decoder memory: "memory 0" is a complete request, not a line the
+  # engine forgot to send.
+  request=f"7ZX1\nmemory 0\nlimit {1<<30}\nreserved .ps5-react-\ndest {root/'raw-7z-stored'}\nsource {seven}\nend\n"
+  (root/"raw-7z-stored").mkdir()
+  process=subprocess.Popen([os.environ["PS5_REACT_RAR_WORKER"]],stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
+  process.stdin.write(request);process.stdin.flush()
+  lines=process.stdout.read().splitlines();process.stdin.close();process.wait(timeout=60)
+  assert lines[0]=="ready" and lines[-1]=="ok" and (root/"raw-7z-stored/payload.bin").read_bytes()==DATA,lines
   encoded=root/"encoded.7z";encoded.write_bytes(encode_7z_header(seven.read_bytes()))
   result=run("encoded-7zip",[encoded])
   assert result[0]=="completed",result

@@ -31,13 +31,15 @@ bool list_directory(const char* path, void (*visit)(const char* name, void* user
 void trace(const char* step, const char* detail = "");
 // Bytes the host lets one extraction hold for buffered writes; under 1 MiB, files are written inline.
 // `decoder` is what the archive's own decoder will take, as the preflight measured it (0: the 64 MiB
-// ceiling the preflight admits).
-std::size_t pipeline_bytes(std::uint64_t decoder = 0);
+// ceiling the preflight admits). `measured`: the preflight read that figure from the archive's folders,
+// so a 0 is an archive that stores and needs nothing, rather than a size nobody knows.
+std::size_t pipeline_bytes(std::uint64_t decoder = 0, bool measured = false);
 // Called with true before an in-process (libarchive) extraction opens its archive and with false after
 // it ends. The host frees what it can for it; false means the heap lacks room even for inline writes,
 // and the job fails with no_memory instead of the title running out of heap. `decoder` is what the
-// archive's decoder will take besides them (0: the 64 MiB ceiling).
-bool hold_memory(bool hold, std::uint64_t decoder = 0);
+// archive's decoder will take besides them (0: the 64 MiB ceiling), and `measured` says whether that 0
+// is a measured none (see pipeline_bytes).
+bool hold_memory(bool hold, std::uint64_t decoder = 0, bool measured = false);
 inline constexpr const char* no_memory = "Not enough memory to extract.";
 // True while the host downloads a file; a RAR extraction then leaves it more cores. Cheap, any thread.
 bool downloading();
