@@ -60,6 +60,7 @@ except ImportError:
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DATA = ROOT / "app" / "data"
+ANDSHREW = "https://raw.githubusercontent.com/andshrew/PlayStation-Titles/main/{platform}_Titles.tsv"
 CHIHIRO = "https://store.playstation.com/store/api/chihiro/00_09_000/titlecontainer/{store}/{lang}/999/{title}_00"
 # A storefront search for a game the title ID lookup did not give (a renamed, delisted or cross-gen
 # product); ?game_content_type=games keeps add-ons out of the answer.

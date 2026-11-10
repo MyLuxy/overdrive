@@ -5,7 +5,7 @@ import test from 'node:test';
 register(new URL('./download-queue-test-loader.mjs', import.meta.url), import.meta.url);
 const {createDownloadQueue} = await import('./download-queue.js');
 
-function harness({parts = false, inspections = [], extractError = null, supportsWorker = true, format = 'binary'} = {}) {
+function harness({parts = false, inspections = [], extractError = null, supportsWorker = true, format = 'binary', acceptedPassword, archivePassword} = {}) {
   const files = new Map();
   const dirs = new Set(['/data']);
   const root = '/data', filename = parts ? 'multi.rar' : format === 'binary' ? 'mystery.binary' : 'mystery.' + format;
@@ -46,8 +46,10 @@ function harness({parts = false, inspections = [], extractError = null, supports
     },
     extract(options) {
       extractions.push(options);
-      if (extractError) return {
-        done: Promise.reject(extractError), subscribe: () => () => {}, cancel: () => {},
+      const error = extractError || (acceptedPassword !== undefined && options.password !== acceptedPassword
+        ? new Error('Incorrect RAR5 archive password.') : null);
+      if (error) return {
+        done: Promise.reject(error), subscribe: () => () => {}, cancel: () => {},
       };
       return {
         done: Promise.resolve({artifacts: []}), subscribe: () => () => {}, cancel: () => {},
@@ -67,6 +69,7 @@ function harness({parts = false, inspections = [], extractError = null, supports
   });
   const release = {
     id: 'source-1', filename, url: 'https://example.com/release', format,
+    ...(archivePassword !== undefined && {archivePassword}),
     ...(parts && {parts: [1, 2].map(number => ({
       number,
       sources: [{url: 'https://example.com/part' + number}],
@@ -165,4 +168,28 @@ test('extraction failure is not swallowed by optional header checks', async () =
   const job = await completed(fixture);
   assert.equal(job.state, 'failed');
   assert.match(job.error, /corrupt archive/);
+});
+
+for (const password of [
+  '(DLPSGAME.COM)', 'pspkg.com', 'Th3B4tm4nWhoL4ugh$', 'DLPSGAME.COM_37629',
+  'Kupo! Kupo! Kupo!', 'www.[DLPSGAME.COM]', 'Darksoftware', 'Superpsx',
+]) {
+  test(`an archive without password metadata retries the published password ${password}`, async () => {
+    const fixture = harness({parts: true, acceptedPassword: password});
+    const job = await completed(fixture);
+    assert.equal(job.state, 'extracted', job.error);
+    assert.equal(fixture.extractions[0].password, undefined);
+    assert.equal(fixture.extractions.at(-1).password, password);
+    assert.equal(fixture.extractions.filter(attempt => attempt.password === password).length, 1);
+    for (const previous of ['DLPSGAME.COM', '[DLPSGAME.COM]', 'www.DLPSGAME.COM', 'SuperPSX', 'downloadgameps3.com', 'hako'])
+      assert(fixture.extractions.some(attempt => attempt.password === previous), `Existing password lost: ${previous}`);
+  });
+}
+
+test('a published password in release metadata is tried first with punctuation intact', async () => {
+  const fixture = harness({parts: true, acceptedPassword: '(DLPSGAME.COM)', archivePassword: '(DLPSGAME.COM)'});
+  const job = await completed(fixture);
+  assert.equal(job.state, 'extracted', job.error);
+  assert.equal(fixture.extractions.length, 1);
+  assert.equal(fixture.extractions[0].password, '(DLPSGAME.COM)');
 });
