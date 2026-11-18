@@ -71,6 +71,27 @@
   },
   "stbImage": {
     "url": "https://raw.githubusercontent.com/nothings/stb/2c980bb59875b0d32144a71867fbdebb2f77cd20/stb_image.h",
-    "sha256": "8c5f8f1b1b8e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e"
-  }
+    "sha256": "8c5f8f1b1b8e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e"
+  },
+  "runtimeShim": {},
+  "compilerRt": {},
+  "filesystemHelperClient": {
+    "url": "https://github.com/JVK3R/ProsperoStore.git",
+    "revision": "335d8c43f916020205f445b76b66106ee50d2eeb"
+  },
+  "filesystemHelper": {
+    "url": "https://github.com/mpereiraesaa/PS5-Lapy-JB-Daemon.git",
+    "revision": "54a095c0f19161825e845daa760a03b446e654fa",
+    "patches": [
+      "patches/lapy-sdk-042-attributes.patch"
+    ]
+  },
+  "filesystemHelperLogging": {},
+  "networkPorts": {},
+  "harfbuzz": {},
+  "notoFonts": {},
+  "sheenBidi": {},
+  "unrarSource": {},
+  "ffmpeg": {},
+  "caBundle": {}
 }
