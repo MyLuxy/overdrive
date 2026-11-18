@@ -56,7 +56,7 @@ PS5 `diskUsage()` opens the requested path with `sceKernelOpen`, calls the
 the descriptor. Compile-time assertions check the pinned statfs layout.
 
 The native-title precedent is
-[ProsperoStore's storage probe](https://github.com/blackbearreloaded/ProsperoStore/blob/main/src/system/storage_probe.cpp),
+[ProsperoStore's storage probe](https://github.com/JVK3R/ProsperoStore/blob/main/src/system/storage_probe.cpp),
 which declares the same underscored ABI and queries an opened descriptor.
 [UnityOrbisBridge](https://github.com/ItsJokerZz/UnityOrbisBridge/blob/main/source/plugin/source/system.cpp)
 also resolves `_fstatfs` from libkernel and calls it with a descriptor. This is
@@ -97,9 +97,9 @@ for both mounts and disk usage. A running jailbreak does not automatically give
 every standalone title the filesystem permissions of a resident payload.
 
 The missing startup step is visible in
-[ProsperoStore's main](https://github.com/blackbearreloaded/ProsperoStore/blob/22dca63607cf5f1f95006eda6ffb802607bed699/src/main.cpp):
+[ProsperoStore's main](https://github.com/JVK3R/ProsperoStore/blob/22dca63607cf5f1f95006eda6ffb802607bed699/src/main.cpp):
 it requests filesystem access before querying storage. Its
-[Lapy integration](https://github.com/blackbearreloaded/ProsperoStore/blob/22dca63607cf5f1f95006eda6ffb802607bed699/docs/SANDBOX_ELEVATION.md)
+[Lapy integration](https://github.com/JVK3R/ProsperoStore/blob/22dca63607cf5f1f95006eda6ffb802607bed699/docs/SANDBOX_ELEVATION.md)
 packages an exact-title one-shot helper. PS5Upload instead gives its own resident
 payload credentials and a console root, in `runtime_apply_ucred_jailbreak`.
 

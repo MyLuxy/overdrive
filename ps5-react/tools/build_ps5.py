@@ -65,27 +65,17 @@ def main():
                PS5_CLANG=str(llvm / "clang"), PS5_PAYLOAD_SDK=str(sdk), USE_CCACHE="0")
 
     archive = args.opengl_archive or DEPS / "ps5-opengl-sdk-1.0.0.tar.gz"
-    # The original release (github.com/blackbearreloaded/ps5-opengl) is gone, and the copy of the
-    # prebuilt SDK that was kept as a release asset on github.com/MyLuxy/overdrive-deps died with
-    # that account. The sources are mirrored on GitLab (myluxy/overdrive-deps, tag
-    # ps5-opengl-v1.0.0), but the prebuilt archive itself is not published anywhere any more.
-    #
-    # So the build takes the SDK from a local archive: pass --opengl-archive <tarball> built from
-    # the mirror, or drop one next to the other dependencies as
-    # .deps/ps5-opengl-sdk-1.0.0.tar.gz. A local archive is not checked against the old release
-    # hash (the bytes differ once it is rebuilt), but the SDK's own manifest.sha256 still checks
-    # every file inside it below.
+    # github.com/blackbearreloaded/ps5-opengl is gone, but the v1.0.0 release archive survived as a
+    # release asset on mirror repositories (github.com/JVK3R/ps5-opengl; its bytes match the pinned
+    # hashes bit for bit). The build downloads that archive itself and checks it against GL_HASH via
+    # fetch(); a locally built archive (whose bytes necessarily differ) stays available through
+    # --opengl-archive and is not checked against the release hash. Either way the SDK's own
+    # manifest.sha256 checks every file inside the extracted SDK below.
     if args.opengl_archive:
         if not archive.exists():
             raise RuntimeError(f"The OpenGL SDK archive is missing: {archive}")
-    elif archive.exists():
-        verify(archive, GL_HASH)
     else:
-        raise RuntimeError(
-            "The prebuilt OpenGL SDK archive is no longer downloadable: the MyLuxy GitHub account "
-            "that hosted it is gone. Build it from the GitLab mirror "
-            "(https://gitlab.com/myluxy/overdrive-deps/-/tags/ps5-opengl-v1.0.0) and pass it with "
-            "--opengl-archive, or place it at " + str(archive))
+        archive = fetch(LOCK["ps5OpenGL"]["url"], DEPS / "ps5-opengl-sdk-1.0.0.tar.gz", GL_HASH)
     gl = DEPS / "ps5-opengl-sdk-1.0.0/sdk"
     if not gl.exists():
         with tarfile.open(archive) as package:

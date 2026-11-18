@@ -249,7 +249,7 @@ overhead, not a promised application download speed.
 - [Per-host connection limits](https://curl.se/libcurl/c/CURLMOPT_MAX_HOST_CONNECTIONS.html)
 - [HTTP version negotiation](https://curl.se/libcurl/c/CURLOPT_HTTP_VERSION.html)
 - [TCP window scaling and high-bandwidth paths, RFC 7323](https://www.rfc-editor.org/rfc/rfc7323.html)
-- [Pinned native-title PacBrew compatibility guide](https://github.com/blackbearreloaded/ProsperoStore/blob/22dca63607cf5f1f95006eda6ffb802607bed699/examples/pacbrew-curl/README.md)
+- [Pinned native-title PacBrew compatibility guide](https://github.com/JVK3R/ProsperoStore/blob/22dca63607cf5f1f95006eda6ffb802607bed699/examples/pacbrew-curl/README.md)
 
 ## Controlled desktop benchmark (2026-10-06)
 
