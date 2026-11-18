@@ -13,13 +13,16 @@ import { Archives, Downloads, FileSystem, Http, Platform } from '@ps5-react/core
   // directory naming its own releases repository, which no longer exists — every install upgraded
   // in place then asked a dead feed for updates instead of this one (issue #122).
   //
-  // Two feeds, both asked at once: GitHub's release API while the account answers, and this
-  // project's own feed on GitLab, which carries the same shape (the release, its notes, and the
-  // asset's size and sha256). The newest release of the two wins, so one host going quiet never
-  // leaves an installed Overdrive without a way to update.
+  // Two feeds, both asked at once: this fork's own releases on GitHub, and the upstream project's
+  // feed on GitLab, which carries the same shape (the release, its notes, and the asset's size
+  // and sha256). The newest release of the two wins, so one host going quiet never leaves an
+  // installed Overdrive without a way to update.
+  //
+  // The upstream MyLuxy GitHub account is gone, so its release API is not asked any more: GitLab
+  // (gitlab.com/myluxy/overdrive) is the source of truth for the catalog and for the releases.
   var FEEDS = [
-    { name: "github", url: "https://api.github.com/repos/MyLuxy/overdrive/releases/latest" },
-    { name: "gitlab", url: "https://gitlab.com/myluxy/overdrive/-/raw/main/update-feed.json" }
+    { name: "gitlab", url: "https://gitlab.com/myluxy/overdrive/-/raw/main/update-feed.json" },
+    { name: "github", url: "https://api.github.com/repos/Stintik-123/Overdrive/releases/latest" }
   ];
   function location() {
     if (Platform.OS !== "ps5") return { installDir: `${FileSystem.dataDir}/homebrew/${TITLE}`, workDir: `${FileSystem.dataDir}/overdrive-update` };

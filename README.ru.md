@@ -13,8 +13,8 @@
 </div>
 
 <div align="center" dir="ltr">
-  <a href="https://github.com/MyLuxy/overdrive/releases/latest"><img src="https://img.shields.io/github/v/release/MyLuxy/overdrive?style=for-the-badge&label=release&labelColor=0b0b0d&color=2a2a2f" alt="Последний релиз" width="236"></a>
-  <a href="https://github.com/MyLuxy/overdrive/releases"><img src="https://img.shields.io/github/downloads/MyLuxy/overdrive/total?style=for-the-badge&label=downloads&labelColor=0b0b0d&color=2a2a2f" alt="Скачивания" width="220"></a>
+  <a href="https://gitlab.com/myluxy/overdrive/-/releases"><img src="https://img.shields.io/gitlab/v/release/myluxy/overdrive?style=for-the-badge&label=release&labelColor=0b0b0d&color=2a2a2f" alt="Последний релиз" width="236"></a>
+  <a href="https://gitlab.com/myluxy/overdrive/-/releases"><img src="https://img.shields.io/gitlab/stars/myluxy/overdrive?style=for-the-badge&label=stars&labelColor=0b0b0d&color=2a2a2f" alt="Скачивания" width="220"></a>
 </div>
 
 <div align="center" dir="ltr">
@@ -28,6 +28,12 @@
 > [!NOTE]
 > Оригинальный проект Overdrive был закрыт, поэтому я декомпилировал последнюю выпущенную сборку,
 > восстановил полный исходный код и собрал его заново.
+>
+> [!NOTE]
+> Аккаунт автора на GitHub больше не существует, поэтому исходники и релизы Overdrive живут теперь
+> на GitLab: [gitlab.com/myluxy/overdrive](https://gitlab.com/myluxy/overdrive). Все ссылки в этом
+> репозитории и в самом приложении ведут туда. Этот репозиторий — русскоязычное зеркало: тот же
+> код, тот же каталог игр (3 400+), те же релизы и перевод интерфейса на русский.
 
 <div align="center" dir="ltr">
   <img src=".github/readme/discover.jpg" alt="Страница «Обзор» в Overdrive: рекомендованная игра с описанием, подборки рядом и ряд «Вам может понравиться»" width="100%">
@@ -71,7 +77,7 @@ TorBox, Real-Debrid и Premiumize скачивают ссылку или маг�
 показывает уведомление, значит всё готово. Также понадобятся **USB-накопитель** и **компьютер**.
 
 <div align="center" dir="ltr">
-  <a href="https://github.com/MyLuxy/overdrive/releases/latest/download/Overdrive.exfat"><img src="https://img.shields.io/badge/Download-Overdrive.exfat-f2f2f3?style=for-the-badge&labelColor=0b0b0d" alt="Скачать Overdrive.exfat" width="347"></a>
+  <a href="https://gitlab.com/myluxy/overdrive/-/releases"><img src="https://img.shields.io/badge/Download-Overdrive.exfat-f2f2f3?style=for-the-badge&labelColor=0b0b0d" alt="Скачать Overdrive.exfat" width="347"></a>
 </div>
 
 <table>
@@ -80,7 +86,7 @@ TorBox, Real-Debrid и Premiumize скачивают ссылку или маг�
 <td>
 
 **Скачайте `Overdrive.exfat`** по кнопке выше или из
-[последнего релиза](https://github.com/MyLuxy/overdrive/releases/latest). Это единственный нужный
+[последнего релиза](https://gitlab.com/myluxy/overdrive/-/releases). Это единственный нужный
 файл. Оставьте его как есть: не распаковывайте и не меняйте `.exfat` в конце имени.
 
 </td>
@@ -168,7 +174,7 @@ USB-накопитель. Удаление папок приложения не 
 
 1. Удалите `Overdrive.exfat` из папки `homebrew`, затем его значок с главного экрана.
 2. Скачайте `Overdrive.exfat` заново из
-   [последнего релиза](https://github.com/MyLuxy/overdrive/releases/latest).
+   [последнего релиза](https://gitlab.com/myluxy/overdrive/-/releases).
 3. Скопируйте его на консоль через [PS5Upload](https://github.com/phantomptr/ps5upload), а не через
    USB-накопитель, и проверьте, что размер файла на консоли совпадает с размером скачанного.
 
@@ -198,7 +204,7 @@ USB-накопитель. Удаление папок приложения не 
 <br>
 
 Установите вручную: скачайте `Overdrive.exfat` из
-[последнего релиза](https://github.com/MyLuxy/overdrive/releases/latest), закройте Overdrive и
+[последнего релиза](https://gitlab.com/myluxy/overdrive/-/releases), закройте Overdrive и
 скопируйте новый файл поверх старого в папку `homebrew`.
 
 </details>
@@ -294,7 +300,7 @@ Linux:
 
 ## Благодарности
 
-- **[MyLuxy](https://github.com/MyLuxy)** — декомпилировал Overdrive, восстановил его исходный код и собрал заново.
+- **[MyLuxy](https://gitlab.com/myluxy)** — декомпилировал Overdrive, восстановил его исходный код и собрал заново.
 - **[ps5-react](https://github.com/half144/ps5-react)** — фреймворк, на котором всё работает.
 - **[ShadowMount+](https://github.com/drakmor/ShadowMountPlus)** от drakmor — устанавливает приложение.
 - **[kstuff](https://github.com/EchoStretch/kstuff-lite)** от EchoStretch — пейлоад ядра, благодаря которому консоль запускает хоумбрю и установленные игры.

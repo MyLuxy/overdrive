@@ -523,7 +523,7 @@
   "update.quit": "Tutup Overdrive",
   "update.reopen": "Menutup. Buka Overdrive lagi dari layar beranda",
   "update.reopenInstalled": "Overdrive telah diperbarui ke v{version}. Tutup lalu buka lagi dari layar beranda.",
-  "update.replaceByHand": "Unduh update.zip dari github.com/MyLuxy/overdrive, tutup Overdrive, lalu salin file .exfat untuk menimpa yang lama.",
+  "update.replaceByHand": "Unduh update.zip dari gitlab.com/myluxy/overdrive, tutup Overdrive, lalu salin file .exfat untuk menimpa yang lama.",
   "update.replaceFailed": "Image yang terpasang tidak dapat diganti saat Overdrive berjalan.",
   "update.restartConsole": "Jika versi lama masih terbuka, mulai ulang konsol.",
   "urlDialog.cancel": "Batalkan",

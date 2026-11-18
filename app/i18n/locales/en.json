@@ -603,7 +603,7 @@
     "update.quit": "Close Overdrive",
     "update.reopen": "Closing. Open Overdrive again from the home screen",
     "update.reopenInstalled": "Overdrive was updated to v{version}. Close it and open it again from the home screen.",
-    "update.replaceByHand": "Download update.zip from github.com/MyLuxy/overdrive, close Overdrive and copy the .exfat over the old one.",
+    "update.replaceByHand": "Download update.zip from gitlab.com/myluxy/overdrive, close Overdrive and copy the .exfat over the old one.",
     "update.replaceFailed": "Could not replace the installed image while Overdrive is running.",
     "update.restartConsole": "If it keeps opening the old version, restart the console.",
     "update.restarting": "Restarting Overdrive\u2026",

@@ -45,7 +45,7 @@
     ]
   },
   "platform": {
-    "url": "https://github.com/MyLuxy/overdrive-deps.git",
+    "url": "https://gitlab.com/myluxy/overdrive-deps.git",
     "revision": "4bd942579dd981b3df9c740438489ca6a614ddc0",
     "patches": [
       "patches/platform-heap-size.patch",

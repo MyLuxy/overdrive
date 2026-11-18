@@ -523,7 +523,7 @@
   "update.quit": "Overdrive বন্ধ করুন",
   "update.reopen": "বন্ধ হচ্ছে। হোম স্ক্রিন থেকে Overdrive আবার খুলুন",
   "update.reopenInstalled": "Overdrive v{version}-এ আপডেট হয়েছে। এটি বন্ধ করে হোম স্ক্রিন থেকে আবার খুলুন।",
-  "update.replaceByHand": "github.com/MyLuxy/overdrive থেকে update.zip ডাউনলোড করুন, Overdrive বন্ধ করে .exfat পুরোনোটির ওপর কপি করুন।",
+  "update.replaceByHand": "gitlab.com/myluxy/overdrive থেকে update.zip ডাউনলোড করুন, Overdrive বন্ধ করে .exfat পুরোনোটির ওপর কপি করুন।",
   "update.replaceFailed": "Overdrive চলার সময় ইনস্টল করা ইমেজটি বদলানো যায়নি।",
   "update.restartConsole": "যদি পুরোনো সংস্করণই খুলতে থাকে, কনসোল রিস্টার্ট করুন।",
   "urlDialog.cancel": "বাতিল করুন",

@@ -603,7 +603,7 @@
     "update.quit": "Zamknij Overdrive",
     "update.reopen": "Zamykam. Otwórz Overdrive ponownie z ekranu głównego",
     "update.reopenInstalled": "Overdrive zaktualizowano do v{version}. Zamknij go i otwórz ponownie z ekranu głównego.",
-    "update.replaceByHand": "Pobierz update.zip z github.com/MyLuxy/overdrive, zamknij Overdrive i skopiuj plik .exfat na stary.",
+    "update.replaceByHand": "Pobierz update.zip z gitlab.com/myluxy/overdrive, zamknij Overdrive i skopiuj plik .exfat na stary.",
     "update.replaceFailed": "Nie udało się podmienić zainstalowanego obrazu, gdy Overdrive działa.",
     "update.restartConsole": "Jeśli nadal otwiera starą wersję, zrestartuj konsolę.",
     "update.restarting": "Restartuję Overdrive…",

@@ -20,9 +20,11 @@
   <a href="#build-it-yourself">Build it yourself</a>
 </div>
 
-> [!WARNING]
-> This is a backup mirror for the source code. If the primary repository on GitHub goes down
-> updates will not work and you will need to manually reinstall Overdrive.
+> [!NOTE]
+> The upstream project lives on GitLab now: [gitlab.com/myluxy/overdrive](https://gitlab.com/myluxy/overdrive).
+> The author's GitHub account is gone, so every release and every source link points at GitLab
+> instead. This repository is the Russian-speaking mirror of it: the same code, the same catalog,
+> the same releases, with the interface in Russian.
 
 <div align="center" dir="ltr">
   <img src=".github/readme/discover.jpg" alt="Overdrive's Discover page: a featured game with its description, the picks beside it, and the You might like row" width="100%">
@@ -95,7 +97,7 @@ If ShadowMount+ shows its notification when the console starts, you are ready. Y
 <td>
 
 **Download `Overdrive.exfat`** with the button above, or from the
-[latest release](https://github.com/MyLuxy/overdrive/releases/latest). It is the only file you
+[latest release](https://gitlab.com/myluxy/overdrive/-/releases). It is the only file you
 need. Leave it as it is: don't unzip it and don't change the `.exfat` at the end of its name.
 
 </td>
@@ -180,7 +182,7 @@ every start.
 
 1. Delete `Overdrive.exfat` from the `homebrew` folder, then its icon from the home screen.
 2. Download `Overdrive.exfat` again from the
-   [latest release](https://github.com/MyLuxy/overdrive/releases/latest).
+   [latest release](https://gitlab.com/myluxy/overdrive/-/releases).
 3. Copy it to the console with [PS5Upload](https://github.com/phantomptr/ps5upload) instead of a
    USB drive, and check that its size on the console matches the downloaded file's.
 
@@ -210,7 +212,7 @@ when this happens.
 <br>
 
 Install it by hand: download `Overdrive.exfat` from the
-[latest release](https://github.com/MyLuxy/overdrive/releases/latest), close Overdrive, and copy
+[latest release](https://gitlab.com/myluxy/overdrive/-/releases), close Overdrive, and copy
 the new file over the old one in the `homebrew` folder.
 
 </details>
@@ -267,11 +269,13 @@ the PS5 build and the tests (it asks for `sudo` once); on macOS the Homebrew for
 framework's npm packages. Read the script first if you'd rather install them yourself.
 
 ```sh
-git clone https://github.com/MyLuxy/overdrive.git
-cd overdrive
+git clone https://github.com/Stintik-123/Overdrive.git
+cd Overdrive
 npm run setup        # once; asks for sudo on Linux
 npm run dev          # the app in a window on your PC, rebuilt on every save under app/
 ```
+
+The upstream sources live on GitLab: [gitlab.com/myluxy/overdrive](https://gitlab.com/myluxy/overdrive).
 
 | Command | What it does |
 | --- | --- |
@@ -404,7 +408,7 @@ Nothing else in the framework is changed.
 
 ## Credits
 
-- **[MyLuxy](https://github.com/MyLuxy)**, current maintainer, who decompiled Overdrive, recovered its source and rebuilt it.
+- **[MyLuxy](https://gitlab.com/myluxy)**, current maintainer, who decompiled Overdrive, recovered its source and rebuilt it.
 - **[ps5-react](https://github.com/half144/ps5-react)**, the framework it runs on.
 - **[ShadowMount+](https://github.com/drakmor/ShadowMountPlus)** by drakmor, which installs it.
 - **[kstuff](https://github.com/EchoStretch/kstuff-lite)** by EchoStretch, the kernel payload that lets the console run homebrew and the games it installs.

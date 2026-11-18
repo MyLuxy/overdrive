@@ -540,7 +540,7 @@
   "update.quit": "關閉 Overdrive",
   "update.reopen": "正在關閉。請從主畫面重新開啟 Overdrive",
   "update.reopenInstalled": "Overdrive 已更新至 v{version}。請關閉它，然後從主畫面重新開啟。",
-  "update.replaceByHand": "請從 github.com/MyLuxy/overdrive 下載 update.zip，關閉 Overdrive，然後用 .exfat 檔案覆蓋舊檔案。",
+  "update.replaceByHand": "請從 gitlab.com/myluxy/overdrive 下載 update.zip，關閉 Overdrive，然後用 .exfat 檔案覆蓋舊檔案。",
   "update.replaceFailed": "Overdrive 執行時無法替換已安裝的映像檔。",
   "update.restartConsole": "如果仍然開啟舊版本，請重新啟動主機。",
   "update.restarting": "正在重新啟動 Overdrive…",

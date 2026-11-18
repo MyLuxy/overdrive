@@ -532,7 +532,7 @@
     "update.quit": "بستن Overdrive",
     "update.reopen": "در حال بسته شدن. Overdrive را دوباره از صفحهٔ اصلی باز کنید",
     "update.reopenInstalled": "Overdrive به نسخهٔ {version} به‌روز شد. آن را ببندید و دوباره از صفحهٔ اصلی باز کنید.",
-    "update.replaceByHand": "فایل update.zip را از github.com/MyLuxy/overdrive دانلود کنید، Overdrive را ببندید و فایل .exfat را جایگزین فایل قبلی کنید.",
+    "update.replaceByHand": "فایل update.zip را از gitlab.com/myluxy/overdrive دانلود کنید، Overdrive را ببندید و فایل .exfat را جایگزین فایل قبلی کنید.",
     "update.replaceFailed": "نمی‌توان ایمیج نصب‌شده را وقتی Overdrive باز است جایگزین کرد.",
     "update.restartConsole": "اگر همچنان نسخهٔ قدیمی باز می‌شود، کنسول را ری‌استارت کنید.",
     "update.restarting": "در حال راه‌اندازی دوبارهٔ Overdrive…",

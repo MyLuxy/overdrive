@@ -7,13 +7,13 @@ No proprietary Sony modules are redistributed.
 | Dependency | Purpose and license |
 | --- | --- |
 | Embedded React | C engine, QuickJS bridge, reconciler, software compositor. Apache-2.0; revision `cf5dfe4fae966fe21a265acc3dd3b054d245f981`. |
-| ps5-homebrew-ui | EGL, controller, system, InputTracker, audio mixer and output, heap, CRT, shims, native tools. GPL-3.0-or-later; revision `4bd942579dd981b3df9c740438489ca6a614ddc0`. Its repository (github.com/blackbearreloaded/ps5-homebrew-ui) is gone; the history up to that revision is kept, unchanged, on the `ps5-homebrew-ui` branch of [MyLuxy/overdrive-deps](https://github.com/MyLuxy/overdrive-deps). |
+| ps5-homebrew-ui | EGL, controller, system, InputTracker, audio mixer and output, heap, CRT, shims, native tools. GPL-3.0-or-later; revision `4bd942579dd981b3df9c740438489ca6a614ddc0`. Its repository (github.com/blackbearreloaded/ps5-homebrew-ui) is gone; the history up to that revision is kept, unchanged, on the `ps5-homebrew-ui` branch of [MyLuxy/overdrive-deps](https://gitlab.com/myluxy/overdrive-deps). |
 | ProsperoStore elevation client | Optional cooperative filesystem-access client and pinned helper build. GPL-3.0-or-later; revision `22dca63607cf5f1f95006eda6ffb802607bed699`. |
 | PacBrew archive ports | Same hash-pinned v0.40.2 distribution: libarchive 3.7.4 (BSD), liblzma 5.4.6 (primarily public domain), bzip2 (bzip2 license), plus zlib/zstd/OpenSSL. Exact notice sources and hashes are in `licenses/archives-SOURCES.json`. |
 | PacBrew networking ports | Optional SHA-256-pinned v0.40.2 archive: curl 8.18.0 (curl license), OpenSSL 3.5.2 (Apache-2.0), zlib, zstd and libpsl; individual notices and source links follow the pinned ProsperoStore `third_party/PACBREW_LICENSES.json`. Native-title `compat.c` and `netdb.c` reuse that pinned reference under GPL-3.0-or-later. |
 | Mozilla CA certificates | The root store curl publishes as `cacert-<date>.pem` (MPL-2.0), SHA-256-pinned (`caBundle` in the lock file; `tools/ca_bundle.py` pins the newest dated copy and checks it). Networking apps ship it as `certs/cacert.pem`; at start the console merges it with its own store, which old firmwares let fall behind. Builds copy `licenses/MPL-2.0.txt` to `notices/cacert-MPL-2.0.txt`. |
 | Lapy helper | Optional exact-title one-shot helper: mpereiraesaa/PS5-Lapy-JB-Daemon `54a095c0f19161825e845daa760a03b446e654fa`, MIT; protocol LGPL-2.1-or-later, ps5log GPL-3.0-or-later. The helper uses the app SDK v0.42 with `patches/lapy-sdk-042-attributes.patch`; source revision and ps5log hash are pinned in the lock file. |
-| ps5-opengl | SDK 1.0.0; GPL and per-component/Mesa licenses. The release includes sources and notices. Its repository (github.com/blackbearreloaded/ps5-opengl) is gone; the same archive, checked by its SHA-256, is kept at [MyLuxy/overdrive-deps](https://github.com/MyLuxy/overdrive-deps/releases/tag/ps5-opengl-v1.0.0). |
+| ps5-opengl | SDK 1.0.0; GPL and per-component/Mesa licenses. The release includes sources and notices. Its repository (github.com/blackbearreloaded/ps5-opengl) is gone, and the copy of the prebuilt archive that was kept as a release asset on github.com/MyLuxy/overdrive-deps died with that account. The sources are mirrored on GitLab at [myluxy/overdrive-deps](https://gitlab.com/myluxy/overdrive-deps/-/tags/ps5-opengl-v1.0.0); the prebuilt archive itself is not published anywhere any more, so the build takes it from a local file (`--opengl-archive`, or `.deps/ps5-opengl-sdk-1.0.0.tar.gz`) and still checks every file of the SDK against the manifest it carries. |
 | React / QuickJS-ng | React 18.3.1, reconciler 0.29.2, QuickJS-ng 0.15.0; MIT. npm lockfile and QuickJS commit are pinned. |
 | Tailwind CSS palette and scales | v3.4.17 default colors and theme values copied into `tools/tailwind/`; MIT. Build-time data only; the `tailwindcss` package is not installed or used. |
 | stb_image | v2.30 single-file JPEG/PNG decoder for remote images; public domain or MIT (choice). Fetched from a pinned commit URL and verified by SHA-256 (`stbImage` in the lock file); builds copy its license to `notices/stb_image-LICENSE`. |
@@ -30,8 +30,8 @@ No proprietary Sony modules are redistributed.
 | Inter / LLVM / payload SDK | Inter: SIL OFL. LLVM: Apache-2.0 with exceptions. The public SDK contains separately licensed components. |
 
 Sources: [Embedded React](https://github.com/TheMasterCoder007/embedded-react),
-[ps5-homebrew-ui](https://github.com/MyLuxy/overdrive-deps/tree/ps5-homebrew-ui),
-[ps5-opengl 1.0.0](https://github.com/MyLuxy/overdrive-deps/releases/tag/ps5-opengl-v1.0.0),
+[ps5-homebrew-ui](https://gitlab.com/myluxy/overdrive-deps/-/tree/ps5-homebrew-ui),
+[ps5-opengl 1.0.0](https://gitlab.com/myluxy/overdrive-deps/-/tags/ps5-opengl-v1.0.0),
 [PS5 Payload SDK](https://github.com/ps5-payload-dev/sdk),
 [QuickJS-ng](https://github.com/quickjs-ng/quickjs),
 [stb](https://github.com/nothings/stb),

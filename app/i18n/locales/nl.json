@@ -536,7 +536,7 @@
     "update.quit": "Overdrive afsluiten",
     "update.reopen": "Wordt afgesloten. Open Overdrive opnieuw vanaf het startscherm.",
     "update.reopenInstalled": "Overdrive is bijgewerkt naar versie {version}. Sluit de app en open deze opnieuw vanaf het startscherm.",
-    "update.replaceByHand": "Download update.zip via github.com/MyLuxy/overdrive, sluit Overdrive en kopieer het bestand .exfat over het oude bestand.",
+    "update.replaceByHand": "Download update.zip via gitlab.com/myluxy/overdrive, sluit Overdrive en kopieer het bestand .exfat over het oude bestand.",
     "update.replaceFailed": "De geïnstalleerde image kan niet worden vervangen terwijl Overdrive actief is.",
     "update.restartConsole": "Als de oude versie steeds opnieuw wordt geopend, start dan de console opnieuw op.",
     "update.restarting": "Overdrive opnieuw starten\u2026",
