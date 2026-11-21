@@ -23,7 +23,7 @@
 > [!NOTE]
 > The upstream project lives on GitLab now: [gitlab.com/myluxy/overdrive](https://gitlab.com/myluxy/overdrive).
 > The author's GitHub account is gone, so every release and every source link points at GitLab
-> instead. This repository is the Russian-speaking mirror of it: the same code, the same catalog,
+> instead. This repository is the mirror of it: the same code, the same catalog,
 > the same releases, with the interface in Russian.
 
 <div align="center" dir="ltr">
