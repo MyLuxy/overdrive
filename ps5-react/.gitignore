@@ -1,0 +1,9 @@
+.deps/
+.build/
+dist/
+# The desktop preview's data folder when PS5_REACT_SANDBOX is unset.
+/sandbox/
+node_modules/
+.venv/
+__pycache__/
+.DS_Store

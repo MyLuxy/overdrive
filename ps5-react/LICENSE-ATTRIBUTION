@@ -1,0 +1,25 @@
+PS5 React attribution-preservation term
+
+Copyright (C) 2026 half144 and PS5 React contributors
+
+Framework-owned source files that refer to this file are licensed under the
+GNU General Public License, version 3 or (at your option) any later version,
+with the following additional term authorized by GPLv3 section 7(b):
+
+Redistributions of that material, or works containing it, must preserve the
+following reasonable author attribution in the material's accompanying legal
+notices or in the Appropriate Legal Notices displayed by the work:
+
+    PS5 React — created by half144 and PS5 React contributors.
+    https://github.com/half144/ps5-react
+
+The attribution may be presented with other third-party credits and reformatted
+without changing its meaning. This term does not require advertising, an
+endorsement, a startup screen, or attribution in every screen of an application.
+
+This term applies only to original PS5 React material whose source-file notice
+refers to it. It does not add conditions to third-party code, fonts, license
+texts, or the Apache-2.0 adaptation in tools/bundle.mjs.
+
+The complete GNU GPL license text is in LICENSE. Other applicable licenses
+and copyright notices must also be preserved.

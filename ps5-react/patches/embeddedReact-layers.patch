@@ -1,0 +1,1051 @@
+Embedded React: let the host draw opaque images as layers beneath the framebuffer.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, after the patches listed before this
+one there. Changed files: backends/software/renderer_backend.c,
+bridges/quickjs/js/src/embedded-react/index.d.ts,
+bridges/quickjs/js/src/props.js, bridges/quickjs/native_ui_bridge.c,
+engine/animation/animation.c, engine/core/native_renderer.c,
+engine/core/renderer_internal.h, engine/include/er_scene.h,
+engine/include/native_renderer.h, engine/scene/compositor.c,
+engine/scene/er_node_internal.h and engine/tests/rendering/CMakeLists.txt; new
+file engine/tests/rendering/test_layers.c.
+Not proposed upstream: PS5 React maintains this change here.
+
+A crossfade between two full-screen images rasterized both images and every
+translucent node over them on each frame: at 3840x2160 about 30 ms of raster
+per frame on eight PS5 cores. An Image with the new `layer` prop can instead
+be drawn by the host. When the host enables it (er_set_layers_enabled) and the
+image qualifies, the compositor clears the image's rect to transparent black
+(the new optional backend clear_rect) and lists the image, its crop, rect,
+clip and opacity in er_get_layers(); the host draws the layers in paint order,
+then the framebuffer over them with premultiplied source-over. Opacity changes
+on the containers whose only content is a layer repaint nothing.
+
+An image qualifies when it is opaque, untinted, square-cornered, drawn with
+cover or stretch, has no transform beyond translation on it or an ancestor,
+and every ancestor below full opacity holds nothing else. Below full opacity
+it must also sit directly on a qualifying layer (its container the preceding
+sibling of that one's) that, through the layers under it, starts with an
+opaque layer covering it, so nothing rasterized shows through it. Otherwise
+it is rasterized as before. A node that changes between the two repaints its
+box. Without a host that enables layers nothing changes.
+
+The software backend's blends now carry the destination alpha (source-over
+on all four premultiplied channels) instead of forcing it to 0xFF, so what is
+drawn over a cleared rect keeps its coverage. Over an opaque destination the
+result is bit for bit what it was.
+
+test_layers crossfades two layer images under a translucent overlay on the
+software backend and checks that the framebuffer drawn over the layers looks
+like the same scene rasterized with layers off at each step, that the fade
+paints nothing, and that a translucent layer without an opaque layer directly
+under it, or with other content between, is rasterized.
+
+diff --git a/backends/software/renderer_backend.c b/backends/software/renderer_backend.c
+--- a/backends/software/renderer_backend.c
++++ b/backends/software/renderer_backend.c
+@@ -57,29 +57,31 @@
+ }
+ 
+ /**
+- * @brief Composites one premultiplied-ARGB source pixel over an opaque destination pixel (Porter-Duff
++ * @brief Composites one premultiplied-ARGB source pixel over a premultiplied destination pixel (Porter-Duff
+  *        source-over).
+  *
+- * The framebuffer is kept opaque, so only the color channels are blended and the result alpha stays 0xFF.
++ * The alpha channel is blended like the colours, so an opaque destination stays exactly 0xFF and a pixel
++ * cleared for a host layer (er_blit_clear) keeps the coverage drawn over it.
+  *
+- * @param[in] dst  Destination pixel (opaque ARGB8888).
++ * @param[in] dst  Destination pixel (premultiplied ARGB8888).
+  * @param[in] sa   Source alpha (premultiply coverage).
+  * @param[in] sr   Premultiplied source red.
+  * @param[in] sg   Premultiplied source green.
+  * @param[in] sb   Premultiplied source blue.
+  *
+- * @return The blended opaque ARGB8888 pixel.
++ * @return The blended ARGB8888 pixel.
+  */
+ static inline uint32_t over_premul(uint32_t dst, uint32_t sa, uint32_t sr, uint32_t sg, uint32_t sb)
+ {
+     const uint32_t inv = 255U - sa;
++    const uint32_t da = dst >> 24;
+     const uint32_t dr = (dst >> 16) & 0xFFU;
+     const uint32_t dg = (dst >> 8) & 0xFFU;
+     const uint32_t db = dst & 0xFFU;
+     const uint32_t r = sr + div255(dr * inv);
+     const uint32_t g = sg + div255(dg * inv);
+     const uint32_t b = sb + div255(db * inv);
+-    return 0xFF000000U | (r << 16) | (g << 8) | b;
++    return ((sa + div255(da * inv)) << 24) | (r << 16) | (g << 8) | b;
+ }
+ 
+ /**
+@@ -127,13 +129,13 @@
+     return _mm256_packus_epi16(lo, hi);
+ }
+ 
+-/** @brief over_premul() of eight premultiplied sources onto eight destinations; alpha comes out 0xFF. */
++/** @brief over_premul() of eight premultiplied sources onto eight destinations. */
+ static inline __m256i over8(__m256i s, __m256i d)
+ {
+     const __m256i full = _mm256_set1_epi16(255);
+     const __m256i inv_lo = _mm256_sub_epi16(full, alpha16(s, false));
+     const __m256i inv_hi = _mm256_sub_epi16(full, alpha16(s, true));
+-    return _mm256_or_si256(_mm256_add_epi8(s, scale8(d, inv_lo, inv_hi)), _mm256_set1_epi32((int)0xFF000000U));
++    return _mm256_add_epi8(s, scale8(d, inv_lo, inv_hi));
+ }
+ 
+ /** @brief copy_rect_cb()'s row: opaque sources replace, transparent ones keep the destination. */
+@@ -395,6 +397,16 @@
+     }
+ }
+ 
++/** @brief Sets a framebuffer rect to transparent black, where a host layer shows through (er_blit_clear). */
++static void clear_rect_cb(int x, int y, int w, int h, void* ctx)
++{
++    SoftCtx* c = ctx;
++    if (!clip_rect(&x, &y, &w, &h, NULL, NULL))
++        return;
++    for (int row = 0; row < h; row++)
++        memset(c->fb + (size_t)(y + row) * c->fb_w + x, 0, (size_t)w * sizeof(uint32_t));
++}
++
+ bool er_software_backend_init(int fb_w, int fb_h)
+ {
+     if (fb_w <= 0 || fb_h <= 0)
+@@ -418,6 +430,7 @@
+     s_backend.band_begin = NULL;
+     s_backend.band_flush = NULL;
+     s_backend.move_rect = move_rect_cb;
++    s_backend.clear_rect = clear_rect_cb;
+ 
+     embedded_renderer_set_backend(&s_backend);
+     return true;
+diff --git a/bridges/quickjs/js/src/embedded-react/index.d.ts b/bridges/quickjs/js/src/embedded-react/index.d.ts
+--- a/bridges/quickjs/js/src/embedded-react/index.d.ts
++++ b/bridges/quickjs/js/src/embedded-react/index.d.ts
+@@ -425,6 +425,9 @@
+   resizeMode?: 'cover' | 'contain' | 'stretch' | 'repeat' | 'center';
+   /** Recolors the image, keeping its alpha — for monochrome icons. */
+   tintColor?: string;
++  /** Lets the host draw the image beneath the rest of the frame, when it supports layers and the image
++   *  qualifies (see er_set_layers_enabled); its fades then repaint nothing. Otherwise it is rasterized. */
++  layer?: boolean;
+   /** The engine asset name, when set directly instead of through `source`. */
+   imageName?: string;
+   visible?: boolean;
+diff --git a/bridges/quickjs/js/src/props.js b/bridges/quickjs/js/src/props.js
+--- a/bridges/quickjs/js/src/props.js
++++ b/bridges/quickjs/js/src/props.js
+@@ -33,6 +33,7 @@
+   'backdropColor', // <Modal>'s scrim, as React Native takes it (the style key works too)
+   'resizeMode',
+   'tintColor',
++  'layer', // <Image>: drawn by the host when it can (er_set_layers_enabled)
+   'imageName',
+   // Switch colours.
+   'trackColor',
+diff --git a/bridges/quickjs/native_ui_bridge.c b/bridges/quickjs/native_ui_bridge.c
+--- a/bridges/quickjs/native_ui_bridge.c
++++ b/bridges/quickjs/native_ui_bridge.c
+@@ -1153,6 +1153,7 @@
+     PROP_IMAGE_NAME,
+     PROP_RESIZE_MODE,
+     PROP_TINT_COLOR,
++    PROP_LAYER,
+     PROP_TRANSFORM,
+     PROP_TRANSFORM_ORIGIN,
+     PROP_SHADOW_COLOR,
+@@ -1285,6 +1286,7 @@
+     [PROP_IMAGE_NAME] = "imageName",
+     [PROP_RESIZE_MODE] = "resizeMode",
+     [PROP_TINT_COLOR] = "tintColor",
++    [PROP_LAYER] = "layer",
+     [PROP_TRANSFORM] = "transform",
+     [PROP_TRANSFORM_ORIGIN] = "transformOrigin",
+     [PROP_SHADOW_COLOR] = "shadowColor",
+@@ -2414,6 +2416,7 @@
+     ER_STR(PROP_IMAGE_NAME, image_name, ER_IMAGE_NAME_MAX);
+     ER_ENUM(PROP_RESIZE_MODE, resize_mode, map_resize_mode);
+     ER_COL(PROP_TINT_COLOR, tint_color);
++    ER_U8(PROP_LAYER, layer);
+ 
+     /* Transforms. */
+     apply_transform(ctx, s_prop_slots[PROP_TRANSFORM], &p);
+diff --git a/engine/animation/animation.c b/engine/animation/animation.c
+--- a/engine/animation/animation.c
++++ b/engine/animation/animation.c
+@@ -912,7 +912,10 @@
+             if (bind->prop != ER_PROP_BORDER_SWEEP_PHASE && bind->prop != ER_PROP_BORDER_GRADIENT_ANGLE)
+                 n->sweep_moved = false; /* anything else changed too: the whole box repaints */
+             if (bind->prop == ER_PROP_OPACITY)
+-                er_mark_dirty_upward_visual(n);
++            {
++                if (!n->layer_wrapper) /* else the host applies it to a layer: nothing to repaint */
++                    er_mark_dirty_upward_visual(n);
++            }
+             else if (is_transform_prop(bind->prop))
+                 er_mark_dirty_upward_transform(n);
+             else
+@@ -1930,7 +1933,10 @@
+ 
+         /* Opacity-only animation frames keep the fade cache valid (see push_to_value_bindings). */
+         if (anim->prop == ER_PROP_OPACITY)
+-            er_mark_dirty_upward_visual(node);
++        {
++            if (!node->layer_wrapper)
++                er_mark_dirty_upward_visual(node);
++        }
+         else if (is_transform_prop(anim->prop))
+             er_mark_dirty_upward_transform(node);
+         else
+diff --git a/engine/core/native_renderer.c b/engine/core/native_renderer.c
+--- a/engine/core/native_renderer.c
++++ b/engine/core/native_renderer.c
+@@ -655,6 +655,35 @@
+     }
+ }
+ 
++void er_blit_clear(int x, int y, int w, int h)
++{
++    NRCtx* const ctx = rc();
++    if (!apply_clip(ctx, &x, &y, &w, &h))
++        return;
++    if (ctx->scratch_buf)
++    {
++        const int x0 = x - ctx->scratch_ox < 0 ? 0 : x - ctx->scratch_ox;
++        const int y0 = y - ctx->scratch_oy < 0 ? 0 : y - ctx->scratch_oy;
++        const int x1 = x + w - ctx->scratch_ox > ctx->scratch_w ? ctx->scratch_w : x + w - ctx->scratch_ox;
++        const int y1 = y + h - ctx->scratch_oy > ctx->scratch_h ? ctx->scratch_h : y + h - ctx->scratch_oy;
++        for (int row = y0; row < y1; row++)
++            for (int col = x0; col < x1; col++)
++                ctx->scratch_buf[(size_t)row * ctx->scratch_w + col] = 0U;
++        return;
++    }
++    if (g_backend && g_backend->clear_rect && g_backend->band_height == 0)
++    {
++        ER_BLIT_PERF_BEGIN();
++        g_backend->clear_rect(x, y, w, h, g_backend->ctx);
++        ER_BLIT_PERF_END(w, h);
++    }
++}
++
++bool er_blit_can_clear(void)
++{
++    return g_backend && g_backend->clear_rect && g_backend->band_height == 0;
++}
++
+ bool er_blit_can_move(void)
+ {
+     return g_backend && g_backend->move_rect && g_backend->band_height == 0;
+diff --git a/engine/core/renderer_internal.h b/engine/core/renderer_internal.h
+--- a/engine/core/renderer_internal.h
++++ b/engine/core/renderer_internal.h
+@@ -286,7 +286,19 @@
+  * @param[in] h       Height of the region in pixels.
+  */
+ void er_blit_copy(const void* src, int stride, int x, int y, int w, int h);
++
++/**
++ * @brief Sets a rect, clipped like every blit, to transparent black: the hole a host layer shows through.
++ *
++ * Only the compositor's layer pass calls it, for a node it made a layer, and only when the backend has
++ * clear_rect (er_blit_can_clear). Inside a scratch capture it clears the scratch, which is never the case
++ * for a layer: no ancestor of one composites or transforms.
++ */
++void er_blit_clear(int x, int y, int w, int h);
+ 
++/** @brief Whether the backend can clear framebuffer rects (clear_rect, full-framebuffer mode). */
++bool er_blit_can_clear(void);
++
+ /**
+  * @brief Copies a KNOWN-FULLY-OPAQUE source buffer in the given pixel format via the active backend.
+  *
+diff --git a/engine/include/er_scene.h b/engine/include/er_scene.h
+--- a/engine/include/er_scene.h
++++ b/engine/include/er_scene.h
+@@ -763,6 +763,7 @@
+         char image_name[ER_IMAGE_NAME_MAX + 1]; /**< Asset name registered via er_image_load(). */
+         uint8_t resize_mode;                    /**< ERResizeMode — default ER_RESIZE_COVER. */
+         uint32_t tint_color;                    /**< Straight-alpha ARGB8888; 0 = no tint. */
++        uint8_t layer;                          /**< 1 = draw through the host when it can (er_set_layers_enabled). */
+ 
+         /* --- Transform --- */
+         float transform_translate_x; /**< X translation in pixels (0 = none). */
+@@ -1136,8 +1137,55 @@
+      * @param[in] deferred  true while commits should skip painting; false before the commit that paints.
+      */
+     void er_set_raster_deferred(bool deferred);
++
++#ifndef ERUI_MAX_LAYERS
++#define ERUI_MAX_LAYERS 8
++#endif
++
++    /**
++     * @brief One image the host draws itself, beneath the framebuffer (see er_set_layers_enabled()).
++     */
++    typedef struct
++    {
++        const char* image;       /**< Registry name (er_image_load), valid until the next commit. */
++        const uint32_t* pixels;  /**< The registered ARGB8888 pixels, every one opaque. */
++        int image_w, image_h;    /**< Their size. */
++        int src_x, src_y;        /**< The part of the image drawn, in image pixels. */
++        int src_w, src_h;
++        ERRect dst;              /**< Where it is drawn, in framebuffer pixels; may reach off screen. */
++        ERRect clip;             /**< Pixels outside this rect are not drawn. */
++        uint8_t alpha;           /**< Opacity, 0–255. */
++    } ERLayer;
++
++    /**
++     * @brief Lets images with ERProps::layer be drawn by the host instead of the rasterizer.
++     *
++     * An image that qualifies leaves its rect of the framebuffer transparent (0x00000000) and is listed by
++     * er_get_layers() instead; the host draws the listed layers in order, then the framebuffer over them
++     * with premultiplied source-over. Changing the opacity of a layer, or of a container whose only content
++     * is one, then repaints nothing. Pixels drawn over a layer keep their coverage in the alpha channel; the
++     * framebuffer is otherwise opaque wherever the app paints a background.
++     *
++     * An image qualifies when it is opaque, untinted, square-cornered, drawn with cover or stretch, has no
++     * transform but translation on it or any ancestor, and every ancestor with opacity below 1 contains
++     * nothing else; and, below full opacity, when the layer painted just before it is a qualifying layer
++     * whose container is this one's preceding sibling and covers it, so that nothing else shows through.
++     * Otherwise it is rasterized as usual. Needs a backend with clear_rect.
++     *
++     * @param[in] enabled  true once the host draws layers; false (the default) rasterizes every image.
++     */
++    void er_set_layers_enabled(bool enabled);
+ 
+     /**
++     * @brief The layers of the last commit that painted, bottom first.
++     *
++     * @param[out] count  Number of layers.
++     *
++     * @return The layers; valid until the next commit.
++     */
++    const ERLayer* er_get_layers(int* count);
++
++    /**
+      * @brief Resets the engine to an empty scene: frees every node, clears the root, and resets the
+      *        animation, layout-animation, vector, and input subsystems.
+      *
+diff --git a/engine/include/native_renderer.h b/engine/include/native_renderer.h
+--- a/engine/include/native_renderer.h
++++ b/engine/include/native_renderer.h
+@@ -120,6 +120,16 @@
+ 
+         /** @brief Move a framebuffer rect to another position in the framebuffer (overlap allowed). */
+         void (*move_rect)(int src_x, int src_y, int w, int h, int dst_x, int dst_y, void* ctx);
++
++        /*------------------------------------------------------------------------------------------------
++         - Clear (optional). Sets a framebuffer rect to transparent black (0x00000000), where a host layer
++           (er_set_layers_enabled) shows through. A backend that has it must also blend the destination
++           alpha (source-over on all four premultiplied channels), so what is drawn over the cleared rect
++           keeps its coverage. Never called in banded mode. Leave NULL and no image becomes a layer.
++         ------------------------------------------------------------------------------------------------*/
++
++        /** @brief Set a framebuffer rect to 0x00000000. */
++        void (*clear_rect)(int x, int y, int w, int h, void* ctx);
+     } EmbeddedRenderBackend;
+ 
+     /**
+diff --git a/engine/scene/compositor.c b/engine/scene/compositor.c
+--- a/engine/scene/compositor.c
++++ b/engine/scene/compositor.c
+@@ -22,6 +22,7 @@
+ #include "er_node_internal.h"
+ #include "er_perf.h"
+ #include "gradient.h"
++#include "image_registry.h"
+ #include "image_scaler.h"
+ #include "layout_anim.h"
+ #include "layout_engine.h"
+@@ -2805,6 +2806,8 @@
+         node_opacity = n->props.view.opacity;
+     else if (n->type == ER_NODE_TEXT_INPUT)
+         node_opacity = n->props.text_input.opacity;
++    if (n->layer_wrapper)
++        node_opacity = 255U; /* the host applies it to the layer this holds */
+ 
+     bool composited = false;
+ #if ER_XF_CACHE_ENABLED
+@@ -3023,7 +3026,10 @@
+                  * what `background-origin: padding-box`, the CSS default, does. */
+                 int ix = px, iy = py, iw = w, ih = h;
+                 er_layout_content_box(&n->layout, &ix, &iy, &iw, &ih);
+-                er_image_render(&n->props.image, ix, iy, iw, ih);
++                if (n->layer_active)
++                    er_blit_clear(ix, iy, iw, ih); /* the host draws it there (update_layers) */
++                else
++                    er_image_render(&n->props.image, ix, iy, iw, ih);
+                 break;
+             }
+             case ER_NODE_VECTOR:
+@@ -3865,6 +3871,7 @@
+             node->props.image.image_name[ER_IMAGE_NAME_MAX] = '\0';
+             node->props.image.resize_mode = props->resize_mode;
+             node->props.image.tint_color = props->tint_color;
++            node->props.image.layer = props->layer != 0U;
+             /* Per-corner radius, falling back to the uniform one, as a View's background resolves it. */
+             node->props.image.radius_tl =
+                 props->border_top_left_radius > 0 ? props->border_top_left_radius : props->border_radius;
+@@ -5177,10 +5184,13 @@
+     propagate_hidden(root, false); /* a new root is on screen: its subtree is no longer detached */
+     er_force_full_repaint();       /* whole new scene: repaint everything */
+ }
++
++static void layers_reset(void);
+ 
+ void er_reset(void)
+ {
+     fade_cache_invalidate();
++    layers_reset();
+     /* Empty the node pool and clear the scene root. Every slot is marked unused, not just the allocator
+      * rewound: the per-frame sweeps walk the pool by in_use, and a tag or ERNodeRef held from before the
+      * reset (by a handler that reset the scene mid-dispatch, say) must stop resolving to its old node. */
+@@ -5565,8 +5575,318 @@
+         sv->scroll_painted_y = (int16_t)sv->scroll_offset_y;
+     }
+     s_scroll_pending_count = 0U;
++}
++
++/*----------------------------------------------------------------------------------------------------------------------
++ - Host layers (er_set_layers_enabled)
++ ---------------------------------------------------------------------------------------------------------------------*/
++
++/* Containers between a layer and the top of the chain that holds only it, per layer. */
++#define LAYER_CHAIN_MAX 8
++
++typedef struct
++{
++    ERNode* image;
++    ERNode* chain[LAYER_CHAIN_MAX]; /* parent first; the last is the top */
++    int chain_len;
++    uint8_t alpha;
++    ERRect dst;
++    ERRect clip;
++    int src_x, src_y, src_w, src_h;
++    const ImageEntry* entry;
++} LayerCandidate;
++
++static bool s_layers_enabled = false;
++static ERLayer s_layers[ERUI_MAX_LAYERS];
++static int s_layer_count = 0;
++/* What the last layer pass flagged, so the next one can retire flags it no longer sets. */
++static ERNodeRef s_layer_flagged[ERUI_MAX_LAYERS * (LAYER_CHAIN_MAX + 1)];
++static int s_layer_flagged_count = 0;
++
++static void layers_reset(void)
++{
++    s_layer_count = 0;
++    s_layer_flagged_count = 0;
+ }
+ 
++void er_set_layers_enabled(bool enabled)
++{
++    s_layers_enabled = enabled;
++}
++
++const ERLayer* er_get_layers(int* count)
++{
++    if (count)
++        *count = s_layer_count;
++    return s_layers;
++}
++
++/** @brief A container that draws nothing itself but may carry opacity: what a layer's chain is made of. */
++static bool layer_chain_link(const ERNode* a, const ERNode* child)
++{
++    if (a->type != ER_NODE_VIEW && a->type != ER_NODE_PRESSABLE)
++        return false;
++#if ERUI_TRANSFORMS_FULL
++    if (er_node_has_complex_transform(a))
++        return false;
++#endif
++    const ERViewProps* vp = &a->props.view;
++    if (vp->shadow_opacity > 0.0f || vp->elevation != 0U || (vp->background_color >> 24) != 0U)
++        return false;
++#if ERUI_GRADIENT
++    if (vp->gradient_type != ER_GRADIENT_NONE && vp->gradient_stop_count >= 2U)
++        return false;
++#endif
++    if (vp->border_width > 0 || vp->border_left_width > 0 || vp->border_top_width > 0 || vp->border_right_width > 0
++        || vp->border_bottom_width > 0)
++        return false;
++    return a->first_child_tag == child->tag && child->next_sibling_tag == ER_INVALID_TAG;
++}
++
++/** @brief Fills @p c for an image that asks to be a layer; false when it cannot be one at all. */
++static bool layer_candidate(ERNode* n, LayerCandidate* c)
++{
++    const ERImageProps* ip = &n->props.image;
++    if (n->subtree_hidden || n->layout.display == ER_DISPLAY_NONE || ip->tint_color != 0U)
++        return false;
++    if (ip->radius_tl > 0 || ip->radius_tr > 0 || ip->radius_br > 0 || ip->radius_bl > 0)
++        return false;
++    if (ip->resize_mode != ER_RESIZE_COVER && ip->resize_mode != ER_RESIZE_STRETCH)
++        return false;
++    const ImageEntry* img = image_registry_get(ip->image_name);
++    if (!img || !img->opaque || img->format != ER_IMG_ARGB8888 || img->w <= 0 || img->h <= 0)
++        return false;
++    int px, py, w, h;
++    if (!node_screen_rect(n, &px, &py, &w, &h))
++        return false;
++    er_layout_content_box(&n->layout, &px, &py, &w, &h);
++    if (w <= 0 || h <= 0)
++        return false;
++
++    memset(c, 0, sizeof(*c));
++    c->image = n;
++    c->entry = img;
++    uint32_t alpha = 255U;
++    bool chained = true;
++    const ERNode* child = n;
++    for (ERNode* a = er_get_node(n->parent_tag); a; child = a, a = er_get_node(a->parent_tag))
++    {
++#if ERUI_TRANSFORMS_FULL
++        if (er_node_has_complex_transform(a))
++            return false;
++#endif
++        if (a->type == ER_NODE_MODAL || a->subtree_hidden)
++            return false;
++        chained = chained && c->chain_len < LAYER_CHAIN_MAX && layer_chain_link(a, child);
++        if (chained)
++            c->chain[c->chain_len++] = a;
++        const bool view = (a->type == ER_NODE_VIEW || a->type == ER_NODE_SCROLL_VIEW || a->type == ER_NODE_PRESSABLE
++                           || a->type == ER_NODE_FLAT_LIST);
++        if (view && a->props.view.opacity != 255U)
++        {
++            if (!chained)
++                return false; /* the opacity applies to more than this image */
++            alpha = alpha * a->props.view.opacity / 255U;
++        }
++    }
++    c->alpha = (uint8_t)alpha;
++    c->dst = (ERRect){px, py, w, h};
++    int cx = px, cy = py, cw = w, ch = h;
++    clip_rect_to_clippers(n, &cx, &cy, &cw, &ch);
++    c->clip = (ERRect){cx, cy, cw, ch};
++
++    if (ip->resize_mode == ER_RESIZE_COVER)
++    {
++        /* The crop er_image_render() draws. */
++        if (w * img->h >= h * img->w)
++        {
++            c->src_w = img->w;
++            c->src_h = (h * img->w + w / 2) / w;
++        }
++        else
++        {
++            c->src_h = img->h;
++            c->src_w = (w * img->h + h / 2) / h;
++        }
++        if (c->src_w < 1)
++            c->src_w = 1;
++        if (c->src_h < 1)
++            c->src_h = 1;
++        c->src_x = (img->w - c->src_w) / 2;
++        c->src_y = (img->h - c->src_h) / 2;
++    }
++    else
++    {
++        c->src_w = img->w;
++        c->src_h = img->h;
++    }
++    return true;
++}
++
++static ERNode* layer_top(const LayerCandidate* c)
++{
++    return c->chain_len > 0 ? c->chain[c->chain_len - 1] : c->image;
++}
++
++static int node_depth(const ERNode* n)
++{
++    int depth = 0;
++    for (; n; n = er_get_node(n->parent_tag))
++        depth++;
++    return depth;
++}
++
++/** @brief Position of @p child among its parent's children in paint order (z-sorted), or -1. */
++static int paint_index(const ERNode* parent, const ERNode* child)
++{
++    uint16_t tags[ERUI_MAX_NODES];
++    const int count = er_collect_children(parent, tags, ERUI_MAX_NODES);
++    er_sort_children_by_z_index(tags, count);
++    for (int i = 0; i < count; i++)
++        if (tags[i] == child->tag)
++            return i;
++    return -1;
++}
++
++/** @brief Whether @p a is painted before @p b (an ancestor paints before its descendants). */
++static bool paints_before(const ERNode* a, const ERNode* b)
++{
++    int da = node_depth(a), db = node_depth(b);
++    for (; da > db; da--)
++    {
++        a = er_get_node(a->parent_tag);
++        if (a == b)
++            return false;
++    }
++    for (; db > da; db--)
++    {
++        b = er_get_node(b->parent_tag);
++        if (b == a)
++            return true;
++    }
++    while (a && b && a->parent_tag != b->parent_tag)
++    {
++        a = er_get_node(a->parent_tag);
++        b = er_get_node(b->parent_tag);
++    }
++    if (!a || !b || a == b)
++        return false;
++    const ERNode* parent = er_get_node(a->parent_tag);
++    return parent && paint_index(parent, a) < paint_index(parent, b);
++}
++
++static bool rect_contains(const ERRect* outer, const ERRect* inner)
++{
++    return inner->w <= 0 || inner->h <= 0
++           || (inner->x >= outer->x && inner->y >= outer->y && inner->x + inner->w <= outer->x + outer->w
++               && inner->y + inner->h <= outer->y + outer->h);
++}
++
++static bool layer_flag_listed(const ERNode* n, ERNode* const* list, int count)
++{
++    for (int i = 0; i < count; i++)
++        if (list[i] == n)
++            return true;
++    return false;
++}
++
++/**
++ * @brief Decides which images the host draws this commit and flags them, damaging every node whose flag
++ *        changes; publishes the layer list.
++ *
++ * A layer at full opacity hides everything painted under it, so clearing its rect loses nothing. One
++ * below full opacity is exact only over a layer the host also draws: the preceding sibling of its chain
++ * (nothing is painted between the two) and, through it, an opaque layer covering its visible rect.
++ * Runs before the damage pre-pass, so the flag changes it damages repaint in this same commit.
++ */
++static void update_layers(void)
++{
++    LayerCandidate cand[ERUI_MAX_LAYERS];
++    int count = 0;
++    if (s_layers_enabled && er_blit_can_clear() && s_display_buffer_count == 1)
++    {
++        for (uint16_t tag = 0U; tag < (uint16_t)ERUI_MAX_NODES && count < ERUI_MAX_LAYERS; tag++)
++        {
++            ERNode* n = er_get_node(tag);
++            if (n && n->type == ER_NODE_IMAGE && n->props.image.layer && layer_candidate(n, &cand[count]))
++                count++;
++        }
++    }
++    /* Paint order, by insertion: a handful of layers at most. */
++    for (int i = 1; i < count; i++)
++    {
++        const LayerCandidate key = cand[i];
++        int j = i - 1;
++        for (; j >= 0 && paints_before(key.image, cand[j].image); j--)
++            cand[j + 1] = cand[j];
++        cand[j + 1] = key;
++    }
++
++    ERNode* flagged[ERUI_MAX_LAYERS * (LAYER_CHAIN_MAX + 1)];
++    int flagged_count = 0;
++    s_layer_count = 0;
++    bool previous_active = false;
++    ERRect cover = {0, 0, 0, 0};
++    for (int i = 0; i < count; i++)
++    {
++        const LayerCandidate* c = &cand[i];
++        bool active = false;
++        if (c->alpha == 255U)
++        {
++            active = true;
++            cover = c->clip;
++        }
++        else if (previous_active)
++        {
++            const ERNode* top = layer_top(c);
++            const ERNode* below = layer_top(&cand[i - 1]);
++            const ERNode* parent = er_get_node(top->parent_tag);
++            active = parent && below->parent_tag == top->parent_tag
++                     && paint_index(parent, below) + 1 == paint_index(parent, top) && rect_contains(&cover, &c->clip);
++        }
++        previous_active = active;
++        if (!active)
++            continue;
++        flagged[flagged_count++] = c->image;
++        for (int k = 0; k < c->chain_len; k++)
++            flagged[flagged_count++] = c->chain[k];
++        ERLayer* l = &s_layers[s_layer_count++];
++        l->image = c->image->props.image.image_name;
++        l->pixels = (const uint32_t*)c->entry->buf;
++        l->image_w = c->entry->w;
++        l->image_h = c->entry->h;
++        l->src_x = c->src_x;
++        l->src_y = c->src_y;
++        l->src_w = c->src_w;
++        l->src_h = c->src_h;
++        l->dst = c->dst;
++        l->clip = c->clip;
++        l->alpha = c->alpha;
++    }
++
++    /* A node changing between rasterized and drawn by the host repaints its box either way. */
++    for (int i = 0; i < s_layer_flagged_count; i++)
++    {
++        ERNode* n = er_node_deref(s_layer_flagged[i]);
++        if (!n || layer_flag_listed(n, flagged, flagged_count))
++            continue;
++        if (n->layer_active || n->layer_wrapper)
++            er_mark_dirty_upward(n);
++        n->layer_active = n->layer_wrapper = false;
++    }
++    for (int i = 0; i < flagged_count; i++)
++    {
++        ERNode* n = flagged[i];
++        const bool image = (n->type == ER_NODE_IMAGE);
++        if (image ? !n->layer_active : !n->layer_wrapper)
++            er_mark_dirty_upward(n);
++        n->layer_active = image;
++        n->layer_wrapper = !image;
++        s_layer_flagged[i] = er_node_ref(n);
++    }
++    s_layer_flagged_count = flagged_count;
++}
++
+ void er_commit(void)
+ {
+     er_input_flush_moves();
+@@ -5699,6 +6019,7 @@
+     ER_PERF_BEGIN(ER_PERF_PHASE_RASTER);
+     ER_PERF_BLIT_RESET();
+     ER_PERF_RASTER_BEGIN(ER_PERF_RASTER_PREPASS);
++    update_layers();
+ 
+     /* Damage-clipped render. Unless we must repaint everything (first frame, an invalidated
+      * framebuffer, a removed node, or a changing node with a transform we can't bound), scissor
+diff --git a/engine/scene/er_node_internal.h b/engine/scene/er_node_internal.h
+--- a/engine/scene/er_node_internal.h
++++ b/engine/scene/er_node_internal.h
+@@ -277,6 +277,7 @@
+     int16_t radius_tr;
+     int16_t radius_br;
+     int16_t radius_bl;
++    bool layer; /**< ERProps::layer: drawn by the host when it qualifies (er_set_layers_enabled). */
+ } ERImageProps;
+ 
+ /**
+@@ -528,6 +529,11 @@
+      * measures every node by its own rect — cannot otherwise see, so the pre-pass damages the
+      * post-layout subtree bounds as well (the pre-change ones were banked when the prop was set). */
+     bool overflow_toggled;
++    /* Host layers, decided by the layer pass at the start of each painting commit: an image the host draws
++     * (render_node_content clears its rect instead), and the containers whose opacity that layer carries
++     * (painted at full opacity, their opacity animations repaint nothing). */
++    bool layer_active;
++    bool layer_wrapper;
+     union
+     {
+         ERViewProps view;
+diff --git a/engine/tests/rendering/CMakeLists.txt b/engine/tests/rendering/CMakeLists.txt
+--- a/engine/tests/rendering/CMakeLists.txt
++++ b/engine/tests/rendering/CMakeLists.txt
+@@ -222,6 +222,11 @@
+ target_link_libraries(test_deferred_raster PRIVATE embedded-react)
+ add_test(NAME rendering_deferred_raster COMMAND test_deferred_raster)
+ 
++add_executable(test_layers test_layers.c ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/software/renderer_backend.c)
++target_link_libraries(test_layers PRIVATE embedded-react)
++target_include_directories(test_layers PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/software)
++add_test(NAME rendering_layers COMMAND test_layers)
++
+ add_executable(test_wide_rows test_wide_rows.c)
+ target_link_libraries(test_wide_rows PRIVATE embedded-react)
+ # test_wide_rows renders through er_image_render and er_gradient_render directly, under er_push_clip_rect, and
+diff --git a/engine/tests/rendering/test_layers.c b/engine/tests/rendering/test_layers.c
+new file mode 100644
+--- /dev/null
++++ b/engine/tests/rendering/test_layers.c
+@@ -0,0 +1,275 @@
++/*
++ * Copyright 2026 PS5 React contributors
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++/*
++ * Host layers (er_set_layers_enabled), on the software backend.
++ *
++ * A crossfade of two layer images under a translucent overlay: the framebuffer drawn over the listed layers
++ * must look like the same scene rasterized with layers off, at every step of the fade; the fade itself must
++ * paint nothing; and a translucent layer with no opaque layer directly under it must be rasterized.
++ */
++
++#include "er_scene.h"
++#include "native_renderer.h"
++#include "software_backend.h"
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++#define FB_W 160
++#define FB_H 120
++
++/* The engine's active backend, as the damage tracker on the hosts reads it (core/renderer_internal.h). */
++const EmbeddedRenderBackend* er_backend(void);
++
++static EmbeddedRenderBackend g_inner, g_counting;
++static long g_painted_px = 0;
++static int g_failures = 0;
++
++static void fill_cb(uint32_t argb, int x, int y, int w, int h, void* ctx)
++{
++    g_inner.fill_rect(argb, x, y, w, h, ctx);
++    g_painted_px += (long)w * h;
++}
++
++static void copy_cb(const void* src, int stride, int x, int y, int w, int h, void* ctx)
++{
++    g_inner.copy_rect(src, stride, x, y, w, h, ctx);
++    g_painted_px += (long)w * h;
++}
++
++static void blend_cb(const void* src, int stride, uint8_t alpha, int x, int y, int w, int h, void* ctx)
++{
++    g_inner.blend_rect(src, stride, alpha, x, y, w, h, ctx);
++    g_painted_px += (long)w * h;
++}
++
++static void clear_cb(int x, int y, int w, int h, void* ctx)
++{
++    g_inner.clear_rect(x, y, w, h, ctx);
++    g_painted_px += (long)w * h;
++}
++
++static const uint32_t s_red[4] = {0xFFC02010U, 0xFFC02010U, 0xFFC02010U, 0xFFC02010U};
++static const uint32_t s_blue[4] = {0xFF1040D0U, 0xFF1040D0U, 0xFF1040D0U, 0xFF1040D0U};
++
++/* Setting the backend forces a full repaint and also empties the image registry. */
++static void install(void)
++{
++    embedded_renderer_set_backend(&g_counting);
++    er_image_load("red", s_red, 2, 2);
++    er_image_load("blue", s_blue, 2, 2);
++}
++
++static void fail(const char* what)
++{
++    fprintf(stderr, "FAIL %s\n", what);
++    g_failures++;
++}
++
++static ERNode* node(ERNodeType type, ERNode* parent, int left, int top, int w, int h, uint32_t bg)
++{
++    ERNode* n = er_node_create(type);
++    ERProps p;
++    er_props_default(&p);
++    p.position = parent ? ER_POS_ABSOLUTE : p.position;
++    p.left = (int16_t)left;
++    p.top = (int16_t)top;
++    p.width = (int16_t)w;
++    p.height = (int16_t)h;
++    p.background_color = bg;
++    er_node_set_props(n, &p);
++    if (parent)
++        er_tree_append_child(parent, n);
++    return n;
++}
++
++/* A layer image in its own wrapper, the way a crossfading backdrop holds each image. */
++static ERNode* layer(ERNode* parent, const char* image, ERNode** wrapper)
++{
++    *wrapper = node(ER_NODE_VIEW, parent, 0, 0, 120, 80, 0);
++    ERNode* n = er_node_create(ER_NODE_IMAGE);
++    ERProps p;
++    er_props_default(&p);
++    p.width = 120;
++    p.height = 80;
++    p.resize_mode = ER_RESIZE_STRETCH;
++    p.layer = 1;
++    strncpy(p.image_name, image, ER_IMAGE_NAME_MAX);
++    er_node_set_props(n, &p);
++    er_tree_append_child(*wrapper, n);
++    return n;
++}
++
++/* The framebuffer pixel as a host presents it: the layers (solid images here, so sampling is exact)
++ * under the framebuffer, premultiplied source-over. */
++static uint32_t presented(int x, int y)
++{
++    const uint32_t ui = er_software_framebuffer()[y * FB_W + x];
++    int count = 0;
++    const ERLayer* layers = er_get_layers(&count);
++    uint32_t rgb[3] = {0, 0, 0};
++    for (int i = 0; i < count; i++)
++    {
++        const ERLayer* l = &layers[i];
++        if (x < l->clip.x || y < l->clip.y || x >= l->clip.x + l->clip.w || y >= l->clip.y + l->clip.h)
++            continue;
++        if (x < l->dst.x || y < l->dst.y || x >= l->dst.x + l->dst.w || y >= l->dst.y + l->dst.h)
++            continue;
++        const uint32_t texel = l->pixels[0];
++        for (int c = 0; c < 3; c++)
++            rgb[c] = (((texel >> (8 * c)) & 0xFFU) * l->alpha + rgb[c] * (255U - l->alpha) + 127U) / 255U;
++    }
++    const uint32_t inv = 255U - (ui >> 24);
++    uint32_t out = 0xFF000000U;
++    for (int c = 0; c < 3; c++)
++        out |= (((ui >> (8 * c)) & 0xFFU) + (rgb[c] * inv + 127U) / 255U) << (8 * c);
++    return out;
++}
++
++/** @brief Compares what the host presents with the same scene rasterized with layers off. */
++static void check_presented(const char* what)
++{
++    static uint32_t shown[FB_W * FB_H];
++    for (int y = 0; y < FB_H; y++)
++        for (int x = 0; x < FB_W; x++)
++            shown[y * FB_W + x] = presented(x, y);
++
++    er_set_layers_enabled(false);
++    install();
++    er_commit();
++    int worst = 0, wx = 0, wy = 0;
++    for (int y = 0; y < FB_H; y++)
++        for (int x = 0; x < FB_W; x++)
++            for (int c = 0; c < 24; c += 8)
++            {
++                const int a = (int)((shown[y * FB_W + x] >> c) & 0xFFU);
++                const int b = (int)((er_software_framebuffer()[y * FB_W + x] >> c) & 0xFFU);
++                if (abs(a - b) > worst)
++                {
++                    worst = abs(a - b);
++                    wx = x;
++                    wy = y;
++                }
++            }
++    /* Each side rounds its own blends once or twice; anything past that is a wrong pixel. */
++    if (worst > 2)
++    {
++        fprintf(stderr, "FAIL %s: off by %d at (%d,%d)\n", what, worst, wx, wy);
++        g_failures++;
++    }
++    er_set_layers_enabled(true);
++    install();
++    er_commit();
++}
++
++int main(void)
++{
++    if (!er_software_backend_init(FB_W, FB_H))
++        return 1;
++    g_inner = *er_backend();
++    g_counting = g_inner;
++    g_counting.fill_rect = fill_cb;
++    g_counting.copy_rect = copy_cb;
++    g_counting.blend_rect = blend_cb;
++    g_counting.clear_rect = clear_cb;
++    install();
++    er_reset();
++
++    ERNode* root = node(ER_NODE_VIEW, NULL, 0, 0, FB_W, FB_H, 0xFF203040U);
++    ERNode* backdrop = node(ER_NODE_VIEW, root, 20, 10, 120, 80, 0);
++    ERNode *wrap_a, *wrap_b;
++    ERNode* image_a = layer(backdrop, "red", &wrap_a);
++    layer(backdrop, "blue", &wrap_b);
++    node(ER_NODE_VIEW, root, 0, 50, FB_W, 30, 0x80FFFFFFU); /* translucent overlay across both */
++    const ERAnimValueHandle fade = er_anim_value_create(0.0f);
++    er_anim_value_bind(fade, wrap_b, ER_PROP_OPACITY);
++    er_tree_set_root(root);
++    er_set_layers_enabled(true);
++    er_commit();
++
++    int count = 0;
++    const ERLayer* layers = er_get_layers(&count);
++    if (count != 2 || strcmp(layers[0].image, "red") != 0 || strcmp(layers[1].image, "blue") != 0)
++        fail("both images are layers, bottom first");
++    else if (layers[0].alpha != 255U || layers[1].alpha != 0U || layers[0].dst.x != 20 || layers[0].dst.y != 10
++             || layers[0].dst.w != 120 || layers[0].dst.h != 80)
++        fail("layer geometry and opacity");
++    const uint32_t* fb = er_software_framebuffer();
++    if (fb[20 * FB_W + 40] != 0U)
++        fail("a layer leaves its rect transparent");
++    if ((fb[60 * FB_W + 40] >> 24) != 0x80U || (fb[60 * FB_W + 4] >> 24) != 0xFFU)
++        fail("the overlay keeps its coverage over a layer and stays opaque elsewhere");
++    check_presented("start of the fade");
++
++    for (int step = 1; step <= 4; step++)
++    {
++        g_painted_px = 0;
++        er_anim_value_set(fade, (float)step / 4.0f);
++        er_commit();
++        layers = er_get_layers(&count);
++        if (g_painted_px != 0)
++            fail("a layer's fade repaints nothing");
++        if (count != 2 || layers[1].alpha != (uint8_t)((float)step / 4.0f * 255.0f + 0.5f))
++        {
++            fprintf(stderr, "FAIL step %d: %d layers, top alpha %d\n", step, count, count > 1 ? layers[1].alpha : -1);
++            g_failures++;
++        }
++        check_presented("during the fade");
++    }
++
++    /* Without the opaque layer under it, the half-faded image has to be rasterized over what is there. */
++    er_anim_value_set(fade, 0.5f);
++    er_commit();
++    er_tree_remove_child(backdrop, wrap_a);
++    er_node_destroy(wrap_a);
++    (void)image_a;
++    er_commit();
++    layers = er_get_layers(&count);
++    if (count != 0)
++        fail("a translucent layer with nothing opaque under it is rasterized");
++    check_presented("translucent image rasterized again");
++
++    /* Back at full opacity it is a layer again. */
++    er_anim_value_set(fade, 1.0f);
++    er_commit();
++    layers = er_get_layers(&count);
++    if (count != 1 || layers[0].alpha != 255U)
++        fail("an opaque image becomes a layer again");
++    check_presented("single opaque layer");
++
++    /* Something painted between the two would show through the upper one: it is rasterized. */
++    ERNode* wrap_c;
++    node(ER_NODE_VIEW, backdrop, 30, 30, 20, 20, 0xFF00FF00U);
++    layer(backdrop, "red", &wrap_c);
++    ERProps cp;
++    er_props_default(&cp);
++    cp.position = ER_POS_ABSOLUTE;
++    cp.width = 120;
++    cp.height = 80;
++    cp.opacity = 128;
++    er_node_set_props(wrap_c, &cp);
++    er_commit();
++    layers = er_get_layers(&count);
++    if (count != 1)
++        fail("a translucent layer over other content is rasterized");
++    check_presented("translucent layer over other content");
++
++    if (g_failures == 0)
++        printf("PASS test_layers\n");
++    return g_failures == 0 ? 0 : 1;
++}

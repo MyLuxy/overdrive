@@ -1,0 +1,18 @@
+{
+  "$schema": "../../app.schema.json",
+  "titleId": "PPSA99056",
+  "contentId": "UP9000-PPSA99056_00-SYSTEMEXPLORER00",
+  "name": "System Explorer",
+  "version": "01.000.000",
+  "render": {
+    "width": 2560,
+    "height": 1440
+  },
+  "surface": {
+    "width": 1920,
+    "height": 1080
+  },
+  "refreshRates": [60, 120],
+  "timeoutSeconds": 0,
+  "filesystemAccess": "console"
+}

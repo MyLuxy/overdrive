@@ -1,0 +1,96 @@
+diff --git a/src/platform/ps5/pad.cpp b/src/platform/ps5/pad.cpp
+index f526e38..e495520 100644
+--- a/src/platform/ps5/pad.cpp
++++ b/src/platform/ps5/pad.cpp
+@@ -68,6 +68,27 @@ extern "C"
+     int scePadSetLightBar(int handle, const PadColor *color);
+ }
+ 
++namespace
++{
++// scePadSetTriggerEffect's parameter, 120 bytes: a mask of the triggers to change and one command
++// each, a mode and its parameter bytes (pad.hpp lists the modes).
++struct TriggerCommand
++{
++    std::uint32_t mode;
++    std::uint8_t padding[4];
++    std::uint8_t data[48];
++};
++struct TriggerEffect
++{
++    std::uint8_t mask;
++    std::uint8_t padding[7];
++    TriggerCommand command[2];
++};
++static_assert(sizeof(TriggerEffect) == 120, "ScePadTriggerEffectParam is 120 bytes");
++} // namespace
++
++extern "C" int scePadSetTriggerEffect(int handle, const TriggerEffect *effect);
++
+ namespace hui::ps5
+ {
+ 
+@@ -122,6 +143,33 @@ void Pad::set_light_bar(std::uint8_t r, std::uint8_t g, std::uint8_t b)
+         sys::log("[HUI] pad scePadSetLightBar=0x%08x", static_cast<unsigned>(result));
+ }
+ 
++int Pad::set_trigger_effect(unsigned mask, unsigned mode, const std::uint8_t *data, std::size_t size)
++{
++    if (handle_ < 0 || (mask & 3u) == 0)
++        return -1;
++    TriggerEffect effect{};
++    effect.mask = static_cast<std::uint8_t>(mask & 3u);
++    for (TriggerCommand &command : effect.command)
++    {
++        command.mode = mode;
++        for (std::size_t i = 0; i < size && i < sizeof command.data; ++i)
++            command.data[i] = data[i];
++    }
++    const int result = scePadSetTriggerEffect(handle_, &effect);
++    if (result != 0)
++        sys::log("[HUI] pad scePadSetTriggerEffect=0x%08x", static_cast<unsigned>(result));
++    return result;
++}
++
++void Pad::set_trigger_feedback(unsigned mask, int position, int strength)
++{
++    const std::uint8_t data[2] = {
++        static_cast<std::uint8_t>(position < 0 ? 0 : position > 9 ? 9 : position),
++        static_cast<std::uint8_t>(strength > 8 ? 8 : strength),
++    };
++    set_trigger_effect(mask, strength > 0 ? 1u : 0u, data, strength > 0 ? sizeof data : 0);
++}
++
+ void Pad::rumble(float strength, float seconds)
+ {
+     if (handle_ < 0 || strength <= 0.0f || seconds <= 0.0f)
+@@ -154,6 +202,8 @@ void Pad::close()
+     {
+         const PadVibration stop{0, 0};
+         scePadSetVibration(handle_, &stop);
++        // A resistance the app set would otherwise stay on the triggers after it quits.
++        set_trigger_feedback(3u, 0, 0);
+         scePadClose(handle_);
+     }
+     handle_ = -1;
+diff --git a/src/platform/ps5/pad.hpp b/src/platform/ps5/pad.hpp
+index ab535e7..64236b9 100644
+--- a/src/platform/ps5/pad.hpp
++++ b/src/platform/ps5/pad.hpp
+@@ -40,6 +40,16 @@ class Pad
+     void rumble(float strength, float seconds);
+     // Call once per frame: ends a rumble whose time is up.
+     void tick(float dt);
++    // A DualSense adaptive trigger effect on the masked triggers (1 L2, 2 R2): libScePad `mode` and
++    // its parameter bytes, `data` (at most 48; the rest are zero). Modes: 0 off; 1 feedback
++    // {position 0..9, strength 1..8}, resisting from that zone of the travel on; 2 weapon
++    // {start 2..7, end start+1..8, strength 1..8}, a resistance that gives way past `end`, like a
++    // gun trigger; 3 vibration {position 0..9, amplitude 1..8, frequency Hz 1..255}. Returns
++    // scePadSetTriggerEffect's result, or -1 when the pad is not open or the mask is empty.
++    int set_trigger_effect(unsigned mask, unsigned mode, const std::uint8_t *data, std::size_t size);
++    // Mode 1 from zone `position` 0..9 of the travel on, at `strength` 1..8; strength 0 turns the
++    // masked triggers' effect off.
++    void set_trigger_feedback(unsigned mask, int position, int strength);
+ 
+   private:
+     int handle_ = -1;

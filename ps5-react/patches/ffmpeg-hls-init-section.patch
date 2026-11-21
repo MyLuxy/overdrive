@@ -1,0 +1,20 @@
+FFmpeg: push an HLS init section out from where the last read stopped.
+
+Modified from FFmpeg 7.1.5 (LGPL-2.1-or-later, the FFmpeg developers), the release pinned in
+dependencies.lock.json. Changed file: libavformat/hls.c. Backport of upstream commit f88f1041a6
+("avformat/hls: advance the init section read pointer", 2026-09-29).
+
+An init section longer than one read of the segment buffer was copied from its start on every
+read, so its first chunk came out twice and corrupted what followed.
+
+--- a/libavformat/hls.c
++++ b/libavformat/hls.c
+@@ -1687,7 +1687,7 @@
+     if (v->init_sec_buf_read_offset < v->init_sec_data_len) {
+         /* Push init section out first before first actual segment */
+         int copy_size = FFMIN(v->init_sec_data_len - v->init_sec_buf_read_offset, buf_size);
+-        memcpy(buf, v->init_sec_buf, copy_size);
++        memcpy(buf, v->init_sec_buf + v->init_sec_buf_read_offset, copy_size);
+         v->init_sec_buf_read_offset += copy_size;
+         return copy_size;
+     }

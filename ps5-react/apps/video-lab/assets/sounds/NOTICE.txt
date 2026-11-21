@@ -1,0 +1,3 @@
+These sounds are derived from Google's Material Design sound resources, (c) Google,
+under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Sources and changes:
+licenses/material-sounds-NOTICE.txt in the PS5 React repository.

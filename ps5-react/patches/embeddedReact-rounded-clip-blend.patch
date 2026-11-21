@@ -1,0 +1,1556 @@
+Embedded React: roundedClip and mixBlendMode plus-lighter on View.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, after the patches listed before this
+one there. Changed files: engine/include/er_scene.h,
+engine/include/native_renderer.h, engine/core/native_renderer.c,
+engine/core/renderer_internal.h, engine/rendering/scratch_pool.c,
+engine/scene/compositor.c, engine/scene/er_node_internal.h,
+backends/software/renderer_backend.c, bridges/quickjs/native_ui_bridge.c,
+bridges/quickjs/js/src/embedded-react/index.d.ts,
+engine/tests/rendering/CMakeLists.txt and the new
+engine/tests/rendering/test_rounded_clip.c. Not yet proposed upstream.
+
+overflow: hidden clips children to a node's rectangle, so a light sweeping
+across a rounded card had to stop short of the corners. `roundedClip: true`
+opts a View into clipping its children to its rounded border box instead
+(implying overflow hidden); overflow: hidden alone is unchanged. A clip-stack
+entry can now carry a rounded mask: every blit is clipped as before, and a row
+that crosses a corner arc goes out as its solid span plus the fringe pixels at
+their coverage, from the same er_rrect_row/er_rrect_fringe_cov geometry the
+rounded background fill uses, so a masked child meets its parent's edge pixel
+for pixel. Nested rounded clips multiply. Rows clear of the corners take the
+old single-blit path, and with no rounded clip on the stack the check is one
+counter. An offscreen opacity capture suspends the masks and is masked once as
+it is blended out; a transform capture's clip reset drops them for the capture.
+The node's border gradient and sweep are drawn under the plain box, keeping
+their own anti-aliased edge.
+
+`mixBlendMode: 'plus-lighter'` adds what a View and its subtree draw to what
+is beneath it, saturating, per primitive, so overlapping children add up too.
+Fills and copies take the blend path while the mode is on, which calls the new
+optional backend add_rect: colour channels add, destination alpha is kept, so
+over a pixel cleared for a host layer the presenter's premultiplied
+source-over adds the colour to the layer as well. Inside an offscreen capture
+alpha adds too and the capture composites normally. A backend without add_rect
+draws the content source-over. The software backend implements it, AVX2 rows
+with _mm256_adds_epu8.
+
+Fast paths that move or reuse painted pixels, or treat a node as hiding what is
+under it, refuse both: is_plain_container (scroll copy, translate copy, paint-free
+move), translate-copy ancestors, host-layer candidates and the occlusion cull.
+The format-aware opaque copy is skipped under either. test_rounded_clip checks
+a masked child against a rounded fill, the translucent-group coverage, nested
+clips, toggling roundedClip, additive sums, saturation, a half-opacity additive
+group and the source-over fallback, each damage-clipped frame against a full
+repaint.
+
+diff --git a/backends/software/renderer_backend.c b/backends/software/renderer_backend.c
+index df48f33..87f8685 100644
+--- a/backends/software/renderer_backend.c
++++ b/backends/software/renderer_backend.c
+@@ -356,6 +356,65 @@ static void blend_rect_cb(const void* src, int src_stride_bytes, uint8_t alpha,
+     }
+ }
+ 
++/**
++ * @brief Adds a premultiplied ARGB8888 buffer, scaled by a global alpha, to the framebuffer's colour channels.
++ *
++ * Each colour channel saturates at 255; the destination alpha is kept, so a pixel cleared for a host layer
++ * stays transparent and the presenter's premultiplied source-over adds the colour to the layer as well.
++ *
++ * @param[in] src              Source pixel buffer (premultiplied ARGB8888).
++ * @param[in] src_stride_bytes Row stride of src in bytes.
++ * @param[in] alpha            Global scale (0 = nothing, 255 = as is).
++ * @param[in] x                Destination X coordinate.
++ * @param[in] y                Destination Y coordinate.
++ * @param[in] w                Width of the region in pixels.
++ * @param[in] h                Height of the region in pixels.
++ * @param[in] ctx              Pointer to the SoftCtx.
++ */
++static void add_rect_cb(const void* src, int src_stride_bytes, uint8_t alpha, int x, int y, int w, int h, void* ctx)
++{
++    SoftCtx* c = ctx;
++    int sx = 0, sy = 0;
++    const uint32_t ga = alpha;
++    if (!src || ga == 0U || !clip_rect(&x, &y, &w, &h, &sx, &sy))
++        return;
++
++    const uint8_t* base = (const uint8_t*)src;
++    for (int row = 0; row < h; row++)
++    {
++        const uint32_t* s = (const uint32_t*)(base + (size_t)(sy + row) * src_stride_bytes) + sx;
++        uint32_t* d = c->fb + (size_t)(y + row) * c->fb_w + x;
++        int col = 0;
++#if defined(__AVX2__)
++        const __m256i g = _mm256_set1_epi16((short)ga);
++        const __m256i rgb = _mm256_set1_epi32(0x00FFFFFF);
++        for (; col + 8 <= w; col += 8)
++        {
++            __m256i sp = _mm256_loadu_si256((const __m256i*)(s + col));
++            if (ga != 255U)
++                sp = scale8(sp, g, g);
++            const __m256i dp = _mm256_loadu_si256((const __m256i*)(d + col));
++            _mm256_storeu_si256((__m256i*)(d + col), _mm256_adds_epu8(dp, _mm256_and_si256(sp, rgb)));
++        }
++#endif
++        for (; col < w; col++)
++        {
++            const uint32_t sp = s[col];
++            const uint32_t dp = d[col];
++            uint32_t out = dp & 0xFF000000U;
++            for (int sh = 0; sh < 24; sh += 8)
++            {
++                uint32_t ch = (sp >> sh) & 0xFFU;
++                if (ga != 255U)
++                    ch = div255(ch * ga);
++                ch += (dp >> sh) & 0xFFU;
++                out |= (ch > 255U ? 255U : ch) << sh;
++            }
++            d[col] = out;
++        }
++    }
++}
++
+ /*----------------------------------------------------------------------------------------------------------------------
+  - Functions: Public
+  ---------------------------------------------------------------------------------------------------------------------*/
+@@ -431,6 +490,7 @@ bool er_software_backend_init(int fb_w, int fb_h)
+     s_backend.band_flush = NULL;
+     s_backend.move_rect = move_rect_cb;
+     s_backend.clear_rect = clear_rect_cb;
++    s_backend.add_rect = add_rect_cb;
+ 
+     embedded_renderer_set_backend(&s_backend);
+     return true;
+diff --git a/bridges/quickjs/js/src/embedded-react/index.d.ts b/bridges/quickjs/js/src/embedded-react/index.d.ts
+index ba01ef5..0e5b3aa 100644
+--- a/bridges/quickjs/js/src/embedded-react/index.d.ts
++++ b/bridges/quickjs/js/src/embedded-react/index.d.ts
+@@ -190,6 +190,10 @@ export interface ViewStyle {
+   borderSweepWidth?: number;
+   /** Tail length as a fraction of the perimeter (default 0.3). */
+   borderSweepLength?: number;
++  /** Clip children to this view's rounded border box (borderRadius), anti-aliased; implies overflow 'hidden'. */
++  roundedClip?: boolean;
++  /** 'plus-lighter' adds this view's and its subtree's drawing to what is beneath it, saturating. */
++  mixBlendMode?: 'normal' | 'plus-lighter';
+   /** Head position, 0–1 clockwise from the top edge's left end; wraps. Animate it with the native driver. */
+   borderSweepPhase?: number | AnimatedValue;
+   /** A conic gradient seen through the border ring: the rotating-gradient border. Up to 6 stops. */
+diff --git a/bridges/quickjs/native_ui_bridge.c b/bridges/quickjs/native_ui_bridge.c
+index 54318f2..cefe6a9 100644
+--- a/bridges/quickjs/native_ui_bridge.c
++++ b/bridges/quickjs/native_ui_bridge.c
+@@ -826,6 +826,12 @@ static uint8_t map_overflow(const char* s)
+     return ER_OVERFLOW_VISIBLE;
+ }
+ 
++/** @brief Maps a mixBlendMode string to ERBlendMode; anything but 'plus-lighter' is normal. */
++static uint8_t map_blend_mode(const char* s)
++{
++    return strcmp(s, "plus-lighter") == 0 ? ER_BLEND_ADD : ER_BLEND_NORMAL;
++}
++
+ /** @brief Maps a textAlign string to ERTextAlign ('auto' is 'start'). @param[in] s String. @return Enum value. */
+ static uint8_t map_text_align(const char* s)
+ {
+@@ -1202,6 +1208,8 @@ typedef enum
+     PROP_BORDER_SWEEP_LENGTH,
+     PROP_BORDER_GRADIENT,
+     PROP_BORDER_GRADIENT_ANGLE,
++    PROP_ROUNDED_CLIP,
++    PROP_MIX_BLEND_MODE,
+     PROP_COUNT_,
+ } PropId;
+ 
+@@ -1335,6 +1343,8 @@ static const char* const k_prop_names[PROP_COUNT_] = {
+     [PROP_BORDER_SWEEP_LENGTH] = "borderSweepLength",
+     [PROP_BORDER_GRADIENT] = "borderGradient",
+     [PROP_BORDER_GRADIENT_ANGLE] = "borderGradientAngle",
++    [PROP_ROUNDED_CLIP] = "roundedClip",
++    [PROP_MIX_BLEND_MODE] = "mixBlendMode",
+ };
+ 
+ /** @brief (atom, id) pair; s_prop_atoms is sorted by atom value once, for prop_id_from_atom()'s bsearch. */
+@@ -2441,6 +2451,8 @@ static void apply_props(JSContext* ctx, ERNode* node, JSValueConst obj)
+ 
+     /* Border sweep (View-family). */
+     ER_COL(PROP_BORDER_SWEEP_COLOR, border_sweep_color);
++    ER_U8(PROP_ROUNDED_CLIP, rounded_clip);
++    ER_ENUM(PROP_MIX_BLEND_MODE, blend_mode, map_blend_mode);
+     ER_DIM(PROP_BORDER_SWEEP_WIDTH, border_sweep_width);
+     {
+         double d = 0.0;
+diff --git a/engine/core/native_renderer.c b/engine/core/native_renderer.c
+index 761a267..55c9d99 100644
+--- a/engine/core/native_renderer.c
++++ b/engine/core/native_renderer.c
+@@ -21,6 +21,7 @@
+ #include "font_registry.h"
+ #include "image_registry.h"
+ #include "renderer_internal.h"
++#include "rrect.h"
+ #include <stdbool.h>
+ #include <stddef.h>
+ 
+@@ -44,6 +45,12 @@ typedef struct
+     int y; /**< Top edge. */
+     int w; /**< Width in pixels. */
+     int h; /**< Height in pixels. */
++    /* A rounded clip (er_push_clip_rrect) also masks to the box below and its corner arcs; x/y/w/h are
++     * that box intersected with the entry beneath, as for any other entry. */
++    bool rounded;
++    bool reset; /**< er_push_clip_reset: no mask beneath this entry applies above it. */
++    int bx, by, bw, bh;
++    int r_tl, r_tr, r_br, r_bl; /**< Clamped by er_rrect_clamp_radii. */
+ } ClipEntry;
+ 
+ /*----------------------------------------------------------------------------------------------------------------------
+@@ -68,6 +75,13 @@ typedef struct
+ {
+     ClipEntry clip_stack[ER_CLIP_STACK_DEPTH]; /**< Scissor stack (intersected). */
+     int clip_depth;
++    int rounded_count; /**< Rounded entries on the stack: 0 skips every mask lookup. */
++    /* Masks below this depth are suspended: an opacity capture renders its group unmasked and the
++     * restored stack masks the strip once as it is blended out (er_mask_suspend). */
++    int mask_floor;
++
++    /* ERBlendMode applied to every blit (er_set_blend_mode); ER_BLEND_NORMAL is source-over. */
++    uint8_t blend_mode;
+ 
+     /* Banded rendering. The strip currently being rendered occupies screen rows [band_oy, band_oy +
+      * band_h). This is applied at the BACKEND-EMIT boundary only — NOT via the clip stack — so it
+@@ -174,6 +188,74 @@ static bool apply_clip(const NRCtx* ctx, int* x, int* y, int* w, int* h)
+     return *w > 0 && *h > 0;
+ }
+ 
++/**
++ * @brief Collects the rounded clips that apply to the next blit, innermost first.
++ *
++ * @param[in]  ctx  The worker's context.
++ * @param[out] out  Receives up to ER_CLIP_STACK_DEPTH entries.
++ *
++ * @return How many apply; 0 for the common case of no rounded clip, without walking the stack.
++ */
++static int active_masks(const NRCtx* ctx, const ClipEntry** out)
++{
++    if (ctx->rounded_count == 0)
++        return 0;
++    int n = 0;
++    for (int i = ctx->clip_depth - 1; i >= ctx->mask_floor; i--)
++    {
++        const ClipEntry* e = &ctx->clip_stack[i];
++        if (e->reset)
++            break;
++        if (e->rounded)
++            out[n++] = e;
++    }
++    return n;
++}
++
++/** @brief Whether screen row @p y crosses one of the mask's corner arcs. */
++static inline bool mask_row_in_corner(const ClipEntry* m, int y)
++{
++    const int row = y - m->by;
++    const int top = m->r_tl > m->r_tr ? m->r_tl : m->r_tr;
++    const int bot = m->r_bl > m->r_br ? m->r_bl : m->r_br;
++    return row < top || row >= m->bh - bot;
++}
++
++/**
++ * @brief Coverage (0–255) of screen pixel @p x on a row the mask resolved into @p rr, as a rounded fill
++ *        of the same box would paint it: the solid span is full, the fringe walks the corner arc.
++ */
++static uint32_t mask_px_cov(const ClipEntry* m, const ERRRectRow* rr, int x)
++{
++    const int col = x - m->bx;
++    if (col < 0 || col >= m->bw)
++        return 0U;
++    if (col >= rr->x0 && col < rr->x1)
++        return 255U;
++#if ERUI_BORDER_AA
++    float cov;
++    if (col < rr->x0)
++    {
++        const int k = rr->x0 - 1 - col;
++        if (rr->l_r <= 0 || k >= er_rrect_fringe_max(rr->l_r))
++            return 0U;
++        cov = er_rrect_fringe_cov(rr->l_r, rr->l_dx, rr->l_dy, k);
++    }
++    else
++    {
++        const int k = col - rr->x1;
++        if (rr->r_r <= 0 || k >= er_rrect_fringe_max(rr->r_r))
++            return 0U;
++        cov = er_rrect_fringe_cov(rr->r_r, rr->r_dx, rr->r_dy, k);
++    }
++    if (cov <= 0.0f)
++        return 0U;
++    return cov >= 1.0f ? 255U : (uint32_t)(cov * 255.0f + 0.5f);
++#else
++    return 0U;
++#endif
++}
++
+ /**
+  * @brief Source-over composites one premultiplied ARGB source pixel onto a destination pixel.
+  *
+@@ -349,6 +431,54 @@ static void scratch_do_copy(const void* src, int stride, int lx, int ly, int lw,
+     }
+ }
+ 
++/**
++ * @brief Adds a premultiplied ARGB source, scaled by a global alpha, into the scratch buffer.
++ *
++ * Every channel saturates at 255, alpha included: a capture holds no backdrop, so what was added is kept
++ * as ordinary premultiplied coverage and the group composites normally when it is blended out.
++ *
++ * @param[in] src     Source pixel buffer (premultiplied ARGB8888).
++ * @param[in] stride  Source row stride in bytes.
++ * @param[in] alpha   Global alpha scale.
++ * @param[in] lx      Scratch-local left edge.
++ * @param[in] ly      Scratch-local top edge.
++ * @param[in] lw      Width in pixels.
++ * @param[in] lh      Height in pixels.
++ */
++static void scratch_do_add(const void* src, int stride, uint8_t alpha, int lx, int ly, int lw, int lh)
++{
++    NRCtx* const ctx = rc();
++    if (alpha == 0U)
++        return;
++    const int x0 = lx < 0 ? 0 : lx;
++    const int y0 = ly < 0 ? 0 : ly;
++    const int x1 = (lx + lw) > ctx->scratch_w ? ctx->scratch_w : (lx + lw);
++    const int y1 = (ly + lh) > ctx->scratch_h ? ctx->scratch_h : (ly + lh);
++    if (x0 >= x1 || y0 >= y1)
++        return;
++    src = (const uint8_t*)src + (size_t)(y0 - ly) * (size_t)stride + (size_t)(x0 - lx) * 4U;
++
++    for (int row = y0; row < y1; row++)
++    {
++        const uint32_t* src_row = (const uint32_t*)((const uint8_t*)src + (size_t)(row - y0) * (size_t)stride);
++        uint32_t* dst_row = ctx->scratch_buf + (size_t)row * ctx->scratch_w;
++        for (int col = x0; col < x1; col++)
++        {
++            const uint32_t sp = er_px_scale_premul(src_row[col - x0], alpha);
++            if (sp == 0U)
++                continue;
++            const uint32_t d = dst_row[col];
++            uint32_t out = 0U;
++            for (int sh = 0; sh < 32; sh += 8)
++            {
++                const uint32_t c = ((sp >> sh) & 0xFFU) + ((d >> sh) & 0xFFU);
++                out |= (c > 255U ? 255U : c) << sh;
++            }
++            dst_row[col] = out;
++        }
++    }
++}
++
+ const EmbeddedRenderBackend* er_backend(void)
+ {
+     return g_backend;
+@@ -379,7 +509,7 @@ void er_push_clip_rect(int x, int y, int w, int h)
+     if (ctx->clip_depth >= ER_CLIP_STACK_DEPTH)
+         return;
+ 
+-    ClipEntry entry = {x, y, w, h};
++    ClipEntry entry = {x, y, w, h, false, false, 0, 0, 0, 0, 0, 0, 0, 0};
+ 
+     if (ctx->clip_depth > 0)
+     {
+@@ -409,7 +539,56 @@ void er_pop_clip_rect(void)
+ {
+     NRCtx* const ctx = rc();
+     if (ctx->clip_depth > 0)
++    {
+         ctx->clip_depth--;
++        if (ctx->clip_stack[ctx->clip_depth].rounded)
++            ctx->rounded_count--;
++    }
++}
++
++void er_push_clip_rrect(int x, int y, int w, int h, int r_tl, int r_tr, int r_br, int r_bl)
++{
++    NRCtx* const ctx = rc();
++    if (ctx->clip_depth >= ER_CLIP_STACK_DEPTH)
++        return;
++    er_push_clip_rect(x, y, w, h);
++    er_rrect_clamp_radii(w, h, &r_tl, &r_tr, &r_br, &r_bl);
++    if ((r_tl | r_tr | r_br | r_bl) == 0)
++        return; /* square corners: the rect alone is the clip */
++    ClipEntry* e = &ctx->clip_stack[ctx->clip_depth - 1];
++    e->rounded = true;
++    e->bx = x;
++    e->by = y;
++    e->bw = w;
++    e->bh = h;
++    e->r_tl = r_tl;
++    e->r_tr = r_tr;
++    e->r_br = r_br;
++    e->r_bl = r_bl;
++    ctx->rounded_count++;
++}
++
++int er_mask_suspend(void)
++{
++    NRCtx* const ctx = rc();
++    const int floor = ctx->mask_floor;
++    ctx->mask_floor = ctx->clip_depth;
++    return floor;
++}
++
++void er_mask_resume(int floor)
++{
++    rc()->mask_floor = floor;
++}
++
++void er_set_blend_mode(uint8_t mode)
++{
++    rc()->blend_mode = mode;
++}
++
++uint8_t er_get_blend_mode(void)
++{
++    return rc()->blend_mode;
+ }
+ 
+ void er_push_clip_reset(void)
+@@ -420,7 +599,7 @@ void er_push_clip_reset(void)
+     /* Full-extent entry pushed WITHOUT intersecting the current top: used by offscreen source
+      * captures (transform subtree render) that must see the whole subtree regardless of outer
+      * scissors — the captured OUTPUT is clipped by the restored stack when it is blended out. */
+-    ClipEntry entry = {-(1 << 20), -(1 << 20), (1 << 21), (1 << 21)};
++    ClipEntry entry = {-(1 << 20), -(1 << 20), (1 << 21), (1 << 21), false, true, 0, 0, 0, 0, 0, 0, 0, 0};
+     ctx->clip_stack[ctx->clip_depth++] = entry;
+ }
+ 
+@@ -468,36 +647,32 @@ uint8_t er_get_draw_alpha(void)
+     return rc()->draw_alpha;
+ }
+ 
+-void er_blit_fill(uint32_t argb, int x, int y, int w, int h)
++/*
++ * Emitters: one already-clipped rect to the scratch capture or the backend, clamped to the band strip.
++ * Every public blit ends in one of these, directly or through mask_emit for the rows a rounded clip cuts.
++ */
++
++/** @brief Clamps a destination rect to the active band strip; false when nothing is left. */
++static inline bool band_clamp(const NRCtx* ctx, const uint8_t** src, int stride, int* y, int* h)
+ {
+-    NRCtx* const ctx = rc();
+-    if (ctx->draw_alpha < 255U)
++    if (ctx->band_h <= 0)
++        return true;
++    const int top = ctx->band_oy, bot = ctx->band_oy + ctx->band_h;
++    if (*y < top)
+     {
+-        /* Inherited-alpha fallback: emit the fill through the blend path so the color is
+-         * composited over existing pixels on every backend. er_blit_blend applies
+-         * ctx->draw_alpha itself, so the row holds the color at its ORIGINAL alpha. */
+-        const uint8_t a = (uint8_t)((argb >> 24) & 0xFFU);
+-        if (a == 0U)
+-            return;
+-        if (!apply_clip(ctx, &x, &y, &w, &h))
+-            return;
+-        const uint32_t pr = (uint32_t)((argb >> 16) & 0xFFU) * a / 255U;
+-        const uint32_t pg = (uint32_t)((argb >> 8) & 0xFFU) * a / 255U;
+-        const uint32_t pb = (uint32_t)(argb & 0xFFU) * a / 255U;
+-        const uint32_t premul = ((uint32_t)a << 24) | (pr << 16) | (pg << 8) | pb;
+-        const int chunk = w < ER_FILL_ROW_CHUNK ? w : ER_FILL_ROW_CHUNK;
+-        for (int i = 0; i < chunk; i++)
+-            ctx->fill_row[i] = premul;
+-        for (int row = 0; row < h; row++)
+-            for (int cx = 0; cx < w; cx += ER_FILL_ROW_CHUNK)
+-            {
+-                const int cw = (w - cx) < ER_FILL_ROW_CHUNK ? (w - cx) : ER_FILL_ROW_CHUNK;
+-                er_blit_blend(ctx->fill_row, cw * (int)sizeof(uint32_t), 255U, x + cx, y + row, cw, 1);
+-            }
+-        return;
++        const int d = top - *y;
++        if (src && *src)
++            *src += (size_t)d * (size_t)stride;
++        *h -= d;
++        *y = top;
+     }
+-    if (!apply_clip(ctx, &x, &y, &w, &h))
+-        return;
++    if (*y + *h > bot)
++        *h = bot - *y;
++    return *h > 0;
++}
++
++static void emit_fill(NRCtx* ctx, uint32_t argb, int x, int y, int w, int h)
++{
+     if (ctx->scratch_buf)
+     {
+         scratch_do_fill(argb, x - ctx->scratch_ox, y - ctx->scratch_oy, w, h);
+@@ -505,77 +680,257 @@ void er_blit_fill(uint32_t argb, int x, int y, int w, int h)
+     }
+     if (g_backend && g_backend->fill_rect)
+     {
+-        if (ctx->band_h > 0)
+-        {
+-            const int top = ctx->band_oy, bot = ctx->band_oy + ctx->band_h;
+-            if (y < top)
+-            {
+-                h -= top - y;
+-                y = top;
+-            }
+-            if (y + h > bot)
+-                h = bot - y;
+-            if (h <= 0)
+-                return;
+-        }
++        if (!band_clamp(ctx, NULL, 0, &y, &h))
++            return;
+         ER_BLIT_PERF_BEGIN();
+         g_backend->fill_rect(argb, x, y - ctx->band_oy, w, h, g_backend->ctx);
+         ER_BLIT_PERF_END(w, h);
+     }
+ }
+ 
+-void er_blit_copy(const void* src, int stride, int x, int y, int w, int h)
++static void emit_copy(NRCtx* ctx, const uint8_t* src, int stride, int x, int y, int w, int h)
+ {
+-    NRCtx* const ctx = rc();
+-    if (ctx->draw_alpha < 255U)
++    if (ctx->scratch_buf)
+     {
+-        /* Inherited-alpha fallback: an opaque copy becomes a blend at the inherited alpha
+-         * (er_blit_blend applies ctx->draw_alpha itself). */
+-        er_blit_blend(src, stride, 255U, x, y, w, h);
++        scratch_do_copy(src, stride, x - ctx->scratch_ox, y - ctx->scratch_oy, w, h);
+         return;
+     }
+-    const int orig_x = x;
+-    const int orig_y = y;
+-    if (!apply_clip(ctx, &x, &y, &w, &h))
+-        return;
+-    /* Advance source pointer to account for clipped rows and columns. */
+-    const int dx = x - orig_x;
+-    const int dy = y - orig_y;
+-    src = (const uint8_t*)src + (size_t)dy * (size_t)stride + (size_t)dx * 4U;
++    if (g_backend && g_backend->copy_rect)
++    {
++        if (!band_clamp(ctx, &src, stride, &y, &h))
++            return;
++        ER_BLIT_PERF_BEGIN();
++        g_backend->copy_rect(src, stride, x, y - ctx->band_oy, w, h, g_backend->ctx);
++        ER_BLIT_PERF_END(w, h);
++    }
++}
++
++/** @brief Blends at a global alpha, or adds when the additive mode is on. */
++static void emit_blend(NRCtx* ctx, const uint8_t* src, int stride, uint8_t alpha, int x, int y, int w, int h)
++{
++    const bool add = ctx->blend_mode == ER_BLEND_ADD;
+     if (ctx->scratch_buf)
+     {
+-        scratch_do_copy(src, stride, x - ctx->scratch_ox, y - ctx->scratch_oy, w, h);
++        if (add)
++            scratch_do_add(src, stride, alpha, x - ctx->scratch_ox, y - ctx->scratch_oy, w, h);
++        else
++            scratch_do_blend(src, stride, alpha, x - ctx->scratch_ox, y - ctx->scratch_oy, w, h);
+         return;
+     }
+-    if (g_backend && g_backend->copy_rect)
++    /* A backend without add_rect draws additive content source-over: dimmer than meant, never missing. */
++    void (*const cb)(const void*, int, uint8_t, int, int, int, int, void*) =
++        g_backend ? (add && g_backend->add_rect ? g_backend->add_rect : g_backend->blend_rect) : NULL;
++    if (cb)
++    {
++        if (!band_clamp(ctx, &src, stride, &y, &h))
++            return;
++        ER_BLIT_PERF_BEGIN();
++        cb(src, stride, alpha, x, y - ctx->band_oy, w, h, g_backend->ctx);
++        ER_BLIT_PERF_END(w, h);
++    }
++}
++
++typedef enum
++{
++    MASK_OP_FILL,
++    MASK_OP_COPY,
++    MASK_OP_BLEND
++} MaskOpKind;
++
++/** @brief One clipped blit being split by mask_emit; src is the rect's top-left source pixel. */
++typedef struct
++{
++    MaskOpKind kind;
++    uint32_t argb;
++    const uint8_t* src;
++    int stride;
++    uint8_t alpha;
++    int x, y;
++} MaskOp;
++
++/** @brief Emits the part [x, x+w) × [y, y+h) of the op at coverage cov (255 = as is). */
++static void mask_op_emit(NRCtx* ctx, const MaskOp* op, int x, int y, int w, int h, uint32_t cov)
++{
++    const uint8_t* src = op->src ? op->src + (size_t)(y - op->y) * (size_t)op->stride + (size_t)(x - op->x) * 4U : NULL;
++    switch (op->kind)
++    {
++        case MASK_OP_FILL:
++        {
++            uint32_t argb = op->argb;
++            if (cov < 255U)
++                argb = (argb & 0x00FFFFFFU) | ((((argb >> 24) & 0xFFU) * cov + 127U) / 255U << 24);
++            if (argb >> 24)
++                emit_fill(ctx, argb, x, y, w, h);
++            break;
++        }
++        case MASK_OP_COPY:
++            if (cov >= 255U)
++                emit_copy(ctx, src, op->stride, x, y, w, h);
++            else
++                emit_blend(ctx, src, op->stride, (uint8_t)cov, x, y, w, h);
++            break;
++        case MASK_OP_BLEND:
++        {
++            const uint32_t a = cov >= 255U ? op->alpha : (op->alpha * cov + 127U) / 255U;
++            if (a)
++                emit_blend(ctx, src, op->stride, (uint8_t)a, x, y, w, h);
++            break;
++        }
++    }
++}
++
++/**
++ * @brief Emits a clipped blit through the rounded clips that apply to it.
++ *
++ * Rows clear of every corner arc go out as one block. A row an arc cuts goes out as its solid span plus
++ * the pixels either side at their coverage — the product of every mask's, as nested rounded clips stack —
++ * the same span-and-fringe split the rounded background fill paints, so a child masked by its parent's
++ * radius meets the parent's own edge pixel for pixel.
++ */
++static void mask_emit(NRCtx* ctx, const MaskOp* op, int w, int h, const ClipEntry* const* masks, int mask_count)
++{
++    const int x = op->x, y = op->y;
++    int block = y; /* first row of the pending run clear of every corner */
++    for (int row = y; row <= y + h; row++)
+     {
+-        if (ctx->band_h > 0)
++        bool corner = false;
++        if (row < y + h)
++            for (int m = 0; m < mask_count && !corner; m++)
++                corner = mask_row_in_corner(masks[m], row);
++        if (!corner && row < y + h)
++            continue;
++        if (row > block)
++            mask_op_emit(ctx, op, x, block, w, row - block, 255U);
++        block = row + 1;
++        if (row == y + h)
++            break;
++
++        ERRRectRow rr[ER_CLIP_STACK_DEPTH];
++        int lo = x, hi = x + w; /* solid span: every mask full */
++        for (int m = 0; m < mask_count; m++)
+         {
+-            const int top = ctx->band_oy, bot = ctx->band_oy + ctx->band_h;
+-            if (y < top)
++            const ClipEntry* e = masks[m];
++            er_rrect_row(e->bw, e->bh, e->r_tl, e->r_tr, e->r_br, e->r_bl, row - e->by, &rr[m]);
++            if (e->bx + rr[m].x0 > lo)
++                lo = e->bx + rr[m].x0;
++            if (e->bx + rr[m].x1 < hi)
++                hi = e->bx + rr[m].x1;
++        }
++        if (hi > lo)
++            mask_op_emit(ctx, op, lo, row, hi - lo, 1, 255U);
++        for (int px = x; px < x + w; px++)
++        {
++            if (px >= lo && px < hi)
+             {
+-                const int d = top - y;
+-                src = (const uint8_t*)src + (size_t)d * (size_t)stride;
+-                h -= d;
+-                y = top;
++                px = hi - 1;
++                continue;
+             }
+-            if (y + h > bot)
+-                h = bot - y;
+-            if (h <= 0)
+-                return;
++            uint32_t cov = 255U;
++            for (int m = 0; m < mask_count && cov; m++)
++                cov = (cov * mask_px_cov(masks[m], &rr[m], px) + 127U) / 255U;
++            if (cov)
++                mask_op_emit(ctx, op, px, row, 1, 1, cov);
+         }
+-        ER_BLIT_PERF_BEGIN();
+-        g_backend->copy_rect(src, stride, x, y - ctx->band_oy, w, h, g_backend->ctx);
+-        ER_BLIT_PERF_END(w, h);
+     }
+ }
+ 
++/** @brief Whether any row of [y, y+h) crosses a corner arc of one of the masks. */
++static bool masks_cut(const ClipEntry* const* masks, int mask_count, int y, int h)
++{
++    for (int m = 0; m < mask_count; m++)
++    {
++        const ClipEntry* e = masks[m];
++        const int top = e->r_tl > e->r_tr ? e->r_tl : e->r_tr;
++        const int bot = e->r_bl > e->r_br ? e->r_bl : e->r_br;
++        if ((top > 0 && y < e->by + top) || (bot > 0 && y + h > e->by + e->bh - bot))
++            return true;
++    }
++    return false;
++}
++
++/** @brief Routes a clipped op through the masks when a corner cuts it, else straight out. */
++static bool masked(NRCtx* ctx, const MaskOp* op, int w, int h)
++{
++    const ClipEntry* masks[ER_CLIP_STACK_DEPTH];
++    const int mask_count = active_masks(ctx, masks);
++    if (mask_count == 0 || !masks_cut(masks, mask_count, op->y, h))
++        return false;
++    mask_emit(ctx, op, w, h, masks, mask_count);
++    return true;
++}
++
++/**
++ * @brief Re-emits a straight-alpha fill as premultiplied rows through er_blit_blend, which applies the
++ *        inherited draw alpha and the blend mode (backend fill_rect does neither).
++ */
++static void fill_through_blend(NRCtx* ctx, uint32_t argb, int x, int y, int w, int h)
++{
++    const uint8_t a = (uint8_t)((argb >> 24) & 0xFFU);
++    if (a == 0U)
++        return;
++    if (!apply_clip(ctx, &x, &y, &w, &h))
++        return;
++    const uint32_t pr = (uint32_t)((argb >> 16) & 0xFFU) * a / 255U;
++    const uint32_t pg = (uint32_t)((argb >> 8) & 0xFFU) * a / 255U;
++    const uint32_t pb = (uint32_t)(argb & 0xFFU) * a / 255U;
++    const uint32_t premul = ((uint32_t)a << 24) | (pr << 16) | (pg << 8) | pb;
++    const int chunk = w < ER_FILL_ROW_CHUNK ? w : ER_FILL_ROW_CHUNK;
++    for (int i = 0; i < chunk; i++)
++        ctx->fill_row[i] = premul;
++    for (int row = 0; row < h; row++)
++        for (int cx = 0; cx < w; cx += ER_FILL_ROW_CHUNK)
++        {
++            const int cw = (w - cx) < ER_FILL_ROW_CHUNK ? (w - cx) : ER_FILL_ROW_CHUNK;
++            er_blit_blend(ctx->fill_row, cw * (int)sizeof(uint32_t), 255U, x + cx, y + row, cw, 1);
++        }
++}
++
++void er_blit_fill(uint32_t argb, int x, int y, int w, int h)
++{
++    NRCtx* const ctx = rc();
++    if (ctx->draw_alpha < 255U || ctx->blend_mode != ER_BLEND_NORMAL)
++    {
++        /* Inherited alpha or a blend mode: the color goes through the blend path (er_blit_blend applies
++         * both), so the row holds it at its ORIGINAL alpha. */
++        fill_through_blend(ctx, argb, x, y, w, h);
++        return;
++    }
++    if (!apply_clip(ctx, &x, &y, &w, &h))
++        return;
++    const MaskOp op = {MASK_OP_FILL, argb, NULL, 0, 255U, x, y};
++    if (!masked(ctx, &op, w, h))
++        emit_fill(ctx, argb, x, y, w, h);
++}
++
++void er_blit_copy(const void* src, int stride, int x, int y, int w, int h)
++{
++    NRCtx* const ctx = rc();
++    if (ctx->draw_alpha < 255U || ctx->blend_mode != ER_BLEND_NORMAL)
++    {
++        /* An opaque copy becomes a blend at the inherited alpha and mode (er_blit_blend applies both). */
++        er_blit_blend(src, stride, 255U, x, y, w, h);
++        return;
++    }
++    const int orig_x = x;
++    const int orig_y = y;
++    if (!apply_clip(ctx, &x, &y, &w, &h))
++        return;
++    /* Advance source pointer to account for clipped rows and columns. */
++    const uint8_t* s = (const uint8_t*)src + (size_t)(y - orig_y) * (size_t)stride + (size_t)(x - orig_x) * 4U;
++    const MaskOp op = {MASK_OP_COPY, 0U, s, stride, 255U, x, y};
++    if (!masked(ctx, &op, w, h))
++        emit_copy(ctx, s, stride, x, y, w, h);
++}
++
+ bool er_blit_copy_fmt(const void* src, int stride, ERImageFormat fmt, int x, int y, int w, int h)
+ {
+     NRCtx* const ctx = rc();
+     /* The format-aware hook applies only when the backend can take the buffer as-is: no inherited
+-     * draw alpha to composite and no scratch capture in flight (scratch buffers are ARGB8888). */
+-    const bool hook = g_backend && g_backend->copy_rect_fmt && ctx->draw_alpha == 255U && !ctx->scratch_buf;
++     * draw alpha to composite, no scratch capture in flight (scratch buffers are ARGB8888), no blend mode
++     * and no rounded clip (the hook replaces whole rects). */
++    const ClipEntry* masks[ER_CLIP_STACK_DEPTH];
++    const bool hook = g_backend && g_backend->copy_rect_fmt && ctx->draw_alpha == 255U && !ctx->scratch_buf
++                      && ctx->blend_mode == ER_BLEND_NORMAL && active_masks(ctx, masks) == 0;
+     if (!hook)
+     {
+         if (fmt != ER_IMG_ARGB8888)
+@@ -589,24 +944,11 @@ bool er_blit_copy_fmt(const void* src, int stride, ERImageFormat fmt, int x, int
+     const int orig_y = y;
+     if (!apply_clip(ctx, &x, &y, &w, &h))
+         return true; /* fully clipped: nothing to draw */
+-    src = (const uint8_t*)src + (size_t)(y - orig_y) * (size_t)stride + (size_t)(x - orig_x) * (size_t)bpp;
+-    if (ctx->band_h > 0)
+-    {
+-        const int top = ctx->band_oy, bot = ctx->band_oy + ctx->band_h;
+-        if (y < top)
+-        {
+-            const int d = top - y;
+-            src = (const uint8_t*)src + (size_t)d * (size_t)stride;
+-            h -= d;
+-            y = top;
+-        }
+-        if (y + h > bot)
+-            h = bot - y;
+-        if (h <= 0)
+-            return true;
+-    }
++    const uint8_t* s = (const uint8_t*)src + (size_t)(y - orig_y) * (size_t)stride + (size_t)(x - orig_x) * (size_t)bpp;
++    if (!band_clamp(ctx, &s, stride, &y, &h))
++        return true;
+     ER_BLIT_PERF_BEGIN();
+-    g_backend->copy_rect_fmt(src, stride, fmt, x, y - ctx->band_oy, w, h, g_backend->ctx);
++    g_backend->copy_rect_fmt(s, stride, fmt, x, y - ctx->band_oy, w, h, g_backend->ctx);
+     ER_BLIT_PERF_END(w, h);
+     return true;
+ }
+@@ -624,35 +966,10 @@ void er_blit_blend(const void* src, int stride, uint8_t alpha, int x, int y, int
+     const int orig_y = y;
+     if (!apply_clip(ctx, &x, &y, &w, &h))
+         return;
+-    const int dx = x - orig_x;
+-    const int dy = y - orig_y;
+-    src = (const uint8_t*)src + (size_t)dy * (size_t)stride + (size_t)dx * 4U;
+-    if (ctx->scratch_buf)
+-    {
+-        scratch_do_blend(src, stride, alpha, x - ctx->scratch_ox, y - ctx->scratch_oy, w, h);
+-        return;
+-    }
+-    if (g_backend && g_backend->blend_rect)
+-    {
+-        if (ctx->band_h > 0)
+-        {
+-            const int top = ctx->band_oy, bot = ctx->band_oy + ctx->band_h;
+-            if (y < top)
+-            {
+-                const int d = top - y;
+-                src = (const uint8_t*)src + (size_t)d * (size_t)stride;
+-                h -= d;
+-                y = top;
+-            }
+-            if (y + h > bot)
+-                h = bot - y;
+-            if (h <= 0)
+-                return;
+-        }
+-        ER_BLIT_PERF_BEGIN();
+-        g_backend->blend_rect(src, stride, alpha, x, y - ctx->band_oy, w, h, g_backend->ctx);
+-        ER_BLIT_PERF_END(w, h);
+-    }
++    const uint8_t* s = (const uint8_t*)src + (size_t)(y - orig_y) * (size_t)stride + (size_t)(x - orig_x) * 4U;
++    const MaskOp op = {MASK_OP_BLEND, 0U, s, stride, alpha, x, y};
++    if (!masked(ctx, &op, w, h))
++        emit_blend(ctx, s, stride, alpha, x, y, w, h);
+ }
+ 
+ void er_blit_clear(int x, int y, int w, int h)
+@@ -732,6 +1049,9 @@ void embedded_renderer_set_backend(const EmbeddedRenderBackend* backend)
+     {
+         NRCtx* c = &s_ctx[i];
+         c->clip_depth = 0;
++        c->rounded_count = 0;
++        c->mask_floor = 0;
++        c->blend_mode = ER_BLEND_NORMAL;
+         c->band_oy = 0;
+         c->band_h = 0;
+         c->scratch_buf = NULL;
+diff --git a/engine/core/renderer_internal.h b/engine/core/renderer_internal.h
+index c042a8e..0374130 100644
+--- a/engine/core/renderer_internal.h
++++ b/engine/core/renderer_internal.h
+@@ -225,6 +225,41 @@ void er_pop_clip_rect(void);
+  */
+ void er_push_clip_reset(void);
+ 
++/**
++ * @brief Pushes a clip rectangle that also masks to a rounded rect: the box and its corner radii.
++ *
++ * Like er_push_clip_rect, intersected with the active clip, and every subsequent blit is additionally
++ * covered by the rounded shape, anti-aliased as a rounded fill of the same box would be. Nested rounded
++ * clips multiply. Radii are clamped with er_rrect_clamp_radii; all zero pushes a plain rect. Balance
++ * with er_pop_clip_rect().
++ */
++void er_push_clip_rrect(int x, int y, int w, int h, int r_tl, int r_tr, int r_br, int r_bl);
++
++/**
++ * @brief Suspends the rounded clips currently on the stack until er_mask_resume().
++ *
++ * An offscreen capture renders its group unmasked and is masked once, by the restored stack, as it is
++ * blended out; masking inside as well would apply the corner coverage twice. Rounded clips pushed while
++ * suspended still apply.
++ *
++ * @return The previous state, for er_mask_resume().
++ */
++int er_mask_suspend(void);
++
++/** @brief Restores the rounded clips er_mask_suspend() suspended. */
++void er_mask_resume(int floor);
++
++/**
++ * @brief Sets the ERBlendMode applied to every subsequent blit (ER_BLEND_NORMAL by default).
++ *
++ * ER_BLEND_ADD adds each primitive's colour to what is beneath it, saturating, so overlapping primitives
++ * add up too. In an offscreen capture alpha adds as well, and the capture composites normally.
++ */
++void er_set_blend_mode(uint8_t mode);
++
++/** @brief Returns the current blend mode. */
++uint8_t er_get_blend_mode(void);
++
+ /**
+  * @brief Sets the current band strip (banded rendering): screen rows [oy, oy + h).
+  *
+diff --git a/engine/include/er_scene.h b/engine/include/er_scene.h
+index e0cfdf3..29fca9f 100644
+--- a/engine/include/er_scene.h
++++ b/engine/include/er_scene.h
+@@ -269,6 +269,15 @@ extern "C"
+         ER_OVERFLOW_SCROLL = 2,  /**< Content clipped; scroll offset applied by ScrollView. */
+     } EROverflow;
+ 
++    /**
++     * @brief How a View-family node's drawing, and its subtree's, combines with what is beneath it.
++     */
++    typedef enum
++    {
++        ER_BLEND_NORMAL = 0, /**< Source-over (default). */
++        ER_BLEND_ADD = 1,    /**< Added, saturating: light that brightens what it covers (CSS plus-lighter). */
++    } ERBlendMode;
++
+     /**
+      * @brief How an Image node scales its source bitmap to fill the computed layout rect.
+      *
+@@ -799,6 +808,10 @@ extern "C"
+         uint8_t border_gradient_stop_count; /**< Valid entries in border_gradient_stops. */
+         ERGradientStop border_gradient_stops[ER_BORDER_GRADIENT_MAX_STOPS]; /**< Ascending positions 0–1. */
+ 
++        /* --- Rounded clip and blend mode (View-family) --- */
++        uint8_t rounded_clip; /**< 1 = clip children to the rounded border box (implies overflow hidden). */
++        uint8_t blend_mode;   /**< ERBlendMode for this node and its subtree. */
++
+         /* --- ActivityIndicator --- */
+         uint32_t indicator_color; /**< Spinner dot color; 0 = 0xFFFFFFFF (white). */
+         uint8_t animating;        /**< 1 = spinning (default when node created), 0 = stopped. */
+diff --git a/engine/include/native_renderer.h b/engine/include/native_renderer.h
+index e3d506d..bc1bed8 100644
+--- a/engine/include/native_renderer.h
++++ b/engine/include/native_renderer.h
+@@ -130,6 +130,17 @@ extern "C"
+ 
+         /** @brief Set a framebuffer rect to 0x00000000. */
+         void (*clear_rect)(int x, int y, int w, int h, void* ctx);
++
++        /*------------------------------------------------------------------------------------------------
++         - Additive blend (optional). Adds a premultiplied ARGB8888 buffer, scaled by the global alpha, to
++           the framebuffer's colour channels, saturating at 255, and leaves the destination alpha as it is:
++           over an opaque pixel that is plain addition, and over a pixel cleared for a host layer the
++           presenter's premultiplied source-over then adds the colour to the layer too. Used for nodes with
++           ER_BLEND_ADD. Leave NULL and they draw source-over through blend_rect.
++         ------------------------------------------------------------------------------------------------*/
++
++        /** @brief Add a premultiplied buffer's colour into the framebuffer at the given global alpha. */
++        void (*add_rect)(const void* src, int src_stride_bytes, uint8_t alpha, int x, int y, int w, int h, void* ctx);
+     } EmbeddedRenderBackend;
+ 
+     /**
+diff --git a/engine/rendering/scratch_pool.c b/engine/rendering/scratch_pool.c
+index a1deb79..9a8e755 100644
+--- a/engine/rendering/scratch_pool.c
++++ b/engine/rendering/scratch_pool.c
+@@ -32,6 +32,7 @@ typedef struct
+     int ox;              /**< World-space X of scratch[0]. */
+     int oy;              /**< World-space Y of scratch[0]. */
+     uint8_t saved_alpha; /**< Inherited draw alpha to re-apply when the slot is blended out. */
++    int saved_mask_floor; /**< Rounded clips suspended for the capture (er_mask_suspend). */
+ } ScratchMeta;
+ 
+ /*----------------------------------------------------------------------------------------------------------------------
+@@ -165,6 +166,7 @@ bool er_scratch_push(int x, int y, int w, int h)
+     pc()->meta[pc()->depth].ox = x;
+     pc()->meta[pc()->depth].oy = y;
+     pc()->meta[pc()->depth].saved_alpha = er_get_draw_alpha();
++    pc()->meta[pc()->depth].saved_mask_floor = er_mask_suspend();
+     er_set_draw_alpha(255U);
+     pc()->depth++;
+ 
+@@ -201,6 +203,7 @@ void er_scratch_pop_blend(uint8_t alpha, int x, int y, int w, int h)
+     /* Re-apply the inherited draw alpha before blending the captured strip out, so a group
+      * composited inside a degraded (multiplied-alpha) ancestor is dimmed exactly once. */
+     er_set_draw_alpha(pc()->meta[pc()->depth].saved_alpha);
++    er_mask_resume(pc()->meta[pc()->depth].saved_mask_floor);
+ 
+     const uint32_t* slot = slot_px(pc()->depth);
+     const int stride = (int)(ERUI_SCRATCH_W * sizeof(uint32_t));
+diff --git a/engine/scene/compositor.c b/engine/scene/compositor.c
+index 8db8602..8faa210 100644
+--- a/engine/scene/compositor.c
++++ b/engine/scene/compositor.c
+@@ -1090,7 +1090,7 @@ static bool parent_hidden(const ERNode* n)
+ static bool node_clips_children(const ERNode* n)
+ {
+     return n->layout.overflow == ER_OVERFLOW_HIDDEN || n->layout.overflow == ER_OVERFLOW_SCROLL
+-           || n->type == ER_NODE_SCROLL_VIEW || n->type == ER_NODE_FLAT_LIST;
++           || n->type == ER_NODE_SCROLL_VIEW || n->type == ER_NODE_FLAT_LIST || n->rounded_clip;
+ }
+ 
+ /**
+@@ -2383,6 +2383,8 @@ static bool node_covers_opaque(const ERNode* c, int translate_x, int translate_y
+         return false;
+     if (c->layout.display == ER_DISPLAY_NONE || c->subtree_hidden || c->has_transform)
+         return false;
++    if (c->blend_mode != ER_BLEND_NORMAL)
++        return false; /* added to what is beneath, which therefore still shows */
+ 
+     switch (c->type)
+     {
+@@ -2499,7 +2501,24 @@ static int paint_masked_text(const char* text, const ERTextRenderParams* par)
+  * @param[in] translate_x   Accumulated horizontal scroll offset from ancestor ScrollViews.
+  * @param[in] translate_y   Accumulated vertical scroll offset from ancestor ScrollViews.
+  */
++static void render_tree_body(ERNode* n, bool parent_dirty, bool occluded, int translate_x, int translate_y);
++
++/* A node with a blend mode sets it for everything it and its subtree draw, its transform emit and opacity
++ * composite included, and restores the outer mode after. */
+ static void render_tree(ERNode* n, bool parent_dirty, bool occluded, int translate_x, int translate_y)
++{
++    if (n->blend_mode == ER_BLEND_NORMAL)
++    {
++        render_tree_body(n, parent_dirty, occluded, translate_x, translate_y);
++        return;
++    }
++    const uint8_t outer = er_get_blend_mode();
++    er_set_blend_mode(n->blend_mode);
++    render_tree_body(n, parent_dirty, occluded, translate_x, translate_y);
++    er_set_blend_mode(outer);
++}
++
++static void render_tree_body(ERNode* n, bool parent_dirty, bool occluded, int translate_x, int translate_y)
+ {
+     if (n->layout.display == ER_DISPLAY_NONE)
+         return;
+@@ -3215,7 +3234,15 @@ static void render_node_content(
+         }
+     }
+ 
+-    if (clips)
++    if (clips && n->rounded_clip)
++    {
++        const ERViewProps* vp = &n->props.view;
++        er_push_clip_rrect(px, py, w, h, vp->border_tl_radius > 0 ? vp->border_tl_radius : vp->border_radius,
++                           vp->border_tr_radius > 0 ? vp->border_tr_radius : vp->border_radius,
++                           vp->border_br_radius > 0 ? vp->border_br_radius : vp->border_radius,
++                           vp->border_bl_radius > 0 ? vp->border_bl_radius : vp->border_radius);
++    }
++    else if (clips)
+         er_push_clip_rect(px, py, w, h);
+ 
+     for (int i = 0; i < child_count; i++)
+@@ -3229,6 +3256,14 @@ static void render_node_content(
+         render_tree(child, needs_paint, occluded || buried, child_tx, child_ty);
+     }
+ 
++    /* A rounded clip gives way to the plain box before the edge lights: they carry their own anti-aliased
++     * edge, which the mask would cut a second time. Outer rounded clips still apply. */
++    if (clips && n->rounded_clip)
++    {
++        er_pop_clip_rect();
++        er_push_clip_rect(px, py, w, h);
++    }
++
+     /* The border gradient and sweep light the edge over the node's content, like a focus ring. */
+     if (should_render && (n->type == ER_NODE_VIEW || n->type == ER_NODE_PRESSABLE))
+     {
+@@ -3839,12 +3874,16 @@ void er_node_set_props(ERNode* node, const ERProps* props)
+                            || node->tp_rotate_y != 0.0f || node->tp_perspective != 0.0f);
+ 
+     /* Copy type-specific visual props. */
++    node->rounded_clip = false;
++    node->blend_mode = ER_BLEND_NORMAL;
+     switch (node->type)
+     {
+         case ER_NODE_VIEW:
+         case ER_NODE_SCROLL_VIEW:
+         case ER_NODE_PRESSABLE:
+         case ER_NODE_FLAT_LIST:
++            node->rounded_clip = props->rounded_clip != 0U;
++            node->blend_mode = props->blend_mode == ER_BLEND_ADD ? ER_BLEND_ADD : ER_BLEND_NORMAL;
+             node->props.view.background_color = props->background_color;
+             node->props.view.border_color = props->border_color;
+             node->props.view.border_width = props->border_width;
+@@ -5463,6 +5502,10 @@ static bool is_plain_container(const ERNode* a, int* border, int* radius)
+     const ERViewProps* vp = &a->props.view;
+     if (vp->opacity != 255U || vp->shadow_opacity > 0.0f || vp->elevation != 0U)
+         return false;
++    /* A rounded clip changes its children's pixels at the corners, and an additive node's drawing depends
++     * on what is beneath it: neither is the same after a move. */
++    if (a->rounded_clip || a->blend_mode != ER_BLEND_NORMAL)
++        return false;
+ #if ERUI_GRADIENT
+     if (vp->gradient_type != ER_GRADIENT_NONE && vp->gradient_stop_count >= 2U)
+         return false;
+@@ -5826,9 +5869,10 @@ static bool translate_by_copy(ERNode* t, ERDamageSet* dmg, int rb_x0, int rb_y0,
+             || sy + sh > py + ph)
+             return false;
+     }
+-    /* Seen through ancestors that blend or transform it, the page is not alone in its pixels. */
++    /* Seen through ancestors that blend or transform it, the page is not alone in its pixels. A rounded
++     * clip's corners stay put while the pixels move. */
+     for (const ERNode* a = er_get_node(t->parent_tag); a; a = er_get_node(a->parent_tag))
+-        if (a->has_transform
++        if (a->has_transform || a->rounded_clip || a->blend_mode != ER_BLEND_NORMAL
+             || ((a->type == ER_NODE_VIEW || a->type == ER_NODE_SCROLL_VIEW || a->type == ER_NODE_PRESSABLE
+                  || a->type == ER_NODE_FLAT_LIST)
+                 && a->props.view.opacity != 255U))
+@@ -6062,6 +6106,9 @@ static bool layer_candidate(ERNode* n, LayerCandidate* c)
+ #endif
+         if (a->type == ER_NODE_MODAL || a->subtree_hidden)
+             return false;
++        /* The host draws a layer square-cornered and source-over: it can neither be masked nor added. */
++        if (a->rounded_clip || a->blend_mode != ER_BLEND_NORMAL)
++            return false;
+         chained = chained && c->chain_len < LAYER_CHAIN_MAX && layer_chain_link(a, child);
+         if (chained)
+             c->chain[c->chain_len++] = a;
+diff --git a/engine/scene/er_node_internal.h b/engine/scene/er_node_internal.h
+index 6d3cc91..6a10794 100644
+--- a/engine/scene/er_node_internal.h
++++ b/engine/scene/er_node_internal.h
+@@ -530,6 +530,10 @@ struct ERNode
+      * measures every node by its own rect — cannot otherwise see, so the pre-pass damages the
+      * post-layout subtree bounds as well (the pre-change ones were banked when the prop was set). */
+     bool overflow_toggled;
++    /* View-family style flags, copied from ERProps (always false/normal for other types so they can be read
++     * without knowing which props union member is live). */
++    bool rounded_clip;  /**< Children clip to the rounded border box (er_push_clip_rrect). */
++    uint8_t blend_mode; /**< ERBlendMode for this node and its subtree. */
+     /* Host layers, decided by the layer pass at the start of each painting commit: an image the host draws
+      * (render_node_content clears its rect instead), and the containers whose opacity that layer carries
+      * (painted at full opacity, their opacity animations repaint nothing). */
+diff --git a/engine/tests/rendering/CMakeLists.txt b/engine/tests/rendering/CMakeLists.txt
+index d153e3a..d843f8e 100644
+--- a/engine/tests/rendering/CMakeLists.txt
++++ b/engine/tests/rendering/CMakeLists.txt
+@@ -212,6 +212,11 @@ target_link_libraries(test_border_sweep PRIVATE embedded-react)
+ target_include_directories(test_border_sweep PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../core)
+ add_test(NAME rendering_border_sweep COMMAND test_border_sweep)
+ 
++add_executable(test_rounded_clip test_rounded_clip.c)
++target_link_libraries(test_rounded_clip PRIVATE embedded-react)
++target_include_directories(test_rounded_clip PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../core)
++add_test(NAME rendering_rounded_clip COMMAND test_rounded_clip)
++
+ add_executable(test_transform_cache test_transform_cache.c)
+ target_link_libraries(test_transform_cache PRIVATE embedded-react Threads::Threads)
+ # test_transform_cache needs engine/core for renderer_internal.h (er_render_worker_exec and the worker build cap).
+diff --git a/engine/tests/rendering/test_rounded_clip.c b/engine/tests/rendering/test_rounded_clip.c
+new file mode 100644
+index 0000000..219ac13
+--- /dev/null
++++ b/engine/tests/rendering/test_rounded_clip.c
+@@ -0,0 +1,392 @@
++/*
++ * Copyright 2026 PS5 React contributors
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++/*
++ * roundedClip masks children to the parent's rounded box exactly as a rounded background of that box is
++ * painted, while overflow hidden alone still clips to the rectangle. mixBlendMode plus-lighter adds a
++ * subtree's drawing to what is beneath it, inside opacity groups too. Every damage-clipped frame matches
++ * a full repaint.
++ */
++#include "er_scene.h"
++#include "native_renderer.h"
++#include "renderer_internal.h"
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++#define FB_W 160
++#define FB_H 120
++#define BG 0xFF404040U
++
++typedef struct
++{
++    uint32_t* fb;
++    int fb_w;
++    int fb_h;
++} TestCtx;
++
++static uint32_t div255(uint32_t v)
++{
++    return (v + 127U) / 255U;
++}
++
++static uint32_t* px_ref(TestCtx* t, int x, int y)
++{
++    return (x < 0 || y < 0 || x >= t->fb_w || y >= t->fb_h) ? NULL : &t->fb[y * t->fb_w + x];
++}
++
++/** @brief Source-over of one premultiplied pixel, alpha channel included. */
++static uint32_t over(uint32_t d, uint32_t s)
++{
++    const uint32_t inv = 255U - (s >> 24);
++    uint32_t out = 0U;
++    for (int sh = 0; sh < 32; sh += 8)
++        out |= (((s >> sh) & 0xFFU) + div255(((d >> sh) & 0xFFU) * inv)) << sh;
++    return out;
++}
++
++static uint32_t scale(uint32_t p, uint32_t a)
++{
++    uint32_t out = 0U;
++    for (int sh = 0; sh < 32; sh += 8)
++        out |= div255(((p >> sh) & 0xFFU) * a) << sh;
++    return out;
++}
++
++static void fill_cb(uint32_t argb, int x, int y, int w, int h, void* ctx)
++{
++    const uint32_t a = argb >> 24;
++    const uint32_t s = (a << 24) | (div255(((argb >> 16) & 0xFFU) * a) << 16) | (div255(((argb >> 8) & 0xFFU) * a) << 8)
++                       | div255((argb & 0xFFU) * a);
++    for (int row = y; row < y + h; row++)
++        for (int col = x; col < x + w; col++)
++        {
++            uint32_t* d = px_ref(ctx, col, row);
++            if (d)
++                *d = over(*d, s);
++        }
++}
++
++static void blend_cb(const void* src, int stride, uint8_t alpha, int x, int y, int w, int h, void* ctx)
++{
++    for (int row = 0; row < h; row++)
++    {
++        const uint32_t* s = (const uint32_t*)((const uint8_t*)src + (size_t)row * (size_t)stride);
++        for (int col = 0; col < w; col++)
++        {
++            uint32_t* d = px_ref(ctx, x + col, y + row);
++            if (d)
++                *d = over(*d, scale(s[col], alpha));
++        }
++    }
++}
++
++static void copy_cb(const void* src, int stride, int x, int y, int w, int h, void* ctx)
++{
++    blend_cb(src, stride, 255U, x, y, w, h, ctx);
++}
++
++/** @brief Adds colour, saturating, and keeps the destination alpha (the backend contract). */
++static void add_cb(const void* src, int stride, uint8_t alpha, int x, int y, int w, int h, void* ctx)
++{
++    for (int row = 0; row < h; row++)
++    {
++        const uint32_t* s = (const uint32_t*)((const uint8_t*)src + (size_t)row * (size_t)stride);
++        for (int col = 0; col < w; col++)
++        {
++            uint32_t* d = px_ref(ctx, x + col, y + row);
++            if (!d)
++                continue;
++            const uint32_t sp = scale(s[col], alpha);
++            uint32_t out = *d & 0xFF000000U;
++            for (int sh = 0; sh < 24; sh += 8)
++            {
++                const uint32_t c = ((sp >> sh) & 0xFFU) + ((*d >> sh) & 0xFFU);
++                out |= (c > 255U ? 255U : c) << sh;
++            }
++            *d = out;
++        }
++    }
++}
++
++static int fail(const char* msg)
++{
++    fprintf(stderr, "FAIL: %s\n", msg);
++    return EXIT_FAILURE;
++}
++
++static ERProps props_default(void)
++{
++    ERProps p = {0};
++    p.left = p.top = p.right = p.bottom = ER_LAYOUT_AUTO;
++    p.width = p.height = ER_LAYOUT_AUTO;
++    p.min_width = p.max_width = ER_LAYOUT_AUTO;
++    p.min_height = p.max_height = ER_LAYOUT_AUTO;
++    p.padding = p.padding_left = p.padding_top = ER_LAYOUT_AUTO;
++    p.padding_right = p.padding_bottom = ER_LAYOUT_AUTO;
++    p.margin = p.margin_left = p.margin_top = ER_LAYOUT_AUTO;
++    p.margin_right = p.margin_bottom = ER_LAYOUT_AUTO;
++    p.gap = p.row_gap = p.column_gap = ER_LAYOUT_AUTO;
++    p.flex_basis = ER_LAYOUT_AUTO;
++    p.opacity = 255U;
++    return p;
++}
++
++static ERProps box(int x, int y, int w, int h, uint32_t bg)
++{
++    ERProps p = props_default();
++    p.position = ER_POS_ABSOLUTE;
++    p.left = (int16_t)x;
++    p.top = (int16_t)y;
++    p.width = (int16_t)w;
++    p.height = (int16_t)h;
++    p.background_color = bg;
++    return p;
++}
++
++static ERNode* add_node(ERNode* parent, const ERProps* p)
++{
++    ERNode* n = er_node_create(ER_NODE_VIEW);
++    er_node_set_props(n, p);
++    er_tree_append_child(parent, n);
++    return n;
++}
++
++static ERNode* scene_root(void)
++{
++    er_reset();
++    ERNode* root = er_node_create(ER_NODE_VIEW);
++    ERProps rp = box(0, 0, FB_W, FB_H, BG);
++    rp.position = ER_POS_RELATIVE;
++    rp.left = rp.top = ER_LAYOUT_AUTO;
++    er_node_set_props(root, &rp);
++    er_tree_set_root(root);
++    return root;
++}
++
++static void render_full(uint32_t* fb)
++{
++    memset(fb, 0, sizeof(uint32_t) * FB_W * FB_H);
++    er_force_full_repaint();
++    er_commit();
++}
++
++/** @brief The committed frame must equal a full repaint of the same scene. */
++static bool matches_full_repaint(uint32_t* fb)
++{
++    static uint32_t incremental[FB_W * FB_H];
++    memcpy(incremental, fb, sizeof(incremental));
++    render_full(fb);
++    return memcmp(incremental, fb, sizeof(incremental)) == 0;
++}
++
++static bool near(uint32_t a, uint32_t b)
++{
++    for (int sh = 0; sh < 32; sh += 8)
++    {
++        const int d = (int)((a >> sh) & 0xFFU) - (int)((b >> sh) & 0xFFU);
++        if (d < -1 || d > 1)
++            return false;
++    }
++    return true;
++}
++
++int main(void)
++{
++    static uint32_t fb[FB_W * FB_H];
++    static uint32_t reference[FB_W * FB_H];
++    TestCtx t = {fb, FB_W, FB_H};
++    EmbeddedRenderBackend be = {0};
++    be.fill_rect = fill_cb;
++    be.copy_rect = copy_cb;
++    be.blend_rect = blend_cb;
++    be.add_rect = add_cb;
++    be.ctx = &t;
++    embedded_renderer_set_backend(&be);
++
++    /* The reference: a rounded red background of the card's box. */
++    ERNode* root = scene_root();
++    ERProps card = box(20, 20, 100, 60, 0xFFE03020U);
++    card.border_radius = 14;
++    add_node(root, &card);
++    render_full(fb);
++    memcpy(reference, fb, sizeof(reference));
++
++    /* A rounded clip over a square red child paints exactly that. */
++    root = scene_root();
++    card.background_color = 0;
++    card.rounded_clip = 1;
++    ERNode* clip = add_node(root, &card);
++    const ERProps fill = box(-10, -10, 120, 80, 0xFFE03020U);
++    ERNode* child = add_node(clip, &fill);
++    render_full(fb);
++    if (memcmp(fb, reference, sizeof(reference)) != 0)
++        return fail("a child under roundedClip differs from a rounded fill of the same box");
++
++    /* Overflow hidden alone still clips to the rectangle. */
++    card.rounded_clip = 0;
++    card.overflow = ER_OVERFLOW_HIDDEN;
++    er_node_set_props(clip, &card);
++    er_commit();
++    if (t.fb[20 * FB_W + 20] != 0xFFE03020U)
++        return fail("overflow hidden without roundedClip rounded the corners");
++    if (!matches_full_repaint(fb))
++        return fail("turning roundedClip off left a frame that differs from a full repaint");
++
++    /* Back on: the corners return to the background, repainted by damage alone. */
++    card.rounded_clip = 1;
++    er_node_set_props(clip, &card);
++    er_commit();
++    if (t.fb[20 * FB_W + 20] != BG || memcmp(fb, reference, sizeof(reference)) != 0)
++        return fail("turning roundedClip on did not repaint the corners");
++
++    /* A translucent child is captured offscreen and blended out through the mask: masked once, not twice. */
++    ERProps faded = fill;
++    faded.opacity = 160U;
++    er_node_set_props(child, &faded);
++    er_commit();
++    if (t.fb[20 * FB_W + 20] != BG || t.fb[50 * FB_W + 70] == BG || t.fb[50 * FB_W + 70] == 0xFFE03020U)
++        return fail("a translucent child under roundedClip is not blended inside the corners");
++    for (int i = 0; i < FB_W * FB_H; i++)
++    {
++        /* Same coverage as the rounded fill: wherever the reference is partly red, so is this, by as much. */
++        const uint32_t r = (reference[i] >> 16) & 0xFFU, f = (t.fb[i] >> 16) & 0xFFU;
++        const uint32_t want = 0x40U + div255((r - 0x40U) * 160U);
++        if (r >= 0x40U && (f + 1U < want || f > want + 1U))
++            return fail("a translucent child's corner coverage differs from the rounded fill's");
++    }
++    if (!matches_full_repaint(fb))
++        return fail("the masked translucent child differs from a full repaint");
++
++#if ERUI_GRADIENT
++    /* A translucent gradient child goes through the blend path and is masked the same way. */
++    ERProps grad = fill;
++    grad.background_color = 0;
++    grad.gradient_type = ER_GRADIENT_LINEAR;
++    grad.gradient_angle = 90.0f;
++    grad.gradient_stop_count = 2;
++    grad.gradient_stops[0] = (ERGradientStop){0xC0FFFFFFU, 0.0f};
++    grad.gradient_stops[1] = (ERGradientStop){0xC000A0FFU, 1.0f};
++    er_node_set_props(child, &grad);
++    er_commit();
++    if (t.fb[20 * FB_W + 20] != BG || t.fb[(20 + 59) * FB_W + 20 + 99] != BG)
++        return fail("a gradient child painted past the rounded corners");
++    if (t.fb[50 * FB_W + 70] == BG)
++        return fail("a gradient child under roundedClip painted nothing inside");
++    if (!matches_full_repaint(fb))
++        return fail("the masked gradient differs from a full repaint");
++#endif
++
++    /* Moving the child repaints by damage to the same pixels as a full repaint. */
++    faded.left = -4;
++    faded.top = -2;
++    er_node_set_props(child, &faded);
++    er_commit();
++    if (!matches_full_repaint(fb))
++        return fail("moving a child under roundedClip differs from a full repaint");
++
++    /* Nested rounded clips multiply: a tighter inner clip rounds its own corners inside the outer. */
++    ERProps inner = box(0, 0, 50, 30, 0);
++    inner.border_radius = 10;
++    inner.rounded_clip = 1;
++    er_node_set_props(child, &fill);
++    ERNode* inner_clip = add_node(child, &inner);
++    const ERProps white = box(0, 0, 200, 200, 0xFFFFFFFFU);
++    add_node(inner_clip, &white);
++    er_commit();
++    /* child sits at (-10, -10) in the card, so the inner box starts at the card's top-left minus 10. */
++    if (t.fb[20 * FB_W + 20] != BG)
++        return fail("a nested rounded clip painted past the outer corner");
++    if (t.fb[(10 + 29) * FB_W + 10 + 25] != 0xFFFFFFFFU)
++        return fail("the nested clip's content is missing");
++    if (!matches_full_repaint(fb))
++        return fail("nested rounded clips differ from a full repaint");
++
++    /* plus-lighter adds to what is beneath, overlapping children add up, and it saturates. */
++    root = scene_root();
++    ERProps a = box(10, 10, 40, 40, 0xFF302010U);
++    a.blend_mode = ER_BLEND_ADD;
++    add_node(root, &a);
++    ERProps b = box(30, 30, 40, 40, 0xFF302010U);
++    b.blend_mode = ER_BLEND_ADD;
++    add_node(root, &b);
++    ERProps hot = box(100, 10, 20, 20, 0xFFF0F0F0U);
++    hot.blend_mode = ER_BLEND_ADD;
++    add_node(root, &hot);
++    ERProps half = box(100, 60, 20, 20, 0x80FFFFFFU);
++    half.blend_mode = ER_BLEND_ADD;
++    add_node(root, &half);
++    render_full(fb);
++    if (t.fb[15 * FB_W + 15] != 0xFF706050U)
++        return fail("plus-lighter did not add its colour to the background");
++    if (t.fb[40 * FB_W + 40] != 0xFFA08060U)
++        return fail("overlapping plus-lighter views did not add up");
++    if (t.fb[20 * FB_W + 110] != 0xFFFFFFFFU)
++        return fail("plus-lighter did not saturate at white");
++    if (t.fb[70 * FB_W + 110] != 0xFFC0C0C0U)
++        return fail("a translucent plus-lighter fill did not add its premultiplied colour");
++
++    /* A plus-lighter group at half opacity adds its normal-blended subtree at half strength. */
++    root = scene_root();
++    ERProps group = box(10, 10, 60, 60, 0);
++    group.blend_mode = ER_BLEND_ADD;
++    group.opacity = 128U;
++    ERNode* g = add_node(root, &group);
++    const ERProps gray = box(0, 0, 60, 60, 0xFF404040U);
++    add_node(g, &gray);
++    render_full(fb);
++    if (!near(t.fb[40 * FB_W + 40], 0xFF606060U))
++        return fail("a half-opacity plus-lighter group did not add at half strength");
++
++#if ERUI_GRADIENT
++    /* The glass: an additive gradient band inside a rounded clip lights the card and nothing past it. */
++    root = scene_root();
++    ERNode* glass = add_node(root, &card);
++    ERProps base = box(0, 0, 100, 60, 0xFF203040U);
++    add_node(glass, &base);
++    ERProps band = box(-30, 0, 160, 60, 0);
++    band.blend_mode = ER_BLEND_ADD;
++    band.gradient_type = ER_GRADIENT_LINEAR;
++    band.gradient_angle = 90.0f;
++    band.gradient_stop_count = 3;
++    band.gradient_stops[0] = (ERGradientStop){0x00FFFFFFU, 0.0f};
++    band.gradient_stops[1] = (ERGradientStop){0x80FFFFFFU, 0.5f};
++    band.gradient_stops[2] = (ERGradientStop){0x00FFFFFFU, 1.0f};
++    ERNode* light = add_node(glass, &band);
++    render_full(fb);
++    if (t.fb[20 * FB_W + 20] != BG)
++        return fail("the additive band lit past the rounded corner");
++    if ((t.fb[50 * FB_W + 70] & 0xFFU) <= 0x40U)
++        return fail("the additive band did not brighten the card");
++    band.left = -10;
++    er_node_set_props(light, &band);
++    er_commit();
++    if (!matches_full_repaint(fb))
++        return fail("moving the additive band differs from a full repaint");
++#endif
++
++    /* Without add_rect the backend draws plus-lighter source-over: dimmer, never missing. */
++    be.add_rect = NULL;
++    embedded_renderer_set_backend(&be);
++    root = scene_root();
++    add_node(root, &a);
++    render_full(fb);
++    if (t.fb[15 * FB_W + 15] != 0xFF302010U)
++        return fail("without add_rect plus-lighter did not fall back to source-over");
++
++    return EXIT_SUCCESS;
++}

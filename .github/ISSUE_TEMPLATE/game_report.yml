@@ -1,0 +1,92 @@
+name: Game / source report
+description: A game in the store has a problem, like a download source that doesn't work, a game that won't install or start, or wrong details.
+title: "[Game] "
+labels: ["catalog"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One report per game. If several sources of the same game fail, list them all here. Sources are third-party hosts: files get deleted and pages change, so a source that worked last week can stop working.
+
+  - type: input
+    id: game
+    attributes:
+      label: Game
+      description: The name exactly as it appears in Overdrive.
+      placeholder: Castlevania Dominus Collection
+    validations:
+      required: true
+
+  - type: dropdown
+    id: problem
+    attributes:
+      label: What's wrong?
+      options:
+        - "Source: the host says the file was deleted or not found"
+        - "Source: the browser page opens but the download is never captured"
+        - "Source: the download starts but fails or stops"
+        - "Source: the download finishes but it's the wrong file or game"
+        - "Source: the host is blocked in my country"
+        - The game doesn't install or start after downloading
+        - Wrong name, details, size or cover
+        - Something else
+    validations:
+      required: true
+
+  - type: input
+    id: source
+    attributes:
+      label: Source
+      description: For a download problem, the name on the source's button in the game page.
+      placeholder: Fpkg - VikingFile
+
+  - type: dropdown
+    id: host
+    attributes:
+      label: Host
+      description: For a download problem, the host of that source.
+      options:
+        - VikingFile
+        - DataNodes
+        - FileKeeper
+        - AkiraBox
+        - MediaFire
+        - Archive.org
+        - LinkVault
+        - Other (write it in the details)
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: What you saw, and any error message the app or the host's page showed.
+    validations:
+      required: true
+
+  - type: input
+    id: country
+    attributes:
+      label: Country
+      description: For a download problem. Some hosts block some countries, so this helps tell a blocked host from a dead file.
+      placeholder: Italy
+
+  - type: input
+    id: version
+    attributes:
+      label: Overdrive version
+      placeholder: v1.0.5
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Press the Create button on the controller to capture the screen, then drag the file here.
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log
+      description: For downloads, copy `/data/ps5-react/PPSA99058/app.log` over FTP right after it happens and paste it here.
+      render: text

@@ -1,0 +1,1041 @@
+Embedded React: View background gradients from JavaScript, dithered and damage-clipped.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, in the patch order listed there.
+Changed files: engine/rendering/gradient.{c,h}, engine/include/er_scene.h,
+engine/scene/er_node_internal.h, engine/scene/compositor.c,
+engine/tests/rendering/{CMakeLists.txt,test_gradient.c},
+bridges/quickjs/native_ui_bridge.c and
+bridges/quickjs/js/src/embedded-react/index.d.ts. Proposed upstream as pull
+request #283.
+
+The engine could rasterize View gradients (ERUI_GRADIENT) but the QuickJS
+bridge only exposed them for <Dial>. This adds a `backgroundGradient` style
+({type: 'linear', angle | to, stops} or {type: 'radial', stops}) with CSS
+linear-gradient()/radial-gradient(circle farthest-corner) semantics, including
+`to <corner>` lines that follow the box's aspect ratio (new gradient_corner
+prop, stored in existing padding after gradient_type). The rasterizer now
+interpolates stops premultiplied (as CSS does), quantizes through a per-render
+8.8 fixed-point ramp with a 4x4 ordered dither keyed to framebuffer coordinates
+(no 8-bit steps on long dark ramps; flat colours stay exact), assembles only the
+rows and columns inside the active clip, so a small damage rect over a
+full-screen gradient costs only its own pixels, and reuses rows for
+axis-aligned gradients (a horizontal ramp is assembled once per dither phase).
+
+diff --git a/bridges/quickjs/js/src/embedded-react/index.d.ts b/bridges/quickjs/js/src/embedded-react/index.d.ts
+index 9823c0e..5f47744 100644
+--- a/bridges/quickjs/js/src/embedded-react/index.d.ts
++++ b/bridges/quickjs/js/src/embedded-react/index.d.ts
+@@ -65,6 +65,25 @@ export type TransformStyle =
+   | {rotateZ: string | AnimatedValue}
+   | {perspective: number};
+ 
++/**
++ * A View background gradient, as CSS draws one (stops interpolated premultiplied, at most 4 kept; a missing
++ * offset spaces the stops evenly). It paints instead of `backgroundColor` and is clipped to `borderRadius`.
++ */
++export type BackgroundGradient =
++  | {
++      /** linear-gradient(): `angle` in degrees (0 points to the top, 90 to the right) or a `to` side or
++       *  corner; the default is `to: 'bottom'`. A corner follows the box's aspect ratio, as in CSS. */
++      type: 'linear';
++      angle?: number;
++      to?: 'top' | 'right' | 'bottom' | 'left' | 'top right' | 'bottom right' | 'bottom left' | 'top left';
++      stops: Array<{color: string; offset?: number}>;
++    }
++  | {
++      /** radial-gradient(circle farthest-corner at center, …). */
++      type: 'radial';
++      stops: Array<{color: string; offset?: number}>;
++    };
++
+ /**
+  * Value type of an untyped style entry. Styles stay open (a not-yet-declared key is not an error), and the
+  * union covers the object- and array-valued entries — `shadowOffset`, `transformOrigin`, `transform` — so
+@@ -77,6 +96,7 @@ export type StyleValue =
+   | TransformStyle[]
+   | ShadowOffset
+   | TransformOrigin
++  | BackgroundGradient
+   | undefined;
+ 
+ /** A single style object. Properties mirror the React Native subset the engine supports. */
+@@ -158,6 +178,7 @@ export interface ViewStyle {
+ 
+   // Paint.
+   backgroundColor?: string | AnimatedValue;
++  backgroundGradient?: BackgroundGradient;
+   opacity?: number | AnimatedValue;
+ 
+   // Border.
+diff --git a/bridges/quickjs/native_ui_bridge.c b/bridges/quickjs/native_ui_bridge.c
+index 8160e7a..269afb0 100644
+--- a/bridges/quickjs/native_ui_bridge.c
++++ b/bridges/quickjs/native_ui_bridge.c
+@@ -1170,6 +1170,7 @@ typedef enum
+     PROP_VALUE_START,
+     PROP_MIN_SPAN,
+     PROP_INDICATOR_GRADIENT,
++    PROP_BACKGROUND_GRADIENT,
+     PROP_COUNT_,
+ } PropId;
+ 
+@@ -1293,6 +1294,7 @@ static const char* const k_prop_names[PROP_COUNT_] = {
+     [PROP_VALUE_START] = "valueStart",
+     [PROP_MIN_SPAN] = "minSpan",
+     [PROP_INDICATOR_GRADIENT] = "indicatorGradient",
++    [PROP_BACKGROUND_GRADIENT] = "backgroundGradient",
+ };
+ 
+ /** @brief (atom, id) pair; s_prop_atoms is sorted by atom value once, for prop_id_from_atom()'s bsearch. */
+@@ -1957,28 +1959,17 @@ static void apply_track_color(JSContext* ctx, JSValueConst v, ERProps* p)
+ }
+ 
+ /**
+- * @brief Reads a Dial `indicatorGradient` ({type: 'conic'|'radial', stops: [{color, offset}]}) into the
+- *        View-gradient fields, which ER_NODE_ARC reads as its indicator paint.
++ * @brief Reads a gradient's `stops` ([{color, offset}], at most ER_GRADIENT_MAX_STOPS) into the gradient fields.
++ *
++ * A missing offset spaces the stops evenly. As in CSS, an offset below an earlier one is raised to it, so the
++ * stops the rasterizer sees always ascend.
+  *
+  * @param[in]     ctx  QuickJS context.
+- * @param[in]     v    Pre-fetched value (JS_UNDEFINED if absent).
++ * @param[in]     v    Gradient object.
+  * @param[in,out] p    Props to update.
+  */
+-static void apply_indicator_gradient(JSContext* ctx, JSValueConst v, ERProps* p)
++static void apply_gradient_stops(JSContext* ctx, JSValueConst v, ERProps* p)
+ {
+-    if (JS_IsUndefined(v) || JS_IsNull(v) || !JS_IsObject(v))
+-    {
+-        return;
+-    }
+-    JSValue t = JS_GetPropertyStr(ctx, v, "type");
+-    const char* ts = JS_ToCString(ctx, t);
+-    if (ts)
+-    {
+-        p->gradient_type = (strcmp(ts, "radial") == 0) ? ER_GRADIENT_RADIAL : ER_GRADIENT_CONIC;
+-        JS_FreeCString(ctx, ts);
+-    }
+-    JS_FreeValue(ctx, t);
+-
+     JSValue stops = JS_GetPropertyStr(ctx, v, "stops");
+     if (JS_IsArray(stops))
+     {
+@@ -2002,6 +1993,10 @@ static void apply_indicator_gradient(JSContext* ctx, JSValueConst v, ERProps* p)
+             {
+                 JS_ToFloat64(ctx, &o, ov);
+             }
++            if (n > 0 && o < p->gradient_stops[n - 1].position)
++            {
++                o = p->gradient_stops[n - 1].position;
++            }
+             if (to_color(ctx, cv, &c))
+             {
+                 p->gradient_stops[n].color = c;
+@@ -2017,6 +2012,112 @@ static void apply_indicator_gradient(JSContext* ctx, JSValueConst v, ERProps* p)
+     JS_FreeValue(ctx, stops);
+ }
+ 
++/**
++ * @brief Reads a Dial `indicatorGradient` ({type: 'conic'|'radial', stops: [{color, offset}]}) into the
++ *        View-gradient fields, which ER_NODE_ARC reads as its indicator paint.
++ *
++ * @param[in]     ctx  QuickJS context.
++ * @param[in]     v    Pre-fetched value (JS_UNDEFINED if absent).
++ * @param[in,out] p    Props to update.
++ */
++static void apply_indicator_gradient(JSContext* ctx, JSValueConst v, ERProps* p)
++{
++    if (JS_IsUndefined(v) || JS_IsNull(v) || !JS_IsObject(v))
++    {
++        return;
++    }
++    JSValue t = JS_GetPropertyStr(ctx, v, "type");
++    const char* ts = JS_ToCString(ctx, t);
++    if (ts)
++    {
++        p->gradient_type = (strcmp(ts, "radial") == 0) ? ER_GRADIENT_RADIAL : ER_GRADIENT_CONIC;
++        JS_FreeCString(ctx, ts);
++    }
++    JS_FreeValue(ctx, t);
++    apply_gradient_stops(ctx, v, p);
++}
++
++/** @brief CSS `to <side-or-corner>` keyword → CSS angle (sides) or ERGradientCorner (corners). */
++static const struct
++{
++    const char* to;
++    float css_angle;
++    uint8_t corner;
++} k_gradient_to[] = {
++    {"top", 0.0f, ER_GRADIENT_CORNER_NONE},
++    {"right", 90.0f, ER_GRADIENT_CORNER_NONE},
++    {"bottom", 180.0f, ER_GRADIENT_CORNER_NONE},
++    {"left", 270.0f, ER_GRADIENT_CORNER_NONE},
++    {"top right", 0.0f, ER_GRADIENT_CORNER_TOP_RIGHT},
++    {"bottom right", 0.0f, ER_GRADIENT_CORNER_BOTTOM_RIGHT},
++    {"bottom left", 0.0f, ER_GRADIENT_CORNER_BOTTOM_LEFT},
++    {"top left", 0.0f, ER_GRADIENT_CORNER_TOP_LEFT},
++};
++
++/**
++ * @brief Reads a View `backgroundGradient` into the View-gradient fields.
++ *
++ * {type: 'linear', angle?, to?, stops} follows CSS linear-gradient(): `angle` in degrees with 0 pointing to
++ * the top and 90 to the right, or `to` as a side or corner ('right', 'bottom left', …); the default is
++ * 'bottom'. {type: 'radial', stops} is radial-gradient(circle farthest-corner at center, …). Stops are
++ * interpolated premultiplied, as CSS does; at most ER_GRADIENT_MAX_STOPS are kept.
++ *
++ * @param[in]     ctx  QuickJS context.
++ * @param[in]     v    Pre-fetched value (JS_UNDEFINED if absent).
++ * @param[in,out] p    Props to update.
++ */
++static void apply_background_gradient(JSContext* ctx, JSValueConst v, ERProps* p)
++{
++    if (!JS_IsObject(v))
++    {
++        return;
++    }
++    JSValue t = JS_GetPropertyStr(ctx, v, "type");
++    const char* ts = JS_ToCString(ctx, t);
++    JS_FreeValue(ctx, t);
++    if (!ts)
++    {
++        return;
++    }
++    const bool radial = strcmp(ts, "radial") == 0;
++    const bool linear = strcmp(ts, "linear") == 0;
++    JS_FreeCString(ctx, ts);
++    if (!radial && !linear)
++    {
++        return;
++    }
++    p->gradient_type = radial ? ER_GRADIENT_RADIAL : ER_GRADIENT_LINEAR;
++
++    float css_angle = 180.0f;
++    JSValue av = JS_GetPropertyStr(ctx, v, "angle");
++    JSValue tov = JS_GetPropertyStr(ctx, v, "to");
++    double a;
++    if (JS_IsNumber(av) && JS_ToFloat64(ctx, &a, av) == 0)
++    {
++        css_angle = (float)a;
++    }
++    else if (JS_IsString(tov))
++    {
++        const char* to = JS_ToCString(ctx, tov);
++        for (size_t i = 0; to && i < sizeof(k_gradient_to) / sizeof(k_gradient_to[0]); i++)
++        {
++            if (strcmp(to, k_gradient_to[i].to) == 0)
++            {
++                css_angle = k_gradient_to[i].css_angle;
++                p->gradient_corner = k_gradient_to[i].corner;
++                break;
++            }
++        }
++        JS_FreeCString(ctx, to);
++    }
++    JS_FreeValue(ctx, av);
++    JS_FreeValue(ctx, tov);
++    /* The engine measures from top→bottom; CSS's 0deg points to the top. */
++    p->gradient_angle = 180.0f - css_angle;
++
++    apply_gradient_stops(ctx, v, p);
++}
++
+ /**
+  * @brief Reads obj's own enumerable string keys into s_prop_slots.
+  *
+@@ -2155,6 +2256,7 @@ static void apply_props(JSContext* ctx, ERNode* node, JSValueConst obj)
+ 
+     /* View visual. */
+     ER_COL(PROP_BACKGROUND_COLOR, background_color);
++    apply_background_gradient(ctx, s_prop_slots[PROP_BACKGROUND_GRADIENT], &p);
+     apply_opacity(ctx, s_prop_slots[PROP_OPACITY], &p);
+     ER_DIM(PROP_BORDER_RADIUS, border_radius);
+     ER_DIM(PROP_BORDER_TOP_LEFT_RADIUS, border_top_left_radius);
+diff --git a/engine/include/er_scene.h b/engine/include/er_scene.h
+index ff71290..4fba433 100644
+--- a/engine/include/er_scene.h
++++ b/engine/include/er_scene.h
+@@ -416,6 +416,22 @@ extern "C"
+         ER_GRADIENT_CONIC = 3,  /**< Conic/angular gradient (VECTOR fills only; requires ERUI_GRADIENT_CONIC). */
+     } ERGradientType;
+ 
++    /**
++     * @brief CSS `to <corner>` direction for a View-background linear gradient.
++     *
++     * A corner direction depends on the box's aspect ratio (the gradient line is perpendicular to the
++     * diagonal joining the two neighbouring corners, as CSS linear-gradient defines it), so it is resolved
++     * at render time from the laid-out size. ER_GRADIENT_CORNER_NONE uses gradient_angle instead.
++     */
++    typedef enum
++    {
++        ER_GRADIENT_CORNER_NONE = 0,         /**< Direction from gradient_angle (default). */
++        ER_GRADIENT_CORNER_TOP_RIGHT = 1,    /**< `to top right`. */
++        ER_GRADIENT_CORNER_BOTTOM_RIGHT = 2, /**< `to bottom right`. */
++        ER_GRADIENT_CORNER_BOTTOM_LEFT = 3,  /**< `to bottom left`. */
++        ER_GRADIENT_CORNER_TOP_LEFT = 4,     /**< `to top left`. */
++    } ERGradientCorner;
++
+     /**
+      * @brief One color stop in a gradient.
+      *
+@@ -804,6 +820,7 @@ extern "C"
+ 
+         /* --- Gradient (View-family; requires ERUI_GRADIENT at build time) --- */
+         uint8_t gradient_type;       /**< ERGradientType — default ER_GRADIENT_NONE. */
++        uint8_t gradient_corner;     /**< ERGradientCorner; overrides gradient_angle for a LINEAR gradient. */
+         float gradient_angle;        /**< Angle in degrees: 0 = top→bottom, 90 = left→right. */
+         uint8_t gradient_stop_count; /**< Number of valid entries in gradient_stops [0–ER_GRADIENT_MAX_STOPS]. */
+         ERGradientStop gradient_stops[ER_GRADIENT_MAX_STOPS]; /**< Color stops in order of ascending position. */
+diff --git a/engine/rendering/gradient.c b/engine/rendering/gradient.c
+index 3316dd7..faa498e 100644
+--- a/engine/rendering/gradient.c
++++ b/engine/rendering/gradient.c
+@@ -117,6 +117,160 @@ uint32_t er_gradient_premul(uint32_t sa)
+ 
+ #if ERUI_GRADIENT
+ 
++/*----------------------------------------------------------------------------------------------------------------------
++ - Colour ramp
++ ---------------------------------------------------------------------------------------------------------------------*/
++
++/** @brief Ramp entries cap: one per pixel of the gradient line up to here (8 KB per render worker). */
++#define GRAD_LUT_MAX 1024
++
++/* The ramp is premultiplied with 8 fractional bits per channel, so the ordered dither below can spread
++ * the sub-level remainder over neighbouring pixels; without it a dark gradient over 1000+ px shows as 8-bit
++ * steps tens of pixels wide. Each entry packs a, r, g, b as 16-bit lanes of one word (a in the top lane),
++ * so a pixel is one load, one add and a byte gather. */
++static uint64_t s_grad_lut_pool[ERUI_RENDER_WORKERS][GRAD_LUT_MAX];
++
++/** @brief 4x4 Bayer matrix; a threshold is (k * 16 + 8) / 256 of a level, so flat colours stay exact. */
++static const uint8_t k_bayer4[4][4] = {{0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5}};
++
++/** @brief Broadcasts a dither threshold to all four lanes of a ramp entry. */
++#define GRAD_LANES 0x0001000100010001ULL
++
++/**
++ * @brief Premultiplies a straight-alpha ARGB8888 colour into float channels (alpha, r, g, b).
++ *
++ * @param[in]  sa   Straight-alpha ARGB8888 colour.
++ * @param[out] out  Premultiplied channels in [0, 255].
++ */
++static void premul_f(uint32_t sa, float out[4])
++{
++    const float a = (float)((sa >> 24) & 0xFFu);
++    out[0] = a;
++    out[1] = (float)((sa >> 16) & 0xFFu) * a / 255.0f;
++    out[2] = (float)((sa >> 8) & 0xFFu) * a / 255.0f;
++    out[3] = (float)(sa & 0xFFu) * a / 255.0f;
++}
++
++/**
++ * @brief Builds the calling worker's colour ramp for a View gradient.
++ *
++ * Stops are interpolated in premultiplied space, as CSS gradients are: a fade to `transparent` keeps the
++ * colour it fades from instead of darkening through transparent black.
++ *
++ * @param[in] vp      View props (gradient_stop_count >= 2, stops ascending).
++ * @param[in] extent  Length of the gradient line in pixels; sizes the ramp (1 entry per pixel, capped).
++ *
++ * @return Number of entries built (2..GRAD_LUT_MAX); entry i is the colour at t = i / (n - 1).
++ */
++static int build_lut(const ERViewProps* vp, float extent)
++{
++    int n = (int)extent + 1;
++    if (n < 2)
++        n = 2;
++    if (n > GRAD_LUT_MAX)
++        n = GRAD_LUT_MAX;
++
++    uint64_t* lut = s_grad_lut_pool[er_render_worker_id()];
++    const ERGradientStop* st = vp->gradient_stops;
++    const int last = (int)vp->gradient_stop_count - 1;
++    int seg = 0;
++    for (int i = 0; i < n; i++)
++    {
++        const float t = (float)i / (float)(n - 1);
++        float c[4];
++        if (t <= st[0].position)
++            premul_f(st[0].color, c);
++        else if (t >= st[last].position)
++            premul_f(st[last].color, c);
++        else
++        {
++            while (t > st[seg + 1].position)
++                seg++;
++            float c0[4], c1[4];
++            premul_f(st[seg].color, c0);
++            premul_f(st[seg + 1].color, c1);
++            const float span = st[seg + 1].position - st[seg].position;
++            const float lt = (span > 0.0f) ? (t - st[seg].position) / span : 1.0f;
++            for (int k = 0; k < 4; k++)
++                c[k] = c0[k] + (c1[k] - c0[k]) * lt;
++        }
++        const uint64_t a = (uint64_t)(c[0] * 256.0f + 0.5f);
++        uint64_t e = a << 48;
++        for (int k = 1; k < 4; k++)
++        {
++            const uint64_t v = (uint64_t)(c[k] * 256.0f + 0.5f);
++            /* Keep colour <= alpha so every dithered pixel is a valid premultiplied value. */
++            e |= (v < a ? v : a) << (48 - 16 * k);
++        }
++        lut[i] = e;
++    }
++    return n;
++}
++
++/**
++ * @brief Quantizes a dithered ramp entry (entry + threshold * GRAD_LANES) to premultiplied ARGB8888.
++ *
++ * Thresholds are in 1/256 of a level, from k_bayer4. The same threshold on every channel preserves
++ * colour <= alpha, and no lane carries: each stays below 65536.
++ *
++ * @param[in] e  Ramp entry plus its broadcast threshold (8.8 fixed point per 16-bit lane).
++ * @return Premultiplied ARGB8888 pixel.
++ */
++static inline uint32_t dither_px(uint64_t e)
++{
++    const uint64_t v = e >> 8;
++    return (uint32_t)((v & 0xFFu) | ((v >> 8) & 0xFF00u) | ((v >> 16) & 0xFF0000u) | ((v >> 24) & 0xFF000000u));
++}
++
++/*----------------------------------------------------------------------------------------------------------------------
++ - Damage window
++ ---------------------------------------------------------------------------------------------------------------------*/
++
++/**
++ * @brief The part of a gradient box the current clip lets through, in box coordinates.
++ *
++ * A small repaint over a full-screen gradient would otherwise rebuild every row and column of it only to
++ * have er_blit_blend scissor them away.
++ */
++typedef struct
++{
++    int c0; /**< First column. */
++    int c1; /**< One past the last column (never beyond the row buffer). */
++    int r0; /**< First row. */
++    int r1; /**< One past the last row. */
++} GradWindow;
++
++/**
++ * @brief Intersects the box with the active clip rect.
++ *
++ * @param[out] win       Receives the visible window.
++ * @param[in]  x         Box left edge in framebuffer pixels.
++ * @param[in]  y         Box top edge in framebuffer pixels.
++ * @param[in]  capped_w  Box width capped to the row buffer.
++ * @param[in]  h         Box height.
++ * @return False when nothing of the box is visible.
++ */
++static bool window_init(GradWindow* win, int x, int y, int capped_w, int h)
++{
++    win->c0 = 0;
++    win->c1 = capped_w;
++    win->r0 = 0;
++    win->r1 = h;
++    int cx, cy, cw, ch;
++    if (er_get_clip_rect(&cx, &cy, &cw, &ch))
++    {
++        if (cx - x > win->c0)
++            win->c0 = cx - x;
++        if (cx + cw - x < win->c1)
++            win->c1 = cx + cw - x;
++        if (cy - y > win->r0)
++            win->r0 = cy - y;
++        if (cy + ch - y < win->r1)
++            win->r1 = cy + ch - y;
++    }
++    return win->c0 < win->c1 && win->r0 < win->r1;
++}
++
+ /*----------------------------------------------------------------------------------------------------------------------
+  - Rounded-corner masking
+  ---------------------------------------------------------------------------------------------------------------------*/
+@@ -162,33 +316,35 @@ static void mask_init(GradMask* m, const ERViewProps* vp, int w, int h)
+ }
+ 
+ /**
+- * @brief Blits one assembled gradient row, clipped to the rounded-rect silhouette.
++ * @brief Blits the windowed part of one assembled gradient row, clipped to the rounded-rect silhouette.
+  *
+  * Rows clear of the corner arcs blit whole; rows the arcs cut into blit only their covered span, then
+  * fade the anti-aliased fringe pixels beside it (matching er_rrect_fill_corners' fringe walk, so the
+  * gradient's corner is the same shape a solid background would have painted).
+  *
+- * @param[in] m         Silhouette to clip to.
+- * @param[in] row       Assembled premultiplied ARGB8888 row, @p capped_w pixels wide.
+- * @param[in] x         Destination left edge in framebuffer pixels.
+- * @param[in] y         Destination row in framebuffer pixels.
+- * @param[in] row_idx   Row index within the box, 0 = top.
+- * @param[in] capped_w  Assembled width (may be less than m->w on very wide boxes).
++ * @param[in] m        Silhouette to clip to.
++ * @param[in] win      Visible window; only row[win->c0 .. win->c1) was assembled.
++ * @param[in] row      Assembled premultiplied ARGB8888 row, indexed by box column.
++ * @param[in] x        Destination left edge of the box in framebuffer pixels.
++ * @param[in] y        Destination row in framebuffer pixels.
++ * @param[in] row_idx  Row index within the box, 0 = top.
+  */
+-static void mask_blit_row(const GradMask* m, const uint32_t* row, int x, int y, int row_idx, int capped_w)
++static void mask_blit_row(const GradMask* m, const GradWindow* win, const uint32_t* row, int x, int y, int row_idx)
+ {
+     if (!m->rounded)
+     {
+-        er_blit_blend(row, capped_w * (int)sizeof(uint32_t), 255, x, y, capped_w, 1);
++        er_blit_blend(&row[win->c0], (win->c1 - win->c0) * (int)sizeof(uint32_t), 255, x + win->c0, y,
++                      win->c1 - win->c0, 1);
+         return;
+     }
+ 
+     ERRRectRow rr;
+     er_rrect_row(m->w, m->h, m->r_tl, m->r_tr, m->r_br, m->r_bl, row_idx, &rr);
+ 
+-    const int x1 = (rr.x1 < capped_w) ? rr.x1 : capped_w;
+-    if (x1 > rr.x0)
+-        er_blit_blend(&row[rr.x0], (x1 - rr.x0) * (int)sizeof(uint32_t), 255, x + rr.x0, y, x1 - rr.x0, 1);
++    const int x0 = (rr.x0 > win->c0) ? rr.x0 : win->c0;
++    const int x1 = (rr.x1 < win->c1) ? rr.x1 : win->c1;
++    if (x1 > x0)
++        er_blit_blend(&row[x0], (x1 - x0) * (int)sizeof(uint32_t), 255, x + x0, y, x1 - x0, 1);
+ 
+ #if ERUI_BORDER_AA
+     /* Fringe pixels take the gradient colour at their own column, faded by the arc's coverage. */
+@@ -198,7 +354,7 @@ static void mask_blit_row(const GradMask* m, const uint32_t* row, int x, int y,
+         if (cov <= 0.0f)
+             break;
+         const int ax = rr.x0 - 1 - k;
+-        if (cov < 1.0f && ax >= 0 && ax < capped_w)
++        if (cov < 1.0f && ax >= win->c0 && ax < win->c1)
+         {
+             const uint32_t p = er_px_scale_premul(row[ax], (uint32_t)(cov * 255.0f + 0.5f));
+             er_blit_blend(&p, (int)sizeof(uint32_t), 255, x + ax, y, 1, 1);
+@@ -210,7 +366,7 @@ static void mask_blit_row(const GradMask* m, const uint32_t* row, int x, int y,
+         if (cov <= 0.0f)
+             break;
+         const int ax = rr.x1 + k;
+-        if (cov < 1.0f && ax >= 0 && ax < capped_w && ax < m->w)
++        if (cov < 1.0f && ax >= win->c0 && ax < win->c1 && ax < m->w)
+         {
+             const uint32_t p = er_px_scale_premul(row[ax], (uint32_t)(cov * 255.0f + 0.5f));
+             er_blit_blend(&p, (int)sizeof(uint32_t), 255, x + ax, y, 1, 1);
+@@ -220,15 +376,98 @@ static void mask_blit_row(const GradMask* m, const uint32_t* row, int x, int y,
+ }
+ 
+ /**
+- * @brief Renders a linear gradient into a rectangular framebuffer region.
++ * @brief Assembles row[c0 .. c1) of a linear gradient from the ramp.
+  *
+- * The gradient angle is measured in degrees clockwise from the top: 0° runs top→bottom,
+- * 90° runs left→right.  The four corner projections onto the gradient direction vector are
+- * used to normalise the per-pixel parameter t to [0.0–1.0] regardless of angle.
++ * @param[out] buf    Row buffer, indexed by box column.
++ * @param[in]  lut    Ramp from build_lut.
++ * @param[in]  n      Ramp entries.
++ * @param[in]  f      Ramp index at column c0, 16.16 fixed point.
++ * @param[in]  step   Ramp index change per column, 16.16 fixed point.
++ * @param[in]  bayer  The row's k_bayer4 line.
++ * @param[in]  x      Box left edge in framebuffer pixels (keys the dither column).
++ * @param[in]  c0     First column.
++ * @param[in]  c1     One past the last column.
++ */
++static void assemble_row(uint32_t* buf, const uint64_t* lut, int n, int32_t f, int32_t step, const uint8_t* bayer,
++                         int x, int c0, int c1)
++{
++    /* The dither threshold cycles every 4 columns: hoist the four lane-broadcast thresholds. */
++    uint64_t thr[4];
++    for (int k = 0; k < 4; k++)
++        thr[k] = ((uint64_t)bayer[(x + c0 + k) & 3] * 16u + 8u) * GRAD_LANES;
++
++    /* A ramp that runs purely along y is one colour per row: only the 4-pixel dither cycle varies. */
++    const int end = (step == 0 && c1 - c0 > 4) ? c0 + 4 : c1;
++    for (int col = c0; col < end; col++, f += step)
++    {
++        int idx = (f + 32768) >> 16;
++        if (idx < 0)
++            idx = 0;
++        else if (idx >= n)
++            idx = n - 1;
++        buf[col] = dither_px(lut[idx] + thr[(col - c0) & 3]);
++    }
++    for (int col = end; col < c1; col++)
++        buf[col] = buf[col - 4];
++}
++
++/**
++ * @brief Resolves a linear gradient's screen-space unit direction (y down).
+  *
+- * Each row is computed into grow() and flushed via er_blit_blend (premultiplied).
++ * gradient_angle is degrees clockwise from the top with 0° running top→bottom and 90° left→right (CSS's
++ * `<angle>` is this plus 180°). A gradient_corner instead aims the line as CSS `to <corner>` does:
++ * perpendicular to the diagonal joining the two neighbouring corners, which depends on the box's aspect.
+  *
+- * @param[in] vp  View props (gradient_angle, gradient_stop_count, gradient_stops).
++ * @param[in]  vp   View props (gradient_corner, gradient_angle).
++ * @param[in]  w    Box width in pixels.
++ * @param[in]  h    Box height in pixels.
++ * @param[out] ddx  Direction x component.
++ * @param[out] ddy  Direction y component.
++ */
++static void linear_direction(const ERViewProps* vp, int w, int h, float* ddx, float* ddy)
++{
++    const float len = sqrtf((float)w * (float)w + (float)h * (float)h);
++    const float sx = (float)h / len, sy = (float)w / len;
++    switch (vp->gradient_corner)
++    {
++        case ER_GRADIENT_CORNER_TOP_RIGHT:
++            *ddx = sx;
++            *ddy = -sy;
++            return;
++        case ER_GRADIENT_CORNER_BOTTOM_RIGHT:
++            *ddx = sx;
++            *ddy = sy;
++            return;
++        case ER_GRADIENT_CORNER_BOTTOM_LEFT:
++            *ddx = -sx;
++            *ddy = sy;
++            return;
++        case ER_GRADIENT_CORNER_TOP_LEFT:
++            *ddx = -sx;
++            *ddy = -sy;
++            return;
++        default:
++            /* Snapped so a side direction is exactly axis-aligned (cosf(90°) is not 0): render_linear
++             * reuses rows only when the ramp runs purely along x. */
++            *ddx = sinf(vp->gradient_angle * ER_DEG2RAD);
++            *ddy = cosf(vp->gradient_angle * ER_DEG2RAD);
++            if (fabsf(*ddx) < 1e-6f)
++                *ddx = 0.0f;
++            if (fabsf(*ddy) < 1e-6f)
++                *ddy = 0.0f;
++            return;
++    }
++}
++
++/**
++ * @brief Renders a linear gradient into a rectangular framebuffer region.
++ *
++ * The four corner projections onto the direction vector normalise the per-pixel parameter t to
++ * [0.0–1.0] regardless of angle — the same gradient line length CSS uses — with the first and last pixel
++ * centres landing exactly on t = 0 and t = 1.  Only the rows and columns inside the active clip are
++ * assembled; each row is flushed via er_blit_blend (premultiplied).
++ *
++ * @param[in] vp  View props (gradient_corner, gradient_angle, gradient_stop_count, gradient_stops).
+  * @param[in] x   Destination left edge in framebuffer pixels.
+  * @param[in] y   Destination top edge in framebuffer pixels.
+  * @param[in] w   Destination width in pixels.
+@@ -239,52 +478,52 @@ static void render_linear(const ERViewProps* vp, int x, int y, int w, int h)
+     if (vp->gradient_stop_count < 2 || w <= 0 || h <= 0)
+         return;
+ 
++    const int capped_w = (w <= ERUI_MAX_IMG_ROW_PIXELS) ? w : ERUI_MAX_IMG_ROW_PIXELS;
++    GradWindow win;
++    if (!window_init(&win, x, y, capped_w, h))
++        return;
++
+     GradMask mask;
+     mask_init(&mask, vp, w, h);
+ 
+-    const float angle_rad = vp->gradient_angle * ER_DEG2RAD;
+-    const float ddx = sinf(angle_rad);
+-    const float ddy = cosf(angle_rad);
++    float ddx, ddy;
++    linear_direction(vp, w, h, &ddx, &ddy);
+ 
+     /* Project all four corners onto the direction vector to find the full extent. */
+     const float wf = (float)(w - 1);
+     const float hf = (float)(h - 1);
+-    const float p00 = 0.0f;
+     const float p10 = wf * ddx;
+     const float p01 = hf * ddy;
+     const float p11 = wf * ddx + hf * ddy;
+-    float min_p = p00, max_p = p00;
+-    if (p10 < min_p)
+-        min_p = p10;
+-    if (p10 > max_p)
+-        max_p = p10;
+-    if (p01 < min_p)
+-        min_p = p01;
+-    if (p01 > max_p)
+-        max_p = p01;
+-    if (p11 < min_p)
+-        min_p = p11;
+-    if (p11 > max_p)
+-        max_p = p11;
++    const float min_p = fminf(fminf(0.0f, p10), fminf(p01, p11));
++    const float max_p = fmaxf(fmaxf(0.0f, p10), fmaxf(p01, p11));
+ 
+     const float span = max_p - min_p;
+-    const float inv_span = (span > 1e-6f) ? 1.0f / span : 0.0f;
+-    const int capped_w = (w <= ERUI_MAX_IMG_ROW_PIXELS) ? w : ERUI_MAX_IMG_ROW_PIXELS;
+-
+-    for (int row = 0; row < h; row++)
++    const int n = build_lut(vp, span);
++    const uint64_t* lut = s_grad_lut_pool[er_render_worker_id()];
++    /* Ramp index per pixel step, in 16.16 fixed point. */
++    const float to_idx = (span > 1e-6f) ? (float)(n - 1) / span : 0.0f;
++    const int32_t step = (int32_t)lrintf(ddx * to_idx * 65536.0f);
++
++    uint32_t* buf = grow();
++    if (ddy == 0.0f)
+     {
+-        const float row_base = (float)row * ddy;
+-        for (int col = 0; col < capped_w; col++)
++        /* A ramp that runs purely along x repeats every 4 rows (the dither cycle): assemble each phase
++         * once and blit it to all of its rows. The blits never overlap, so their order does not matter. */
++        const int32_t f = (int32_t)lrintf(((float)win.c0 * ddx - min_p) * to_idx * 65536.0f);
++        for (int first = win.r0; first < win.r0 + 4 && first < win.r1; first++)
+         {
+-            float t = ((float)col * ddx + row_base - min_p) * inv_span;
+-            if (t < 0.0f)
+-                t = 0.0f;
+-            if (t > 1.0f)
+-                t = 1.0f;
+-            grow()[col] =
+-                er_gradient_premul(er_gradient_eval_stops(vp->gradient_stops, (int)vp->gradient_stop_count, t));
++            assemble_row(buf, lut, n, f, step, k_bayer4[(y + first) & 3], x, win.c0, win.c1);
++            for (int row = first; row < win.r1; row += 4)
++                mask_blit_row(&mask, &win, buf, x, y + row, row);
+         }
+-        mask_blit_row(&mask, grow(), x, y + row, row, capped_w);
++        return;
++    }
++    for (int row = win.r0; row < win.r1; row++)
++    {
++        const int32_t f = (int32_t)lrintf(((float)win.c0 * ddx + (float)row * ddy - min_p) * to_idx * 65536.0f);
++        assemble_row(buf, lut, n, f, step, k_bayer4[(y + row) & 3], x, win.c0, win.c1);
++        mask_blit_row(&mask, &win, buf, x, y + row, row);
+     }
+ }
+ 
+@@ -293,11 +532,10 @@ static void render_linear(const ERViewProps* vp, int x, int y, int w, int h)
+ /**
+  * @brief Renders a radial gradient into a rectangular framebuffer region.
+  *
+- * The gradient origin is the rectangle centre.  The radius is the Euclidean distance from
+- * the centre to the farthest corner, so t = 1.0 is reached at exactly the corner pixels and
+- * the full stop range is always visible inside the rect.
+- *
+- * Each row is computed into grow() and flushed via er_blit_blend (premultiplied).
++ * A circle centred on the rectangle whose radius reaches the farthest corner pixel — CSS
++ * `radial-gradient(circle farthest-corner at center, …)` — so the full stop range is always visible
++ * inside the rect.  Only the rows and columns inside the active clip are assembled; each row is
++ * flushed via er_blit_blend (premultiplied).
+  *
+  * @param[in] vp  View props (gradient_stop_count, gradient_stops).
+  * @param[in] x   Destination left edge in framebuffer pixels.
+@@ -310,28 +548,35 @@ static void render_radial(const ERViewProps* vp, int x, int y, int w, int h)
+     if (vp->gradient_stop_count < 2 || w <= 0 || h <= 0)
+         return;
+ 
++    const int capped_w = (w <= ERUI_MAX_IMG_ROW_PIXELS) ? w : ERUI_MAX_IMG_ROW_PIXELS;
++    GradWindow win;
++    if (!window_init(&win, x, y, capped_w, h))
++        return;
++
+     GradMask mask;
+     mask_init(&mask, vp, w, h);
+ 
+     const float cx = (float)(w - 1) * 0.5f;
+     const float cy = (float)(h - 1) * 0.5f;
+     const float r = sqrtf(cx * cx + cy * cy);
+-    const float inv_r = (r > 1e-6f) ? 1.0f / r : 0.0f;
+-    const int capped_w = (w <= ERUI_MAX_IMG_ROW_PIXELS) ? w : ERUI_MAX_IMG_ROW_PIXELS;
++    const int n = build_lut(vp, r);
++    const uint64_t* lut = s_grad_lut_pool[er_render_worker_id()];
++    const float to_idx = (r > 1e-6f) ? (float)(n - 1) / r : 0.0f;
+ 
+-    for (int row = 0; row < h; row++)
++    uint32_t* buf = grow();
++    for (int row = win.r0; row < win.r1; row++)
+     {
++        const uint8_t* bayer = k_bayer4[(y + row) & 3];
+         const float dy2 = ((float)row - cy) * ((float)row - cy);
+-        for (int col = 0; col < capped_w; col++)
++        for (int col = win.c0; col < win.c1; col++)
+         {
+-            const float dx2 = ((float)col - cx) * ((float)col - cx);
+-            float t = sqrtf(dx2 + dy2) * inv_r;
+-            if (t > 1.0f)
+-                t = 1.0f;
+-            grow()[col] =
+-                er_gradient_premul(er_gradient_eval_stops(vp->gradient_stops, (int)vp->gradient_stop_count, t));
++            const float dx = (float)col - cx;
++            int idx = (int)(sqrtf(dx * dx + dy2) * to_idx + 0.5f);
++            if (idx >= n)
++                idx = n - 1;
++            buf[col] = dither_px(lut[idx] + ((uint64_t)bayer[(x + col) & 3] * 16u + 8u) * GRAD_LANES);
+         }
+-        mask_blit_row(&mask, grow(), x, y + row, row, capped_w);
++        mask_blit_row(&mask, &win, buf, x, y + row, row);
+     }
+ }
+ 
+diff --git a/engine/rendering/gradient.h b/engine/rendering/gradient.h
+index 871079a..eb5be6f 100644
+--- a/engine/rendering/gradient.h
++++ b/engine/rendering/gradient.h
+@@ -28,6 +28,10 @@
+  *
+  * Dispatches to the linear or radial rasterizer based on vp->gradient_type.  Each rasterizer
+  * writes one row of premultiplied ARGB8888 pixels at a time and flushes it via er_blit_blend.
++ * Stops are interpolated in premultiplied space (as CSS does) and quantized with a 4x4 ordered
++ * dither keyed to framebuffer coordinates, so long, low-contrast ramps show no 8-bit steps and a
++ * partial repaint matches the full one.  Only the rows and columns inside the active clip rect are
++ * assembled, so a small damage rect over a large gradient costs only its own pixels.
+  *
+  * The fill is clipped to the node's rounded-rect silhouette, resolved from vp's border_radius and
+  * per-corner overrides through the same er_rrect_clamp_radii / er_rrect_row geometry the background
+diff --git a/engine/scene/compositor.c b/engine/scene/compositor.c
+index b9fe937..457bcf9 100644
+--- a/engine/scene/compositor.c
++++ b/engine/scene/compositor.c
+@@ -3300,6 +3300,7 @@ static void copy_view_shadow_and_gradient(ERNode* node, const ERProps* props)
+     node->props.view.shadow_radius = props->shadow_radius;
+     node->props.view.elevation = props->elevation;
+     node->props.view.gradient_type = props->gradient_type;
++    node->props.view.gradient_corner = props->gradient_corner;
+     node->props.view.gradient_angle = props->gradient_angle;
+     node->props.view.gradient_stop_count = props->gradient_stop_count;
+     for (int gi = 0; gi < ER_GRADIENT_MAX_STOPS; gi++)
+diff --git a/engine/scene/er_node_internal.h b/engine/scene/er_node_internal.h
+index b38cdfe..31ae5f1 100644
+--- a/engine/scene/er_node_internal.h
++++ b/engine/scene/er_node_internal.h
+@@ -223,6 +223,7 @@ typedef struct
+ 
+     /* Gradient (requires ERUI_GRADIENT) */
+     uint8_t gradient_type;                                /**< ERGradientType. */
++    uint8_t gradient_corner;                              /**< ERGradientCorner (overrides gradient_angle). */
+     float gradient_angle;                                 /**< Angle in degrees (0 = top→bottom, 90 = left→right). */
+     uint8_t gradient_stop_count;                          /**< Number of active stops [0–ER_GRADIENT_MAX_STOPS]. */
+     ERGradientStop gradient_stops[ER_GRADIENT_MAX_STOPS]; /**< Color stops in order of ascending position. */
+diff --git a/engine/tests/rendering/CMakeLists.txt b/engine/tests/rendering/CMakeLists.txt
+index ce62ddd..382fc98 100644
+--- a/engine/tests/rendering/CMakeLists.txt
++++ b/engine/tests/rendering/CMakeLists.txt
+@@ -105,6 +105,10 @@ add_test(NAME rendering_components COMMAND test_components)
+ 
+ add_executable(test_gradient test_gradient.c)
+ target_link_libraries(test_gradient PRIVATE embedded-react)
++# test_gradient needs engine/core, engine/rendering and engine/scene (er_push_clip_rect, er_gradient_render and the
++# node's ERViewProps) to repaint one gradient under a damage clip and compare it with the full frame.
++target_include_directories(test_gradient PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../core ${CMAKE_CURRENT_SOURCE_DIR}/../../rendering
++                                                 ${CMAKE_CURRENT_SOURCE_DIR}/../../scene)
+ add_test(NAME rendering_gradient COMMAND test_gradient)
+ 
+ add_executable(test_damage_rects test_damage_rects.c)
+diff --git a/engine/tests/rendering/test_gradient.c b/engine/tests/rendering/test_gradient.c
+index 410859a..378cf70 100644
+--- a/engine/tests/rendering/test_gradient.c
++++ b/engine/tests/rendering/test_gradient.c
+@@ -15,7 +15,9 @@
+  */
+ 
+ #include "er_scene.h"
++#include "gradient.h"
+ #include "native_renderer.h"
++#include "renderer_internal.h"
+ #include <math.h>
+ #include <stdint.h>
+ #include <stdio.h>
+@@ -198,6 +200,10 @@ static int fail(const char* msg)
+  *   - Linear diagonal gradient (45°): corner pixels match stop endpoints.
+  *   - Radial gradient: center pixel = stop[0], corner pixel ≈ stop[1].
+  *   - Degenerate gradient (stop_count < 2): no-op; background_color used.
++ *   - Ordered dither: a low-contrast ramp averages to its exact value, flat colours stay exact.
++ *   - Premultiplied interpolation: a fade to transparent keeps its colour.
++ *   - CSS `to <corner>`: the neighbouring corners sit on the 50% line for a non-square box.
++ *   - Damage clip: a clipped repaint reproduces the full frame's pixels inside the clip.
+  *   - Bilinear vs nearest-neighbor scale: smoke-test showing render completes without crash.
+  *
+  * @return EXIT_SUCCESS on pass, EXIT_FAILURE on the first failed assertion.
+@@ -535,6 +541,186 @@ int main(void)
+             return fail("per-corner radius: the square bottom-right corner was clipped");
+     }
+ 
++    /* -----------------------------------------------------------------------
++     * Test 8: ordered dither.
++     *
++     * A 4-level ramp over 64 px is 16 px per 8-bit step without dithering. With it, every 4x4 block
++     * averages to the exact ramp value at its centre (within a tenth of a level), and pixels only ever
++     * take the two levels around that value.
++     * ----------------------------------------------------------------------- */
++    {
++        ERProps p;
++        memset(&p, 0, sizeof(p));
++        p.left = p.top = p.right = p.bottom = ER_LAYOUT_AUTO;
++        p.width = FB_W;
++        p.height = FB_H;
++        p.opacity = 255;
++        p.gradient_type = ER_GRADIENT_LINEAR;
++        p.gradient_angle = 90.0f;
++        p.gradient_stop_count = 2;
++        p.gradient_stops[0].color = 0xFF101010;
++        p.gradient_stops[0].position = 0.0f;
++        p.gradient_stops[1].color = 0xFF141414;
++        p.gradient_stops[1].position = 1.0f;
++        er_node_set_props(root, &p);
++
++        memset(tc.fb, 0, sizeof(tc.fb));
++        er_commit();
++
++        if (px(&tc, 0, 5) != 0xFF101010 || px(&tc, FB_W - 1, 9) != 0xFF141414)
++            return fail("dither: the end stops must stay exact");
++        for (int bx = 0; bx + 4 <= FB_W; bx += 4)
++        {
++            int sum = 0;
++            for (int yy = 8; yy < 12; yy++)
++            {
++                for (int xx = bx; xx < bx + 4; xx++)
++                {
++                    const int r = (int)((px(&tc, xx, yy) >> 16) & 0xFFu);
++                    const float exact = 16.0f + 4.0f * (float)xx / (float)(FB_W - 1);
++                    if (r < (int)exact || r > (int)exact + 1)
++                        return fail("dither: a pixel left the two levels around its exact value");
++                    sum += r;
++                }
++            }
++            const float want = 16.0f + 4.0f * ((float)bx + 1.5f) / (float)(FB_W - 1);
++            if (fabsf((float)sum / 16.0f - want) > 0.1f)
++            {
++                printf("  block x=%d: mean %.3f, exact %.3f\n", bx, (double)((float)sum / 16.0f), (double)want);
++                return fail("dither: a 4x4 block does not average to the exact ramp value");
++            }
++        }
++    }
++
++    /* -----------------------------------------------------------------------
++     * Test 9: premultiplied interpolation — white fading to transparent black stays white.
++     *
++     * CSS interpolates stops premultiplied, so the midpoint is half-covered WHITE (r == a), not the
++     * grey that blending straight-alpha channels toward transparent black produces.
++     * ----------------------------------------------------------------------- */
++    {
++        ERProps p;
++        memset(&p, 0, sizeof(p));
++        p.left = p.top = p.right = p.bottom = ER_LAYOUT_AUTO;
++        p.width = FB_W;
++        p.height = FB_H;
++        p.opacity = 255;
++        p.gradient_type = ER_GRADIENT_LINEAR;
++        p.gradient_angle = 0.0f;
++        p.gradient_stop_count = 2;
++        p.gradient_stops[0].color = 0xFFFFFFFF;
++        p.gradient_stops[0].position = 0.0f;
++        p.gradient_stops[1].color = 0x00000000;
++        p.gradient_stops[1].position = 1.0f;
++        er_node_set_props(root, &p);
++
++        memset(tc.fb, 0, sizeof(tc.fb));
++        er_commit();
++
++        for (int yy = 0; yy < FB_H; yy++)
++        {
++            const uint32_t c = px(&tc, 7, yy);
++            if (((c >> 16) & 0xFFu) != ((c >> 24) & 0xFFu))
++                return fail("premultiplied: a fade to transparent darkened its colour");
++        }
++        const int mid_a = (int)((px(&tc, 7, FB_H / 2) >> 24) & 0xFFu);
++        if (mid_a < 120 || mid_a > 135)
++            return fail("premultiplied: the midpoint is not half covered");
++    }
++
++    /* -----------------------------------------------------------------------
++     * Test 10: CSS `to bottom right` on a 2:1 box.
++     *
++     * The gradient line is perpendicular to the top-right/bottom-left diagonal, so those two corners
++     * share the 50% colour; a fixed 135° angle would give them different colours on a non-square box.
++     * ----------------------------------------------------------------------- */
++    {
++        ERProps p;
++        memset(&p, 0, sizeof(p));
++        p.left = p.top = p.right = p.bottom = ER_LAYOUT_AUTO;
++        p.width = FB_W;
++        p.height = FB_H / 2;
++        p.opacity = 255;
++        p.gradient_type = ER_GRADIENT_LINEAR;
++        p.gradient_corner = ER_GRADIENT_CORNER_BOTTOM_RIGHT;
++        p.gradient_stop_count = 2;
++        p.gradient_stops[0].color = 0xFF000000;
++        p.gradient_stops[0].position = 0.0f;
++        p.gradient_stops[1].color = 0xFFFF0000;
++        p.gradient_stops[1].position = 1.0f;
++        er_node_set_props(root, &p);
++
++        memset(tc.fb, 0, sizeof(tc.fb));
++        er_commit();
++
++        const int tl = (int)((px(&tc, 0, 0) >> 16) & 0xFFu);
++        const int br = (int)((px(&tc, FB_W - 1, FB_H / 2 - 1) >> 16) & 0xFFu);
++        const int tr = (int)((px(&tc, FB_W - 1, 0) >> 16) & 0xFFu);
++        const int bl = (int)((px(&tc, 0, FB_H / 2 - 1) >> 16) & 0xFFu);
++        if (tl != 0 || br != 255)
++            return fail("to bottom right: the start and end corners must hold the end stops");
++        if (tr < 120 || tr > 135 || bl < 120 || bl > 135)
++        {
++            printf("  top-right %d, bottom-left %d\n", tr, bl);
++            return fail("to bottom right: the neighbouring corners must sit on the 50% line");
++        }
++    }
++
++    /* -----------------------------------------------------------------------
++     * Test 11: a repaint under a damage clip reproduces the full frame inside the clip and leaves the
++     * rest untouched — the dither is keyed to framebuffer coordinates, not to the window it was
++     * assembled in, so a small repaint never seams against the pixels around it. Covers the diagonal
++     * per-pixel path and the two axis-aligned paths (rows reused along x, one colour per row along y).
++     * ----------------------------------------------------------------------- */
++    {
++        static const float angles[] = {30.0f, 90.0f, 0.0f};
++        static uint32_t full[FB_W * FB_H];
++        for (size_t ai = 0; ai < sizeof(angles) / sizeof(angles[0]); ai++)
++        {
++            ERProps p;
++            memset(&p, 0, sizeof(p));
++            p.left = p.top = p.right = p.bottom = ER_LAYOUT_AUTO;
++            p.width = FB_W;
++            p.height = FB_H;
++            p.opacity = 255;
++            p.border_radius = 12;
++            p.gradient_type = ER_GRADIENT_LINEAR;
++            p.gradient_angle = angles[ai];
++            p.gradient_stop_count = 3;
++            p.gradient_stops[0].color = 0xFF0B0D12;
++            p.gradient_stops[0].position = 0.0f;
++            p.gradient_stops[1].color = 0xCC1A2B3C;
++            p.gradient_stops[1].position = 0.4f;
++            p.gradient_stops[2].color = 0xFF202830;
++            p.gradient_stops[2].position = 1.0f;
++            er_node_set_props(root, &p);
++
++            memset(tc.fb, 0, sizeof(tc.fb));
++            er_commit();
++            memcpy(full, tc.fb, sizeof(full));
++
++            const int cx = 3, cy = 5, cw = 21, ch = 13; /* crosses the rounded top-left corner */
++            memset(tc.fb, 0, sizeof(tc.fb));
++            er_push_clip_rect(cx, cy, cw, ch);
++            er_gradient_render(&root->props.view, 0, 0, FB_W, FB_H);
++            er_pop_clip_rect();
++            for (int yy = 0; yy < FB_H; yy++)
++            {
++                for (int xx = 0; xx < FB_W; xx++)
++                {
++                    const bool inside = xx >= cx && xx < cx + cw && yy >= cy && yy < cy + ch;
++                    const uint32_t want = inside ? full[yy * FB_W + xx] : 0u;
++                    if (px(&tc, xx, yy) != want)
++                    {
++                        printf("  angle %.0f at (%d,%d): got %08X, want %08X\n", (double)angles[ai], xx, yy,
++                               px(&tc, xx, yy), want);
++                        return fail("damage clip: the clipped repaint differs from the full frame");
++                    }
++                }
++            }
++        }
++    }
++
+ #else /* ERUI_GRADIENT == 0 */
+ 
+     /* -----------------------------------------------------------------------

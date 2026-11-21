@@ -1,0 +1,245 @@
+Embedded React: let rounded images be host layers.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, after the patches listed before this
+one there. Changed files: engine/include/er_scene.h, engine/scene/compositor.c
+and engine/tests/rendering/test_layers.c.
+
+A rounded image was never a layer, so a screen of rounded posters rescaled every
+poster on the CPU whenever a card around it repainted. A rounded image at full
+opacity now qualifies: the rasterizer draws only the square of its radius at
+each rounded corner, anti-aliased edge and all, and clears the rest of the box.
+ERLayer carries the clamped radii, and the host leaves those squares to the
+framebuffer. A rounded layer never covers a translucent one, whose rule needs
+an opaque rect beneath it. An image scrolled entirely out of view is no longer
+a candidate, so it cannot take an ERUI_MAX_LAYERS slot from one in view.
+test_layers checks rounded layers over a layer and over a rounded panel against
+the rasterized scene.
+
+--- a/engine/include/er_scene.h
++++ b/engine/include/er_scene.h
+@@ -1155,6 +1155,8 @@
+         ERRect dst;              /**< Where it is drawn, in framebuffer pixels; may reach off screen. */
+         ERRect clip;             /**< Pixels outside this rect are not drawn. */
+         uint8_t alpha;           /**< Opacity, 0–255. */
++        int radius_tl, radius_tr; /**< Corner radii, clamped to dst. The host leaves the radius-sized square */
++        int radius_br, radius_bl; /**< at each rounded corner of dst to the framebuffer, which draws it. */
+     } ERLayer;
+ 
+     /**
+@@ -1166,11 +1168,13 @@
+      * is one, then repaints nothing. Pixels drawn over a layer keep their coverage in the alpha channel; the
+      * framebuffer is otherwise opaque wherever the app paints a background.
+      *
+-     * An image qualifies when it is opaque, untinted, square-cornered, drawn with cover or stretch, has no
++     * An image qualifies when it is opaque, untinted, drawn with cover or stretch, has no
+      * transform but translation on it or any ancestor, and every ancestor with opacity below 1 contains
+      * nothing else; and, below full opacity, when the layer painted just before it is a qualifying layer
+      * whose container is this one's preceding sibling and covers it, so that nothing else shows through.
+-     * Otherwise it is rasterized as usual. Needs a backend with clear_rect.
++     * Otherwise it is rasterized as usual. A rounded image qualifies at full opacity only: the rasterizer
++     * still draws a square of its radius at each rounded corner, and clears the rest. Needs a backend with
++     * clear_rect.
+      *
+      * @param[in] enabled  true once the host draws layers; false (the default) rasterizes every image.
+      */
+--- a/engine/scene/compositor.c
++++ b/engine/scene/compositor.c
+@@ -1977,6 +1977,43 @@
+ #define ER_PERF_BLIT_COLLECT() ((void)0)
+ #endif
+ 
++/**
++ * @brief Clears an image layer's box for the host to draw, except the radius-sized square at each rounded
++ *        corner, where the image is rasterized as usual with its anti-aliased edge.
++ */
++static void render_layer_hole(const ERImageProps* ip, int x, int y, int w, int h)
++{
++    int tl = ip->radius_tl, tr = ip->radius_tr, br = ip->radius_br, bl = ip->radius_bl;
++    er_rrect_clamp_radii(w, h, &tl, &tr, &br, &bl);
++    /* Bands of rows, split wherever a corner square starts or ends. */
++    int cuts[6] = {0, tl, tr, h - bl, h - br, h};
++    for (int i = 1; i < 6; i++)
++        for (int j = i; j > 0 && cuts[j - 1] > cuts[j]; j--)
++        {
++            const int t = cuts[j];
++            cuts[j] = cuts[j - 1];
++            cuts[j - 1] = t;
++        }
++    for (int i = 0; i < 5; i++)
++    {
++        const int y0 = cuts[i], y1 = cuts[i + 1];
++        if (y1 <= y0)
++            continue;
++        const int left = y0 < tl ? tl : (y0 >= h - bl ? bl : 0);
++        const int right = y0 < tr ? tr : (y0 >= h - br ? br : 0);
++        if (w - left - right > 0)
++            er_blit_clear(x + left, y + y0, w - left - right, y1 - y0);
++    }
++    const int corner[4][3] = {{tl, 0, 0}, {tr, w - tr, 0}, {br, w - br, h - br}, {bl, 0, h - bl}};
++    for (int i = 0; i < 4; i++)
++        if (corner[i][0] > 0)
++        {
++            er_push_clip_rect(x + corner[i][1], y + corner[i][2], corner[i][0], corner[i][0]);
++            er_image_render(ip, x, y, w, h);
++            er_pop_clip_rect();
++        }
++}
++
+ static void render_tree(ERNode* n, bool parent_dirty, bool occluded, int translate_x, int translate_y);
+ static bool paints_nothing(const ERNode* a);
+ 
+@@ -3027,7 +3064,7 @@
+                 int ix = px, iy = py, iw = w, ih = h;
+                 er_layout_content_box(&n->layout, &ix, &iy, &iw, &ih);
+                 if (n->layer_active)
+-                    er_blit_clear(ix, iy, iw, ih); /* the host draws it there (update_layers) */
++                    render_layer_hole(&n->props.image, ix, iy, iw, ih);
+                 else
+                     er_image_render(&n->props.image, ix, iy, iw, ih);
+                 break;
+@@ -5942,6 +5979,7 @@
+     ERRect dst;
+     ERRect clip;
+     int src_x, src_y, src_w, src_h;
++    int r_tl, r_tr, r_br, r_bl;
+     const ImageEntry* entry;
+ } LayerCandidate;
+ 
+@@ -5998,8 +6036,6 @@
+     const ERImageProps* ip = &n->props.image;
+     if (n->subtree_hidden || n->layout.display == ER_DISPLAY_NONE || ip->tint_color != 0U)
+         return false;
+-    if (ip->radius_tl > 0 || ip->radius_tr > 0 || ip->radius_br > 0 || ip->radius_bl > 0)
+-        return false;
+     if (ip->resize_mode != ER_RESIZE_COVER && ip->resize_mode != ER_RESIZE_STRETCH)
+         return false;
+     const ImageEntry* img = image_registry_get(ip->image_name);
+@@ -6040,8 +6076,25 @@
+     }
+     c->alpha = (uint8_t)alpha;
+     c->dst = (ERRect){px, py, w, h};
++    c->r_tl = ip->radius_tl;
++    c->r_tr = ip->radius_tr;
++    c->r_br = ip->radius_br;
++    c->r_bl = ip->radius_bl;
++    er_rrect_clamp_radii(w, h, &c->r_tl, &c->r_tr, &c->r_br, &c->r_bl);
+     int cx = px, cy = py, cw = w, ch = h;
+     clip_rect_to_clippers(n, &cx, &cy, &cw, &ch);
++    int rx, ry, rw, rh;
++    const ERNode* root = er_get_node(s_root_tag);
++    if (root && node_screen_rect(root, &rx, &ry, &rw, &rh))
++    {
++        const int x1 = (cx + cw < rx + rw) ? cx + cw : rx + rw, y1 = (cy + ch < ry + rh) ? cy + ch : ry + rh;
++        cx = cx > rx ? cx : rx;
++        cy = cy > ry ? cy : ry;
++        cw = x1 - cx;
++        ch = y1 - cy;
++    }
++    if (cw <= 0 || ch <= 0)
++        return false; /* scrolled out of view: it would only take the place of one in view */
+     c->clip = (ERRect){cx, cy, cw, ch};
+ 
+     if (ip->resize_mode == ER_RESIZE_COVER)
+@@ -6179,13 +6232,15 @@
+     for (int i = 0; i < count; i++)
+     {
+         const LayerCandidate* c = &cand[i];
++        const bool rounded = c->r_tl > 0 || c->r_tr > 0 || c->r_br > 0 || c->r_bl > 0;
+         bool active = false;
+         if (c->alpha == 255U)
+         {
++            /* What shows through a rounded layer's corners is the framebuffer's, not the host's. */
+             active = true;
+-            cover = c->clip;
++            cover = rounded ? (ERRect){0, 0, 0, 0} : c->clip;
+         }
+-        else if (previous_active)
++        else if (previous_active && !rounded)
+         {
+             const ERNode* top = layer_top(c);
+             const ERNode* below = layer_top(&cand[i - 1]);
+@@ -6211,6 +6266,10 @@
+         l->dst = c->dst;
+         l->clip = c->clip;
+         l->alpha = c->alpha;
++        l->radius_tl = c->r_tl;
++        l->radius_tr = c->r_tr;
++        l->radius_br = c->r_br;
++        l->radius_bl = c->r_bl;
+     }
+ 
+     /* A node changing between rasterized and drawn by the host repaints its box either way. */
+--- a/engine/tests/rendering/test_layers.c
++++ b/engine/tests/rendering/test_layers.c
+@@ -19,7 +19,8 @@
+  *
+  * A crossfade of two layer images under a translucent overlay: the framebuffer drawn over the listed layers
+  * must look like the same scene rasterized with layers off, at every step of the fade; the fade itself must
+- * paint nothing; and a translucent layer with no opaque layer directly under it must be rasterized.
++ * paint nothing; and a translucent layer with no opaque layer directly under it must be rasterized. A
++ * rounded layer, whose corner squares the framebuffer draws, must look like the rasterized image too.
+  */
+ 
+ #include "er_scene.h"
+@@ -129,6 +130,10 @@
+         if (x < l->clip.x || y < l->clip.y || x >= l->clip.x + l->clip.w || y >= l->clip.y + l->clip.h)
+             continue;
+         if (x < l->dst.x || y < l->dst.y || x >= l->dst.x + l->dst.w || y >= l->dst.y + l->dst.h)
++            continue;
++        const int qx = x - l->dst.x, qy = y - l->dst.y, ex = l->dst.x + l->dst.w - x, ey = l->dst.y + l->dst.h - y;
++        if ((qx < l->radius_tl && qy < l->radius_tl) || (ex <= l->radius_tr && qy < l->radius_tr)
++            || (ex <= l->radius_br && ey <= l->radius_br) || (qx < l->radius_bl && ey <= l->radius_bl))
+             continue;
+         const uint32_t texel = l->pixels[0];
+         for (int c = 0; c < 3; c++)
+@@ -268,6 +273,49 @@
+     if (count != 1)
+         fail("a translucent layer over other content is rasterized");
+     check_presented("translucent layer over other content");
++
++    /* Rounded, over the backdrop layer and over a rounded panel, with a different radius per corner. */
++    for (int i = 0; i < 2; i++)
++    {
++        ERNode* parent = root;
++        if (i == 1)
++        {
++            parent = node(ER_NODE_VIEW, root, 100, 92, 50, 26, 0xFF30C060U);
++            ERProps pp;
++            er_props_default(&pp);
++            pp.position = ER_POS_ABSOLUTE;
++            pp.left = 100;
++            pp.top = 92;
++            pp.width = 50;
++            pp.height = 26;
++            pp.background_color = 0xFF30C060U;
++            pp.border_radius = 9;
++            er_node_set_props(parent, &pp);
++        }
++        ERNode* n = er_node_create(ER_NODE_IMAGE);
++        ERProps p;
++        er_props_default(&p);
++        p.position = ER_POS_ABSOLUTE;
++        p.left = (int16_t)(i == 0 ? 60 : 0);
++        p.top = (int16_t)(i == 0 ? 20 : 0);
++        p.width = (int16_t)(i == 0 ? 40 : 50);
++        p.height = (int16_t)(i == 0 ? 36 : 26);
++        p.resize_mode = ER_RESIZE_STRETCH;
++        p.layer = 1;
++        p.border_top_left_radius = 12;
++        p.border_top_right_radius = 4;
++        p.border_bottom_left_radius = (int16_t)(i == 0 ? 16 : 9);
++        p.border_radius = (int16_t)(i == 0 ? 0 : 9);
++        strncpy(p.image_name, "red", ER_IMAGE_NAME_MAX);
++        er_node_set_props(n, &p);
++        er_tree_append_child(parent, n);
++    }
++    er_commit();
++    layers = er_get_layers(&count);
++    if (count != 3 || layers[1].radius_tl != 12 || layers[1].radius_tr != 4 || layers[1].radius_br != 0
++        || layers[1].radius_bl != 16 || layers[2].radius_br != 9)
++        fail("rounded images are layers with their radii");
++    check_presented("rounded layers");
+ 
+     if (g_failures == 0)
+         printf("PASS test_layers\n");

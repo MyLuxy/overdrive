@@ -1,0 +1,518 @@
+Embedded React: a conic gradient seen through a View's border ring.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, after the patches listed before this
+one there. Changed files: engine/include/er_scene.h,
+engine/scene/er_node_internal.h, engine/scene/compositor.c,
+engine/animation/animation.c, engine/rendering/border_sweep.c,
+engine/rendering/border_sweep.h, bridges/quickjs/native_ui_bridge.c,
+bridges/quickjs/js/src/embedded-react/index.d.ts and
+engine/tests/rendering/test_border_sweep.c. Proposed upstream, with the other
+border ring patches, as pull request #325.
+
+The rotating-gradient border (a conic gradient turning behind the card, masked
+to its border) is the classic focus-ring shimmer. The View style
+borderGradient {type: 'conic', width, angle, stops} draws a conic gradient,
+CSS conic-gradient style (0 degrees up, clockwise, up to 6 straight-alpha
+stops), only inside the anti-aliased rounded ring `width` px thick along the
+box's edge, over the content. borderGradientAngle sets the start angle and
+animates on the native driver; an angle-only change damages the ring's edge
+bands, like the border sweep it shares its rasteriser with.
+
+diff --git a/bridges/quickjs/js/src/embedded-react/index.d.ts b/bridges/quickjs/js/src/embedded-react/index.d.ts
+index 92e2952..66d4c7d 100644
+--- a/bridges/quickjs/js/src/embedded-react/index.d.ts
++++ b/bridges/quickjs/js/src/embedded-react/index.d.ts
+@@ -189,6 +189,10 @@ export interface ViewStyle {
+   borderSweepLength?: number;
+   /** Head position, 0–1 clockwise from the top edge's left end; wraps. Animate it with the native driver. */
+   borderSweepPhase?: number | AnimatedValue;
++  /** A conic gradient seen through the border ring: the rotating-gradient border. Up to 6 stops. */
++  borderGradient?: {type: 'conic'; width: number; angle?: number; stops: {color: string; offset?: number}[]};
++  /** The conic border gradient's start angle in degrees (0 = up, clockwise); animate it to rotate the light. */
++  borderGradientAngle?: number | AnimatedValue;
+ 
+   // Border.
+   borderRadius?: number;
+diff --git a/bridges/quickjs/native_ui_bridge.c b/bridges/quickjs/native_ui_bridge.c
+index 95a9f65..ffc771a 100644
+--- a/bridges/quickjs/native_ui_bridge.c
++++ b/bridges/quickjs/native_ui_bridge.c
+@@ -1175,6 +1175,8 @@ typedef enum
+     PROP_BORDER_SWEEP_WIDTH,
+     PROP_BORDER_SWEEP_PHASE,
+     PROP_BORDER_SWEEP_LENGTH,
++    PROP_BORDER_GRADIENT,
++    PROP_BORDER_GRADIENT_ANGLE,
+     PROP_COUNT_,
+ } PropId;
+ 
+@@ -1303,6 +1305,8 @@ static const char* const k_prop_names[PROP_COUNT_] = {
+     [PROP_BORDER_SWEEP_WIDTH] = "borderSweepWidth",
+     [PROP_BORDER_SWEEP_PHASE] = "borderSweepPhase",
+     [PROP_BORDER_SWEEP_LENGTH] = "borderSweepLength",
++    [PROP_BORDER_GRADIENT] = "borderGradient",
++    [PROP_BORDER_GRADIENT_ANGLE] = "borderGradientAngle",
+ };
+ 
+ /** @brief (atom, id) pair; s_prop_atoms is sorted by atom value once, for prop_id_from_atom()'s bsearch. */
+@@ -2126,6 +2130,73 @@ static void apply_background_gradient(JSContext* ctx, JSValueConst v, ERProps* p
+     apply_gradient_stops(ctx, v, p);
+ }
+ 
++/**
++ * @brief Reads a View `borderGradient` ({type: 'conic', width, angle?, stops: [{color, offset?}]}): a conic
++ * gradient seen through the border ring. `angle` is the start in degrees (0 = up, clockwise);
++ * `borderGradientAngle` overrides it and can be animated.
++ *
++ * @param[in]     ctx  QuickJS context.
++ * @param[in]     v    The style value.
++ * @param[in,out] p    Props being built.
++ */
++static void apply_border_gradient(JSContext* ctx, JSValueConst v, ERProps* p)
++{
++    if (!JS_IsObject(v))
++        return;
++    JSValue t = JS_GetPropertyStr(ctx, v, "type");
++    const char* ts = JS_ToCString(ctx, t);
++    JS_FreeValue(ctx, t);
++    const bool conic = ts && strcmp(ts, "conic") == 0;
++    if (ts)
++        JS_FreeCString(ctx, ts);
++    if (!conic)
++        return;
++    JSValue wv = JS_GetPropertyStr(ctx, v, "width");
++    int16_t width = 0;
++    if (to_dim(ctx, wv, &width))
++        p->border_gradient_width = width;
++    JS_FreeValue(ctx, wv);
++    JSValue av = JS_GetPropertyStr(ctx, v, "angle");
++    double a = 0.0;
++    if (JS_IsNumber(av) && JS_ToFloat64(ctx, &a, av) == 0)
++        p->border_gradient_angle = (float)(a - 360.0 * floor(a / 360.0));
++    JS_FreeValue(ctx, av);
++    JSValue stops = JS_GetPropertyStr(ctx, v, "stops");
++    if (JS_IsArray(stops))
++    {
++        JSValue lenv = JS_GetPropertyStr(ctx, stops, "length");
++        int32_t len = 0;
++        JS_ToInt32(ctx, &len, lenv);
++        JS_FreeValue(ctx, lenv);
++        if (len > ER_BORDER_GRADIENT_MAX_STOPS)
++            len = ER_BORDER_GRADIENT_MAX_STOPS;
++        uint8_t n = 0;
++        for (int32_t i = 0; i < len; i++)
++        {
++            JSValue st = JS_GetPropertyUint32(ctx, stops, (uint32_t)i);
++            JSValue cv = JS_GetPropertyStr(ctx, st, "color");
++            JSValue ov = JS_GetPropertyStr(ctx, st, "offset");
++            uint32_t c;
++            double o = (len > 1) ? (double)i / (double)(len - 1) : 0.0;
++            if (!JS_IsUndefined(ov))
++                JS_ToFloat64(ctx, &o, ov);
++            if (n > 0 && o < p->border_gradient_stops[n - 1].position)
++                o = p->border_gradient_stops[n - 1].position;
++            if (to_color(ctx, cv, &c))
++            {
++                p->border_gradient_stops[n].color = c;
++                p->border_gradient_stops[n].position = (float)o;
++                n++;
++            }
++            JS_FreeValue(ctx, ov);
++            JS_FreeValue(ctx, cv);
++            JS_FreeValue(ctx, st);
++        }
++        p->border_gradient_stop_count = n;
++    }
++    JS_FreeValue(ctx, stops);
++}
++
+ /**
+  * @brief Reads obj's own enumerable string keys into s_prop_slots.
+  *
+@@ -2336,6 +2407,13 @@ static void apply_props(JSContext* ctx, ERNode* node, JSValueConst obj)
+             && JS_ToFloat64(ctx, &d, s_prop_slots[PROP_BORDER_SWEEP_LENGTH]) == 0)
+             p.border_sweep_length = (float)d;
+     }
++    apply_border_gradient(ctx, s_prop_slots[PROP_BORDER_GRADIENT], &p);
++    {
++        double d = 0.0;
++        if (!JS_IsUndefined(s_prop_slots[PROP_BORDER_GRADIENT_ANGLE])
++            && JS_ToFloat64(ctx, &d, s_prop_slots[PROP_BORDER_GRADIENT_ANGLE]) == 0)
++            p.border_gradient_angle = (float)(d - 360.0 * floor(d / 360.0));
++    }
+ 
+     /* ActivityIndicator (RN uses `color` for the spinner tint). */
+     ER_COL(PROP_COLOR, indicator_color);
+@@ -4238,6 +4316,7 @@ static bool anim_prop_from_name(const char* s, ERAnimProp* out)
+         {"value", ER_PROP_ARC_VALUE},            /* Dial value (ER_NODE_ARC) */
+         {"valueStart", ER_PROP_ARC_VALUE_START}, /* Dial RANGE low end */
+         {"borderSweepPhase", ER_PROP_BORDER_SWEEP_PHASE},
++        {"borderGradientAngle", ER_PROP_BORDER_GRADIENT_ANGLE},
+     };
+     for (size_t i = 0; i < sizeof(k) / sizeof(k[0]); i++)
+     {
+diff --git a/engine/animation/animation.c b/engine/animation/animation.c
+index 12c6358..39542cc 100644
+--- a/engine/animation/animation.c
++++ b/engine/animation/animation.c
+@@ -302,6 +302,11 @@ static bool read_numeric_value(const ERNode* node, ERAnimProp prop, float* value
+                 return false;
+             *value = node->props.view.border_sweep_phase;
+             return true;
++        case ER_PROP_BORDER_GRADIENT_ANGLE:
++            if (!is_view_node(node))
++                return false;
++            *value = node->props.view.border_gradient_angle;
++            return true;
+         case ER_PROP_SWITCH_THUMB:
+             if (node->type != ER_NODE_SWITCH)
+                 return false;
+@@ -481,6 +486,19 @@ static bool apply_numeric_value(ERNode* node, ERAnimProp prop, float value)
+                 node->sweep_moved = true;
+             return true;
+         }
++        case ER_PROP_BORDER_GRADIENT_ANGLE:
++        {
++            if (!is_view_node(node))
++                return false;
++            value -= 360.0f * floorf(value / 360.0f);
++            if (node->props.view.border_gradient_angle == value)
++                return false;
++            node->props.view.border_gradient_angle = value;
++            /* Only the ring changed: the damage pre-pass repaints its bands, not the whole box. */
++            if (!node->source_dirty)
++                node->sweep_moved = true;
++            return true;
++        }
+         case ER_PROP_ARC_VALUE:
+             return er_arc_apply_value(node, value);
+         case ER_PROP_ARC_VALUE_START:
+@@ -883,7 +901,7 @@ static void push_to_value_bindings(ERAnimValue* val)
+             /* An animated opacity value changes only the blend, not the subtree's rendered
+              * content — mark visual-only so the compositor's fade cache stays valid. Every
+              * other prop (position, scale, rotation, color) changes content. */
+-            if (bind->prop != ER_PROP_BORDER_SWEEP_PHASE)
++            if (bind->prop != ER_PROP_BORDER_SWEEP_PHASE && bind->prop != ER_PROP_BORDER_GRADIENT_ANGLE)
+                 n->sweep_moved = false; /* anything else changed too: the whole box repaints */
+             if (bind->prop == ER_PROP_OPACITY)
+                 er_mark_dirty_upward_visual(n);
+diff --git a/engine/include/er_scene.h b/engine/include/er_scene.h
+index e048243..757ef16 100644
+--- a/engine/include/er_scene.h
++++ b/engine/include/er_scene.h
+@@ -369,6 +369,9 @@ extern "C"
+         ER_ARC_CAP_ROUND = 1, /**< Semicircular ends extending half the width past each boundary ray. */
+     } ERArcCap;
+ 
++/** @brief Maximum number of color stops in a View's conic border gradient (stored in every node's props). */
++#define ER_BORDER_GRADIENT_MAX_STOPS 6
++
+ /** @brief Maximum number of color stops in a View-background gradient (stored in every node's props). */
+ #define ER_GRADIENT_MAX_STOPS 4
+ 
+@@ -504,6 +507,7 @@ extern "C"
+         ER_PROP_ARC_VALUE,        /**< Arc value in [arc_min, arc_max] units (ER_NODE_ARC only). */
+         ER_PROP_ARC_VALUE_START,  /**< Arc range-mode low end, same units (ER_NODE_ARC with arc_range). */
+         ER_PROP_BORDER_SWEEP_PHASE, /**< Border sweep head position, 0–1 around the perimeter (wraps). */
++        ER_PROP_BORDER_GRADIENT_ANGLE, /**< Conic border gradient start angle in degrees. */
+     } ERAnimProp;
+ 
+     /**
+@@ -768,6 +772,12 @@ extern "C"
+         float border_sweep_phase;    /**< Head position, 0–1 around the perimeter clockwise from top-left. */
+         float border_sweep_length;   /**< Tail as a fraction of the perimeter; 0 = 0.3. */
+ 
++        /* --- Border gradient (View-family): a conic gradient seen through the border ring --- */
++        int16_t border_gradient_width;     /**< Ring thickness in pixels, inside the box; 0 = none. */
++        float border_gradient_angle;       /**< Start angle in degrees: 0 = up, clockwise (CSS conic `from`). */
++        uint8_t border_gradient_stop_count; /**< Valid entries in border_gradient_stops. */
++        ERGradientStop border_gradient_stops[ER_BORDER_GRADIENT_MAX_STOPS]; /**< Ascending positions 0–1. */
++
+         /* --- ActivityIndicator --- */
+         uint32_t indicator_color; /**< Spinner dot color; 0 = 0xFFFFFFFF (white). */
+         uint8_t animating;        /**< 1 = spinning (default when node created), 0 = stopped. */
+diff --git a/engine/rendering/border_sweep.c b/engine/rendering/border_sweep.c
+index 81ff851..6daa887 100644
+--- a/engine/rendering/border_sweep.c
++++ b/engine/rendering/border_sweep.c
+@@ -83,24 +83,70 @@ int er_border_sweep_reach(int radius, int width)
+     return (radius > width ? radius : width) + 2;
+ }
+ 
+-void er_border_sweep_render(int x, int y, int w, int h, int radius, int width, uint32_t argb, float phase,
+-                            float length)
++/** Colour of the ring at a pixel, from its position relative to the box centre: straight ARGB. */
++typedef uint32_t (*RingShader)(float px, float py, const void* ctx);
++
++typedef struct
++{
++    float a, b, r;        /* the ring's centre line: straight half-lengths and corner radius */
++    float phase, length;
++    uint32_t argb;
++} SweepShader;
++
++static uint32_t sweep_shade(float px, float py, const void* ctx)
++{
++    const SweepShader* s = ctx;
++    const float k = sweep_alpha(perimeter_at(px, py, s->a, s->b, s->r), s->phase, s->length);
++    const uint32_t a8 = (uint32_t)((float)(s->argb >> 24) * k + 0.5f);
++    return (a8 << 24) | (s->argb & 0xFFFFFFU);
++}
++
++typedef struct
++{
++    float from; /* degrees, CSS conic `from`: 0 = up, clockwise */
++    const ERGradientStop* stops;
++    int count;
++} ConicShader;
++
++/** Straight-alpha lerp of two ARGB colours. */
++static uint32_t lerp_argb(uint32_t c0, uint32_t c1, float f)
++{
++    uint32_t out = 0U;
++    for (int shift = 0; shift < 32; shift += 8)
++    {
++        const float v0 = (float)((c0 >> shift) & 0xFFU), v1 = (float)((c1 >> shift) & 0xFFU);
++        out |= (uint32_t)(v0 + (v1 - v0) * f + 0.5f) << shift;
++    }
++    return out;
++}
++
++static uint32_t conic_shade(float px, float py, const void* ctx)
++{
++    const ConicShader* s = ctx;
++    float t = (atan2f(px, -py) * (180.0f / SWEEP_PI) - s->from) / 360.0f;
++    t -= floorf(t);
++    if (t <= s->stops[0].position)
++        return s->stops[0].color;
++    for (int i = 1; i < s->count; i++)
++    {
++        if (t <= s->stops[i].position)
++        {
++            const float span = s->stops[i].position - s->stops[i - 1].position;
++            return lerp_argb(s->stops[i - 1].color, s->stops[i].color,
++                             span > 0.0f ? (t - s->stops[i - 1].position) / span : 1.0f);
++        }
++    }
++    return s->stops[s->count - 1].color;
++}
++
++/** Rasterises the anti-aliased ring `width` px inside the rounded box, coloured by `shade`. */
++static void ring_render(int x, int y, int w, int h, int radius, int width, RingShader shade, const void* ctx)
+ {
+-    if (w <= 0 || h <= 0 || width <= 0 || (argb >> 24) == 0U || length <= 0.0f)
+-        return;
+     const int max_r = (w < h ? w : h) / 2;
+     const int r = radius < 0 ? 0 : (radius > max_r ? max_r : radius);
+     const float hw = (float)w * 0.5f, hh = (float)h * 0.5f;
+     const float bw = (float)width;
+     const float inner_r = (float)r > bw ? (float)r - bw : 0.0f;
+-    /* The ring's centre line, which the sweep travels along. */
+-    const float mid = bw * 0.5f;
+-    float cr = (float)r - mid;
+-    if (cr < 0.0f)
+-        cr = 0.0f;
+-    const float ca = hw - mid - cr, cb = hh - mid - cr;
+-    const float head_a = (float)(argb >> 24) / 255.0f;
+-    const uint32_t cr8 = (argb >> 16) & 0xFFU, cg8 = (argb >> 8) & 0xFFU, cb8 = argb & 0xFFU;
+ 
+     int cx0 = x, cy0 = y, cx1 = x + w, cy1 = y + h;
+     int gx, gy, gw, gh;
+@@ -150,12 +196,12 @@ void er_border_sweep_render(int x, int y, int w, int h, int radius, int width, u
+                     uint32_t p = 0U;
+                     if (cov > 0.0f)
+                     {
+-                        const float a = cov * head_a * sweep_alpha(perimeter_at(px, py, ca, cb, cr), phase, length);
+-                        const uint32_t a8 = (uint32_t)(a * 255.0f + 0.5f);
++                        const uint32_t c = shade(px, py, ctx);
++                        const uint32_t a8 = (uint32_t)((float)(c >> 24) * cov + 0.5f);
+                         if (a8 > 0U)
+                         {
+-                            p = (a8 << 24) | (((cr8 * a8 + 127U) / 255U) << 16) | (((cg8 * a8 + 127U) / 255U) << 8)
+-                                | ((cb8 * a8 + 127U) / 255U);
++                            p = (a8 << 24) | (((((c >> 16) & 0xFFU) * a8 + 127U) / 255U) << 16)
++                                | (((((c >> 8) & 0xFFU) * a8 + 127U) / 255U) << 8) | (((c & 0xFFU) * a8 + 127U) / 255U);
+                             any = true;
+                         }
+                     }
+@@ -167,3 +213,27 @@ void er_border_sweep_render(int x, int y, int w, int h, int radius, int width, u
+         }
+     }
+ }
++
++void er_border_sweep_render(int x, int y, int w, int h, int radius, int width, uint32_t argb, float phase,
++                            float length)
++{
++    if (w <= 0 || h <= 0 || width <= 0 || (argb >> 24) == 0U || length <= 0.0f)
++        return;
++    const int max_r = (w < h ? w : h) / 2;
++    const int r = radius < 0 ? 0 : (radius > max_r ? max_r : radius);
++    const float mid = (float)width * 0.5f;
++    float cr = (float)r - mid;
++    if (cr < 0.0f)
++        cr = 0.0f;
++    const SweepShader s = {(float)w * 0.5f - mid - cr, (float)h * 0.5f - mid - cr, cr, phase, length, argb};
++    ring_render(x, y, w, h, r, width, sweep_shade, &s);
++}
++
++void er_border_conic_render(int x, int y, int w, int h, int radius, int width, float from,
++                            const ERGradientStop* stops, int count)
++{
++    if (w <= 0 || h <= 0 || width <= 0 || count < 1)
++        return;
++    const ConicShader s = {from, stops, count};
++    ring_render(x, y, w, h, radius, width, conic_shade, &s);
++}
+diff --git a/engine/rendering/border_sweep.h b/engine/rendering/border_sweep.h
+index 076d1bf..8995b75 100644
+--- a/engine/rendering/border_sweep.h
++++ b/engine/rendering/border_sweep.h
+@@ -17,6 +17,7 @@
+ #ifndef EMBEDDED_REACT_BORDER_SWEEP_H
+ #define EMBEDDED_REACT_BORDER_SWEEP_H
+ 
++#include "er_scene.h"
+ #include <stdint.h>
+ 
+ /**
+@@ -34,6 +35,20 @@
+ void er_border_sweep_render(int x, int y, int w, int h, int radius, int width, uint32_t argb, float phase,
+                             float length);
+ 
++/**
++ * @brief Draws a conic gradient seen only through a rounded-rect ring `width` px thick inside the box: the
++ * rotating-gradient border. Colours follow the angle around the box centre, CSS conic-gradient style.
++ *
++ * @param[in] x, y, w, h  The node's box in screen pixels.
++ * @param[in] radius      Corner radius of the box.
++ * @param[in] width       Ring thickness in pixels.
++ * @param[in] from        Start angle in degrees: 0 points up, positive turns clockwise.
++ * @param[in] stops       Straight-alpha colour stops at positions 0–1 around the circle, ascending.
++ * @param[in] count       Number of stops.
++ */
++void er_border_conic_render(int x, int y, int w, int h, int radius, int width, float from,
++                            const ERGradientStop* stops, int count);
++
+ /**
+  * @brief How far the sweep reaches in from each edge of the box: the bands a phase change repaints.
+  *
+diff --git a/engine/scene/compositor.c b/engine/scene/compositor.c
+index 6133ff0..ead7df3 100644
+--- a/engine/scene/compositor.c
++++ b/engine/scene/compositor.c
+@@ -2887,14 +2887,18 @@ static void render_node_content(
+         render_tree(child, needs_paint, occluded || buried, child_tx, child_ty);
+     }
+ 
+-    /* The border sweep lights the edge over the node's content, like a focus ring. */
+-    if (should_render && (n->type == ER_NODE_VIEW || n->type == ER_NODE_PRESSABLE)
+-        && n->props.view.border_sweep_width > 0)
++    /* The border gradient and sweep light the edge over the node's content, like a focus ring. */
++    if (should_render && (n->type == ER_NODE_VIEW || n->type == ER_NODE_PRESSABLE))
+     {
+         const ERViewProps* vp = &n->props.view;
+-        er_border_sweep_render(px, py, w, h, vp->border_tl_radius > 0 ? vp->border_tl_radius : vp->border_radius,
+-                               vp->border_sweep_width, vp->border_sweep_color, vp->border_sweep_phase,
+-                               vp->border_sweep_length > 0.0f ? vp->border_sweep_length : 0.3f);
++        const int radius = vp->border_tl_radius > 0 ? vp->border_tl_radius : vp->border_radius;
++        if (vp->border_gradient_width > 0)
++            er_border_conic_render(px, py, w, h, radius, vp->border_gradient_width, vp->border_gradient_angle,
++                                   vp->border_gradient_stops, vp->border_gradient_stop_count);
++        if (vp->border_sweep_width > 0)
++            er_border_sweep_render(px, py, w, h, radius, vp->border_sweep_width, vp->border_sweep_color,
++                                   vp->border_sweep_phase,
++                                   vp->border_sweep_length > 0.0f ? vp->border_sweep_length : 0.3f);
+     }
+ 
+     if (clips)
+@@ -3358,6 +3362,11 @@ static void copy_view_shadow_and_gradient(ERNode* node, const ERProps* props)
+     node->props.view.border_sweep_width = props->border_sweep_width;
+     node->props.view.border_sweep_phase = props->border_sweep_phase;
+     node->props.view.border_sweep_length = props->border_sweep_length;
++    node->props.view.border_gradient_width = props->border_gradient_width;
++    node->props.view.border_gradient_angle = props->border_gradient_angle;
++    node->props.view.border_gradient_stop_count = props->border_gradient_stop_count;
++    for (int bi = 0; bi < ER_BORDER_GRADIENT_MAX_STOPS; bi++)
++        node->props.view.border_gradient_stops[bi] = props->border_gradient_stops[bi];
+     node->props.view.gradient_type = props->gradient_type;
+     node->props.view.gradient_corner = props->gradient_corner;
+     node->props.view.gradient_angle = props->gradient_angle;
+@@ -5596,9 +5605,12 @@ void er_commit(void)
+                  * not the whole box (a focused card under a travelling light). */
+                 if (!moved)
+                 {
++                    const int ring = n->props.view.border_sweep_width > n->props.view.border_gradient_width
++                                         ? n->props.view.border_sweep_width
++                                         : n->props.view.border_gradient_width;
+                     int reach = er_border_sweep_reach(
+                         n->props.view.border_tl_radius > 0 ? n->props.view.border_tl_radius : n->props.view.border_radius,
+-                        n->props.view.border_sweep_width);
++                        ring);
+                     if (reach > rw / 2)
+                         reach = (rw + 1) / 2;
+                     if (reach > rh / 2)
+diff --git a/engine/scene/er_node_internal.h b/engine/scene/er_node_internal.h
+index 5e3992d..d47020a 100644
+--- a/engine/scene/er_node_internal.h
++++ b/engine/scene/er_node_internal.h
+@@ -227,6 +227,12 @@ typedef struct
+     float border_sweep_phase;
+     float border_sweep_length;
+ 
++    /* Conic border gradient */
++    int16_t border_gradient_width;
++    float border_gradient_angle;
++    uint8_t border_gradient_stop_count;
++    ERGradientStop border_gradient_stops[ER_BORDER_GRADIENT_MAX_STOPS];
++
+     /* Gradient (requires ERUI_GRADIENT) */
+     uint8_t gradient_type;                                /**< ERGradientType. */
+     uint8_t gradient_corner;                              /**< ERGradientCorner (overrides gradient_angle). */
+diff --git a/engine/tests/rendering/test_border_sweep.c b/engine/tests/rendering/test_border_sweep.c
+index d727369..2fa7f53 100644
+--- a/engine/tests/rendering/test_border_sweep.c
++++ b/engine/tests/rendering/test_border_sweep.c
+@@ -317,5 +317,42 @@ int main(void)
+         }
+         memcpy(fb, incremental, sizeof(incremental));
+     }
++
++    /* A conic gradient seen through a 4 px ring: clear, white at a quarter turn, clear again. From 0 the
++     * white points right (90 degrees), so the right edge is lit and the left one dark; turning the start
++     * angle by 180 swaps them, repainting only the ring's bands. */
++    er_anim_value_unbind_all(phase);
++    cp.border_sweep_width = 0;
++    cp.border_gradient_width = 4;
++    cp.border_gradient_angle = 0.0f;
++    cp.border_gradient_stop_count = 3;
++    cp.border_gradient_stops[0] = (ERGradientStop){0x00FFFFFFU, 0.0f};
++    cp.border_gradient_stops[1] = (ERGradientStop){0xFFFFFFFFU, 0.25f};
++    cp.border_gradient_stops[2] = (ERGradientStop){0x00FFFFFFU, 0.5f};
++    er_node_set_props(card, &cp);
++    er_commit();
++    const unsigned right = brightness(px_at(&t, 20 + 160 - 2, 80));
++    const unsigned left = brightness(px_at(&t, 20 + 1, 80));
++    if (right < 600 || left > card_bg + 10)
++        return fail("conic ring: the lit side is not where the stops put it");
++    if (brightness(px_at(&t, 100, 80)) != brightness(cp.background_color))
++        return fail("conic ring: drew inside the card");
++
++    ERAnimValueHandle turn = er_anim_value_create(0.0f);
++    er_anim_value_bind(turn, card, ER_PROP_BORDER_GRADIENT_ANGLE);
++    er_commit(); /* binding marks the card for a full repaint; the angle steps after it are what is measured */
++    er_anim_value_set(turn, 180.0f);
++    s_area = 0;
++    er_commit();
++    if (s_area * 5 >= whole_card * 3)
++        return fail("conic ring: an angle step cost more than 60% of repainting the whole card");
++    if (brightness(px_at(&t, 20 + 1, 80)) < 600 || brightness(px_at(&t, 20 + 160 - 2, 80)) > card_bg + 10)
++        return fail("conic ring: turning the start angle by 180 did not move the light across");
++    memcpy(incremental, fb, sizeof(incremental));
++    memset(fb, 0, sizeof(fb));
++    er_force_full_repaint();
++    er_commit();
++    if (memcmp(incremental, fb, sizeof(incremental)) != 0)
++        return fail("conic ring: the turned frame differs from a full repaint");
+     return EXIT_SUCCESS;
+ }

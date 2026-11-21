@@ -1,0 +1,182 @@
+Embedded React: keep a scroll strip and a card apart in the damage set.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, after the patches listed before this
+one there. Changed files: engine/scene/damage.c,
+engine/scene/er_damage_internal.h and engine/tests/scene/test_damage_set.c.
+Proposed upstream as pull request #309.
+
+The damage set merged any two rects that overlapped or abutted into their
+bounding box. During a scroll, the exposed full-width strip and a card or menu
+overlapping it (a focus animation, a row entering) became the full width times
+both heights: on the PS5 a 62 px scroll step repainted a 287 px band. A rect
+now merges with a stored one only when their bounding box is at most a quarter
+clean pixels (or a few thousand); otherwise only the input's parts outside the
+stored rect are added, so the set stays disjoint without repainting the clean
+span. The invariant is relaxed from disjoint and non-abutting to disjoint,
+which is what the per-rect paint passes need. test_damage_set covers the split.
+
+diff --git a/engine/scene/damage.c b/engine/scene/damage.c
+index 5e341e7..20e6c5f 100644
+--- a/engine/scene/damage.c
++++ b/engine/scene/damage.c
+@@ -50,6 +50,30 @@ static uint32_t rect_area(const ERRect* r)
+     return (uint32_t)r->w * (uint32_t)r->h;
+ }
+ 
++/** @brief True when the two rects share at least one pixel (abutting does not count). */
++static bool overlaps(const ERRect* a, const ERRect* b)
++{
++    return a->x < b->x + b->w && b->x < a->x + a->w && a->y < b->y + b->h && b->y < a->y + a->h;
++}
++
++/**
++ * @brief Whether the bounding box of a ∪ b is almost all their own pixels: at most a quarter clean, or a
++ *        few thousand clean pixels, which an extra paint pass would cost more than.
++ *
++ * A full-width scroll strip and a card or menu overlapping it fail this: their box is the full width
++ * times both heights, mostly pixels neither changed, so they stay apart.
++ */
++static bool cheap_union(const ERRect* a, const ERRect* b)
++{
++    ERRect u = *a;
++    bbox_union(&u, b);
++    int ix = (a->x + a->w < b->x + b->w ? a->x + a->w : b->x + b->w) - (a->x > b->x ? a->x : b->x);
++    int iy = (a->y + a->h < b->y + b->h ? a->y + a->h : b->y + b->h) - (a->y > b->y ? a->y : b->y);
++    const uint32_t shared = (ix > 0 && iy > 0) ? (uint32_t)ix * (uint32_t)iy : 0U;
++    const uint32_t waste = rect_area(&u) - rect_area(a) - rect_area(b) + shared;
++    return waste * 4U <= rect_area(&u) || waste <= 4096U;
++}
++
+ /**
+  * @brief Absorbs into @p acc every stored rect that overlaps or abuts it, cascading until stable.
+  *
+@@ -65,7 +89,9 @@ static void absorb_touching(ERDamageSet* s, ERRect* acc)
+         removed_any = false;
+         for (uint8_t i = 0; i < s->count;)
+         {
+-            if (touch_or_overlap(acc, &s->r[i]))
++            /* An abutting rect stays apart when the box would be mostly clean; an overlapping one is always
++             * absorbed, which keeps the set disjoint. */
++            if (touch_or_overlap(acc, &s->r[i]) && (overlaps(acc, &s->r[i]) || cheap_union(acc, &s->r[i])))
+             {
+                 bbox_union(acc, &s->r[i]);
+                 s->r[i] = s->r[--s->count]; /* swap-remove; re-test the swapped-in rect at i */
+@@ -127,7 +153,25 @@ void er_damage_set_add(ERDamageSet* s, int x, int y, int w, int h)
+     acc.w = w;
+     acc.h = h;
+ 
+-    /* Merge with everything the input touches (disjointness invariant), cascading. */
++    /* Overlapping a stored rect whose bounding box with the input would be mostly clean: add only the
++     * parts of the input outside it (up to four bands), each as an input of its own. */
++    for (uint8_t i = 0; i < s->count; i++)
++    {
++        const ERRect r = s->r[i];
++        if (!overlaps(&acc, &r) || cheap_union(&acc, &r))
++            continue;
++        const int ix0 = acc.x > r.x ? acc.x : r.x;
++        const int iy0 = acc.y > r.y ? acc.y : r.y;
++        const int ix1 = (acc.x + acc.w < r.x + r.w) ? acc.x + acc.w : r.x + r.w;
++        const int iy1 = (acc.y + acc.h < r.y + r.h) ? acc.y + acc.h : r.y + r.h;
++        er_damage_set_add(s, acc.x, acc.y, acc.w, iy0 - acc.y);                   /* above */
++        er_damage_set_add(s, acc.x, iy1, acc.w, acc.y + acc.h - iy1);             /* below */
++        er_damage_set_add(s, acc.x, iy0, ix0 - acc.x, iy1 - iy0);                 /* left */
++        er_damage_set_add(s, ix1, iy0, acc.x + acc.w - ix1, iy1 - iy0);           /* right */
++        return;
++    }
++
++    /* Merge with what the input touches (disjointness invariant), cascading. */
+     absorb_touching(s, &acc);
+ 
+     if (s->count < (uint8_t)ER_DAMAGE_RECTS_MAX)
+diff --git a/engine/scene/er_damage_internal.h b/engine/scene/er_damage_internal.h
+index 744b545..62e7398 100644
+--- a/engine/scene/er_damage_internal.h
++++ b/engine/scene/er_damage_internal.h
+@@ -26,11 +26,13 @@
+  * ER_DAMAGE_RECTS_MAX rects instead, letting the compositor repaint (and a backend flush) each
+  * changed area on its own.
+  *
+- * Invariant: the stored rects are PAIRWISE DISJOINT and non-abutting. This is load-bearing, not an
+- * optimisation — the compositor paints each rect in a separate clipped pass, and a pixel covered by
+- * two passes would have translucent content blended into it twice (visibly darker). er_damage_set_add
+- * therefore merges any overlapping-or-touching input into the existing rects (cascading, since a
+- * merge can grow a rect into contact with another) rather than storing it alongside them.
++ * Invariant: the stored rects are PAIRWISE DISJOINT. This is load-bearing, not an optimisation — the
++ * compositor paints each rect in a separate clipped pass, and a pixel covered by two passes would
++ * have translucent content blended into it twice (visibly darker). er_damage_set_add merges an input
++ * into a rect it overlaps or abuts when their bounding box is mostly their own pixels (cascading,
++ * since a merge can grow a rect into contact with another). When the box would be mostly clean — a
++ * full-width scroll strip and a card overlapping one end of it — it adds only the input's parts
++ * outside that rect instead, so neither drags the other's empty span into the repaint.
+  *
+  * When the set is full, the incoming rect is merged with whichever stored rect wastes the least area
+  * (union area minus the two parts) — so pathological scattered damage degrades gracefully toward the
+@@ -50,7 +52,7 @@
+  * er_get_dirty_rects(), whose contract it caps. */
+ 
+ /**
+- * @brief A small set of pairwise-disjoint, non-abutting dirty rects.
++ * @brief A small set of pairwise-disjoint dirty rects.
+  *
+  * Zero-initialisation is a valid empty set.
+  */
+diff --git a/engine/tests/scene/test_damage_set.c b/engine/tests/scene/test_damage_set.c
+index 57dc2fb..df066fe 100644
+--- a/engine/tests/scene/test_damage_set.c
++++ b/engine/tests/scene/test_damage_set.c
+@@ -18,8 +18,8 @@
+  * ERDamageSet (er_damage_internal.h): the disjoint dirty-rect set behind the compositor's damage
+  * tracking. The properties that matter:
+  *
+- *   - disjointness: no two stored rects overlap or abut (a pixel covered twice would double-blend
+- *     translucent content when the compositor paints each rect in its own pass),
++ *   - disjointness: no two stored rects overlap (a pixel covered twice would double-blend translucent
++ *     content when the compositor paints each rect in its own pass),
+  *   - coverage: every added rect is covered by the stored rects, including through cascade merges
+  *     and pool saturation (coverage may grow — never shrink),
+  *   - graceful saturation: MAX+1 scattered rects still fit by merging the least-wasteful pair.
+@@ -49,7 +49,13 @@ static bool rects_touch(const ERRect* a, const ERRect* b)
+     return !(a->x + a->w < b->x || b->x + b->w < a->x || a->y + a->h < b->y || b->y + b->h < a->y);
+ }
+ 
+-/** @brief Asserts the set's core invariant: pairwise disjoint AND non-abutting. */
++/** @brief True when the two rects share a pixel. */
++static bool rects_overlap(const ERRect* a, const ERRect* b)
++{
++    return a->x < b->x + b->w && b->x < a->x + a->w && a->y < b->y + b->h && b->y < a->y + a->h;
++}
++
++/** @brief Asserts the set's core invariant: pairwise disjoint. */
+ static bool check_disjoint(const ERDamageSet* s)
+ {
+     for (uint8_t i = 0; i < s->count; i++)
+@@ -60,7 +66,7 @@ static bool check_disjoint(const ERDamageSet* s)
+         }
+         for (uint8_t j = (uint8_t)(i + 1U); j < s->count; j++)
+         {
+-            if (rects_touch(&s->r[i], &s->r[j]))
++            if (rects_overlap(&s->r[i], &s->r[j]))
+             {
+                 return false;
+             }
+@@ -192,7 +198,18 @@ static int check_basics(void)
+     if (s.count != 0U)
+         return fail("clear did not empty the set");
+ 
+-    printf("PASS: basics — empty ignored, disjoint kept apart, overlap/abut merged\n");
++    /* A full-width strip and a narrow rect overlapping its top stay apart: the strip keeps its rect and
++     * only the part of the narrow one above it is added, so no clean span is repainted. */
++    history_reset();
++    if (!add_checked(&s, 0, 150, 200, 20))
++        return fail("invariant after strip add");
++    if (!add_checked(&s, 10, 60, 20, 100))
++        return fail("invariant after card overlapping the strip");
++    if (s.count != 2U || er_damage_set_area(&s) != 200U * 20U + 20U * 90U)
++        return fail("strip and overlapping card were merged into their bounding box");
++    er_damage_set_clear(&s);
++
++    printf("PASS: basics — empty ignored, disjoint kept apart, cheap overlap/abut merged, costly split\n");
+     return EXIT_SUCCESS;
+ }
+ 

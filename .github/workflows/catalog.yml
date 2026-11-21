@@ -1,0 +1,122 @@
+name: catalog
+
+# Every night, and from Run workflow: the importers read what Pegasus and SuperPSX changed, the new
+# games are filled from the PlayStation Store (IGDB when it lacks something), and what changed since
+# main's last commit goes to catalog-update.json on the "catalog" branch, which the app downloads.
+# main itself is never written: a release folds the update into the build's own catalog.
+on:
+  schedule:
+    - cron: "0 2 * * *" # 04:00 in Italy in summer, 03:00 in winter
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: catalog
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash # -e and pipefail: a tool that fails fails the run, even before a filter
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    env:
+      CACHES: /home/runner/catalog-caches
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Pillow (the new games' tint)
+        run: pip install --disable-pip-version-check pillow
+
+      # What the last run read: the sites' pages and feeds, and the store's answers. Without it the
+      # run reads everything again (about an hour), and nothing goes wrong.
+      - name: Restore the caches
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CACHES }}
+          key: catalog-caches-${{ github.run_id }}
+          restore-keys: catalog-caches-
+
+      - name: Read Pegasus
+        run: python -P tools/import-pegasus.py fetch --cache "$CACHES/pegasus"
+
+      - name: Read SuperPSX
+        run: python -P tools/import-superpsx.py crawl --scope all --incremental --cache "$CACHES/superpsx"
+
+      - name: Import
+        run: |
+          python -P tools/import-pegasus.py import --new --write --cache "$CACHES/pegasus" | sed '/^  new:/d'
+          python -P tools/import-superpsx.py import --scope catalog --new --write --cache "$CACHES/superpsx" \
+            | sed '/twin of\|shown again/d'
+
+      - name: Fill in the new games
+        env:
+          IGDB_CLIENT_ID: ${{ secrets.IGDB_CLIENT_ID }}
+          IGDB_CLIENT_SECRET: ${{ secrets.IGDB_CLIENT_SECRET }}
+        run: python -P tools/enrich-catalog.py --since HEAD --write --cache "$CACHES/enrich" | sed '/looked up/d'
+
+      - name: Mark the VR games
+        env:
+          IGDB_CLIENT_ID: ${{ secrets.IGDB_CLIENT_ID }}
+          IGDB_CLIENT_SECRET: ${{ secrets.IGDB_CLIENT_SECRET }}
+        run: python -P tools/vr-games.py --write --cache "$CACHES/enrich"
+
+      - name: Save the caches
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.CACHES }}
+          key: catalog-caches-${{ github.run_id }}
+
+      # Against the latest published release: the players' catalog is that release's, and the app
+      # applies an update only when it is its own version (app/state/catalog-update.js).
+      - name: Write the update
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag=$(gh release view --repo "${{ github.repository }}" --json tagName --jq .tagName)
+          git fetch -q --depth 1 origin "refs/tags/$tag:refs/tags/$tag"
+          python -P tools/catalog-update.py --base "$tag" --version "${tag#v}" --out "$RUNNER_TEMP/catalog-update.json"
+
+      # One commit on an orphan branch, replaced each night: the branch never grows. Nothing is pushed
+      # when only the date changed.
+      - name: Publish it
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          if [ ! -f "$RUNNER_TEMP/catalog-update.json" ]; then
+            echo "no update written: nothing to publish"
+            exit 0
+          fi
+          out="$RUNNER_TEMP/publish"
+          git init -q -b catalog "$out"
+          cp "$RUNNER_TEMP/catalog-update.json" "$out/"
+          cd "$out"
+          remote="https://x-access-token:$TOKEN@github.com/${{ github.repository }}"
+          if git fetch -q --depth 1 "$remote" catalog 2>/dev/null; then
+            git show FETCH_HEAD:catalog-update.json > "$RUNNER_TEMP/published.json"
+            if python - "$RUNNER_TEMP/published.json" catalog-update.json <<'EOF'
+          import json, sys
+          old, new = (json.load(open(path, encoding="utf-8")) for path in sys.argv[1:])
+          old.pop("generated", None); new.pop("generated", None)
+          sys.exit(0 if old == new else 1)
+          EOF
+            then
+              echo "nothing changed since the last update"
+              exit 0
+            fi
+          fi
+          git add catalog-update.json
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "catalog update"
+          git push -q -f "$remote" catalog
+          echo "published: https://raw.githubusercontent.com/${{ github.repository }}/catalog/catalog-update.json"

@@ -1,0 +1,527 @@
+Embedded React: render Arc and Svg scenes across the render workers.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, in the patch order listed there.
+Changed files: engine/include/native_renderer.h,
+engine/core/{er_parallel.c,renderer_internal.h},
+engine/rendering/{arc.c,vector.c}, engine/scene/{compositor.c,er_node_internal.h}
+and engine/tests/rendering/test_parallel.c. Not proposed upstream: PS5 React
+maintains this change here.
+
+The sliced parallel commit refused any scene holding an Arc or a vector node,
+because both rasterizers kept their scratch in statics. Icon-heavy screens
+therefore always rendered on one core. Arc span caches become per worker.
+Vector rasterization (the tape working set and the edge cache) is bracketed by
+an optional lock/unlock pair in EmbeddedRenderWorkers, so with a lock a vector
+scene forks and only the vector draws themselves serialize; without one it stays
+single-core as before.
+
+Two pieces of per-node bookkeeping were written differently by slices that
+disagreed, and are now resolved in er_commit's sequential post-pass:
+- A pass that walks a transformed node occluded skips its capture and records
+  the raw box. That record is kept aside and used only when no pass painted the
+  node, so the painted footprint wins regardless of slice or damage-rect order.
+- The one-shot vector/arc sub-region damage flag is cleared after the walk, so
+  every slice reads the same rect.
+
+test_parallel checks that an Arc and vector scene forks only with the lock,
+takes it, and is byte-identical to a single-core render after a full repaint
+and after partial damage.
+
+diff --git a/engine/core/er_parallel.c b/engine/core/er_parallel.c
+index 30f219a..b1ec9fe 100644
+--- a/engine/core/er_parallel.c
++++ b/engine/core/er_parallel.c
+@@ -56,6 +56,8 @@ void embedded_renderer_set_workers(const EmbeddedRenderWorkers* workers)
+         return;
+     }
+     s_workers = *workers;
++    if (!s_workers.lock || !s_workers.unlock)
++        s_workers.lock = s_workers.unlock = NULL; /* both or neither */
+     if (s_workers.count > ERUI_RENDER_WORKERS)
+         s_workers.count = ERUI_RENDER_WORKERS; /* clamp to the build cap */
+ #else
+@@ -84,6 +86,31 @@ int er_render_workers_active(void)
+ #endif
+ }
+ 
++bool er_render_serial_supported(void)
++{
++#if ERUI_RENDER_WORKERS > 1
++    return s_workers.count > 1 && s_workers.lock != NULL;
++#else
++    return true;
++#endif
++}
++
++void er_render_serial_begin(void)
++{
++#if ERUI_RENDER_WORKERS > 1
++    if (s_forking && s_workers.lock)
++        s_workers.lock(s_workers.ctx);
++#endif
++}
++
++void er_render_serial_end(void)
++{
++#if ERUI_RENDER_WORKERS > 1
++    if (s_forking && s_workers.unlock)
++        s_workers.unlock(s_workers.ctx);
++#endif
++}
++
+ void er_render_worker_exec(int worker)
+ {
+ #if ERUI_RENDER_WORKERS > 1
+diff --git a/engine/core/renderer_internal.h b/engine/core/renderer_internal.h
+index eefddf4..7a096a3 100644
+--- a/engine/core/renderer_internal.h
++++ b/engine/core/renderer_internal.h
+@@ -140,6 +140,19 @@ static inline int er_render_worker_id(void)
+  */
+ int er_render_workers_active(void);
+ 
++/**
++ * @brief Whether the installed workers provide the lock that er_render_serial_begin() takes, so render
++ *        code that still shares scratch across workers can run inside a fork-join.
++ */
++bool er_render_serial_supported(void);
++
++/**
++ * @brief Brackets render code that uses shared scratch: inside a fork-join, one worker at a time.
++ *        No-ops outside a fork-join and in single-worker builds. Not re-entrant.
++ */
++void er_render_serial_begin(void);
++void er_render_serial_end(void);
++
+ /**
+  * @brief One worker's share of a forked render job.
+  *
+diff --git a/engine/include/native_renderer.h b/engine/include/native_renderer.h
+index a857fc0..d88d6ad 100644
+--- a/engine/include/native_renderer.h
++++ b/engine/include/native_renderer.h
+@@ -165,6 +165,9 @@ extern "C"
+      *  - worker_id(): the calling thread's worker index — 0 for the render thread, k for the
+      *    thread that services dispatch(k). Called from render code only (never from other
+      *    threads). On core-pinned workers this can be as cheap as reading the core id.
++     *  - lock()/unlock() (optional, both or neither): a mutex the workers of one fork-join take
++     *    around the renderers that still share scratch (vector rasterization and its edge cache).
++     *    Without them, a scene holding vector nodes renders single-core.
+      *
+      * Ignored (single-core rendering) unless the engine was built with ERUI_RENDER_WORKERS
+      * greater than 1; count is clamped to that build cap. Install before the first commit and
+@@ -177,6 +180,8 @@ extern "C"
+         void (*sync)(void* ctx);                 /**< Wait for all dispatched workers to finish. */
+         int (*worker_id)(void);                  /**< Calling thread's worker index. */
+         void* ctx;                               /**< Opaque host context passed to dispatch/sync. */
++        void (*lock)(void* ctx);                 /**< Optional: enter the shared-scratch section. */
++        void (*unlock)(void* ctx);               /**< Optional: leave it. */
+     } EmbeddedRenderWorkers;
+ 
+     /**
+diff --git a/engine/rendering/arc.c b/engine/rendering/arc.c
+index 69dba67..ff04d7a 100644
+--- a/engine/rendering/arc.c
++++ b/engine/rendering/arc.c
+@@ -80,9 +80,10 @@ typedef struct
+  - Variables: Private
+  ---------------------------------------------------------------------------------------------------------------------*/
+ 
+-static ArcSpanEntry s_span_cache[ERUI_ARC_SPAN_CACHE];
+-static uint32_t s_span_tick = 0U;
+-static uint32_t s_span_misses = 0U;
++/* One span cache per render worker: a miss rebuilds an entry in place. */
++static ArcSpanEntry s_span_cache[ERUI_RENDER_WORKERS][ERUI_ARC_SPAN_CACHE];
++static uint32_t s_span_tick[ERUI_RENDER_WORKERS];
++static uint32_t s_span_misses[ERUI_RENDER_WORKERS];
+ 
+ /** @brief Premultiplied row chunk, one per render worker (the blend source). */
+ static uint32_t s_row[ERUI_RENDER_WORKERS][ARC_ROW_CHUNK];
+@@ -112,24 +113,26 @@ static ArcSpanEntry* span_entry(float r, float frac)
+ {
+     if (r <= 0.0f || r >= (float)ERUI_ARC_MAX_RADIUS)
+         return NULL;
+-    s_span_tick++;
+-    ArcSpanEntry* victim = &s_span_cache[0];
++    const int w = er_render_worker_id();
++    const uint32_t tick = ++s_span_tick[w];
++    ArcSpanEntry* const cache = s_span_cache[w];
++    ArcSpanEntry* victim = &cache[0];
+     for (int i = 0; i < ERUI_ARC_SPAN_CACHE; i++)
+     {
+-        ArcSpanEntry* e = &s_span_cache[i];
++        ArcSpanEntry* e = &cache[i];
+         if (e->r == r && fabsf(e->frac - frac) < (1.0f / 512.0f))
+         {
+-            e->stamp = s_span_tick;
++            e->stamp = tick;
+             return e;
+         }
+         if (e->r == 0.0f || e->stamp < victim->stamp)
+             victim = e;
+     }
+     /* Miss: (re)build the least recently used entry. Rows k = 0.. while k + frac < r. */
+-    s_span_misses++;
++    s_span_misses[w]++;
+     victim->r = r;
+     victim->frac = frac;
+-    victim->stamp = s_span_tick;
++    victim->stamp = tick;
+     uint16_t n = 0U;
+     while (n < (uint16_t)(ERUI_ARC_MAX_RADIUS + 2))
+     {
+@@ -170,13 +173,16 @@ float er_arc_half_chord(float r, float dy)
+ void er_arc_span_cache_reset(void)
+ {
+     memset(s_span_cache, 0, sizeof(s_span_cache));
+-    s_span_tick = 0U;
+-    s_span_misses = 0U;
++    memset(s_span_tick, 0, sizeof(s_span_tick));
++    memset(s_span_misses, 0, sizeof(s_span_misses));
+ }
+ 
+ uint32_t er_arc_span_cache_misses(void)
+ {
+-    return s_span_misses;
++    uint32_t misses = 0U;
++    for (int i = 0; i < ERUI_RENDER_WORKERS; i++)
++        misses += s_span_misses[i];
++    return misses;
+ }
+ 
+ void er_arc_sector_bbox(float cx,
+diff --git a/engine/rendering/vector.c b/engine/rendering/vector.c
+index 8a3ddd7..0d53aa5 100644
+--- a/engine/rendering/vector.c
++++ b/engine/rendering/vector.c
+@@ -1931,7 +1931,7 @@ static void replay_cache(const ERVecCache* e,
+ }
+ #endif /* ERUI_VECTOR_EDGE_CACHE */
+ 
+-void er_vector_render_slot(int slot, int px, int py, int clipx0, int clipy0, int clipx1, int clipy1)
++static void render_slot(int slot, int px, int py, int clipx0, int clipy0, int clipx1, int clipy1)
+ {
+     int no = 0, np = 0, ng = 0;
+     const float* ops = er_vector_slot_ops(slot, &no);
+@@ -1962,3 +1962,12 @@ void er_vector_render_slot(int slot, int px, int py, int clipx0, int clipy0, int
+     render_tape(ops, no, paints, np, grads, ng, px, py, clipx0, clipy0, clipx1, clipy1);
+ #endif
+ }
++
++void er_vector_render_slot(int slot, int px, int py, int clipx0, int clipy0, int clipx1, int clipy1)
++{
++    /* The working state above and the edge cache are shared by every render worker: a parallel
++     * commit rasterizes vectors one worker at a time. */
++    er_render_serial_begin();
++    render_slot(slot, px, py, clipx0, clipy0, clipx1, clipy1);
++    er_render_serial_end();
++}
+diff --git a/engine/scene/compositor.c b/engine/scene/compositor.c
+index 330fa0b..53b2b1b 100644
+--- a/engine/scene/compositor.c
++++ b/engine/scene/compositor.c
+@@ -436,12 +436,14 @@ typedef struct
+ static CompCtx s_comp_ctx[ERUI_RENDER_WORKERS];
+ 
+ /* Multi-core render safety: vector rasterization and shadow blurs still run through large SHARED
+- * static scratch (engine/rendering/vector.c, shadow.c — too big to duplicate per worker), so a
+- * scene containing them renders single-core. Vector nodes and shadow-casting views are counted as
+- * they come and go; the sliced fork below only engages while the count is zero. Every other
+- * primitive (fills, borders, text, gradients, images, opacity strips, transforms) works from
+- * per-worker state and is safe to render concurrently. */
++ * static scratch (engine/rendering/vector.c, shadow.c — too big to duplicate per worker). Shadow-
++ * casting views are counted as they come and go, and the sliced fork below only engages while the
++ * count is zero. Vector nodes are counted separately: they render inside a fork-join only when the
++ * host's workers provide the lock er_vector_render_slot takes. Every other primitive (fills,
++ * borders, arcs, text, gradients, images, opacity strips, transforms) works from per-worker state
++ * and is safe to render concurrently. */
+ static int s_parallel_unsafe = 0;
++static int s_parallel_vectors = 0;
+ 
+ /* True while er_commit is rendering slices on multiple workers. The fade cache sits out those
+  * frames (composite_from_cache checks this): its buffer is one shared global, and a capture from
+@@ -2516,13 +2518,27 @@ static void render_tree(ERNode* n, bool parent_dirty, bool occluded, int transla
+         }
+         clip_rect_axis(&lp_x, &lp_w);
+         clip_rect_axis(&lp_y, &lp_h);
+-        n->last_paint_rect.x = (int16_t)lp_x;
+-        n->last_paint_rect.y = (int16_t)lp_y;
+-        n->last_paint_rect.w = (int16_t)lp_w;
+-        n->last_paint_rect.h = (int16_t)lp_h;
+-        n->last_paint_untransformed = !doing_affine;
+-        n->has_last_paint = true;
+-        n->last_paint_empty = paints_nothing(n);
++        /* A pass that saw this node buried skipped its capture, so its record can differ from one that
++         * painted it: two damage rects, or two parallel slices, can disagree on occlusion. Keep the buried
++         * record aside and let er_commit's post-pass use it only when no pass painted the node. Writers of
++         * either record within one commit all compute the same values, so slices sharing a node agree. */
++        ERLayoutRect* rec = occluded ? &n->buried_paint_rect : &n->last_paint_rect;
++        rec->x = (int16_t)lp_x;
++        rec->y = (int16_t)lp_y;
++        rec->w = (int16_t)lp_w;
++        rec->h = (int16_t)lp_h;
++        if (occluded)
++        {
++            n->buried_paint_untransformed = !doing_affine;
++            n->buried_paint_seq = s_commit_seq;
++        }
++        else
++        {
++            n->last_paint_untransformed = !doing_affine;
++            n->has_last_paint = true;
++            n->last_paint_empty = paints_nothing(n);
++            n->visible_paint_seq = s_commit_seq;
++        }
+     }
+ 
+     /* Shadow: rendered before opacity scratch so the shadow lands in the outer destination
+@@ -2852,7 +2868,6 @@ static void render_node_content(
+                      * re-tessellating the tape (ERUI_VECTOR_EDGE_CACHE). */
+                     er_vector_render_slot(n->vector_slot, vx, vy, clx0, cly0, clx1, cly1);
+                 }
+-                n->vec_has_dirty = false; /* one-shot: consumed by this commit */
+                 break;
+             case ER_NODE_ACTIVITY_INDICATOR:
+             {
+@@ -2866,7 +2881,6 @@ static void render_node_content(
+             }
+             case ER_NODE_ARC:
+                 er_arc_render(n, px, py, w, h);
+-                n->vec_has_dirty = false; /* one-shot, like the vector sub-rect */
+                 break;
+             case ER_NODE_SWITCH:
+             {
+@@ -2966,11 +2980,6 @@ static void render_node_content(
+         }
+     }
+ 
+-    /* A one-shot sub-region damage rect that was never consumed (the node is buried this commit)
+-     * must still be retired, or the next commit would narrow that node's repaint to a stale rect. */
+-    if (needs_paint && !should_render && (n->type == ER_NODE_VECTOR || n->type == ER_NODE_ARC))
+-        n->vec_has_dirty = false;
+-
+     if (clips)
+         er_push_clip_rect(px, py, w, h);
+ 
+@@ -3221,8 +3230,8 @@ ERNode* er_node_create(ERNodeType type)
+     n->dirty = true;
+     n->vector_slot = -1; /* memset cleared it to 0, which is a valid slot; -1 = "no geometry". */
+ 
+-    if (type == ER_NODE_VECTOR || type == ER_NODE_ARC)
+-        s_parallel_unsafe++; /* vector rasterizer / arc span cache use shared scratch — see s_parallel_unsafe */
++    if (type == ER_NODE_VECTOR)
++        s_parallel_vectors++; /* the vector rasterizer uses shared scratch — see s_parallel_unsafe */
+ 
+     /* No finger owns a fresh arc. memset left this 0, which would read as "finger 0 is dragging". */
+     if (type == ER_NODE_ARC)
+@@ -3271,8 +3280,8 @@ void er_node_destroy(ERNode* node)
+ 
+     node->in_use = false;
+     node->dirty = false;
+-    if (node->type == ER_NODE_VECTOR || node->type == ER_NODE_ARC)
+-        s_parallel_unsafe--;
++    if (node->type == ER_NODE_VECTOR)
++        s_parallel_vectors--;
+ #if ERUI_SHADOWS
+     if (node->casts_shadow)
+     {
+@@ -4987,7 +4996,8 @@ void er_reset(void)
+         s_nodes[i].in_use = false;
+     s_next_tag = 0;
+     s_free_count = 0;
+-    s_parallel_unsafe = 0; /* the old scene's vectors, arcs and shadow casters are gone with it */
++    s_parallel_unsafe = 0; /* the old scene's shadow casters and vectors are gone with it */
++    s_parallel_vectors = 0;
+     s_root_tag = ER_INVALID_TAG;
+     s_focused_input_tag = ER_INVALID_TAG;
+     s_last_cursor_phase = 2U;
+@@ -6056,7 +6066,8 @@ void er_commit(void)
+         const bool serial_for_capture = s_fade_capture_wanted && (s_fade_capture_wanted_gen == s_content_gen);
+         s_fade_capture_wanted = false;
+         /* Parallel gate minus the region-height test, which is per-region below. */
+-        const bool can_parallel = nworkers > 1 && !serial_for_capture && s_parallel_unsafe == 0;
++        const bool can_parallel = nworkers > 1 && !serial_for_capture && s_parallel_unsafe == 0
++                                  && (s_parallel_vectors == 0 || er_render_serial_supported());
+         /* Single buffer: rely on the propagated dirty flags inside the clip (parent_dirty = false) so only
+          * the changed nodes repaint. Multi-buffer replay must instead FULLY recomposite the clipped region
+          * (parent_dirty = true) — the replayed history covers nodes with no live dirty flag this frame, and
+@@ -6197,11 +6208,23 @@ void er_commit(void)
+             continue;
+ 
+         pn->overflow_toggled = false;
++        if (pn->buried_paint_seq == s_commit_seq && pn->visible_paint_seq != s_commit_seq)
++        {
++            pn->last_paint_rect = pn->buried_paint_rect;
++            pn->last_paint_untransformed = pn->buried_paint_untransformed;
++            pn->has_last_paint = true;
++            pn->last_paint_empty = paints_nothing(pn);
++        }
+         if (pn->painted_seq == s_commit_seq || pn->subtree_hidden)
+         {
+             pn->dirty = false;
+             pn->source_dirty = false;
+         }
++        /* A vector or arc's one-shot sub-region damage is consumed by the commit that walked it, painted
++         * or buried: a stale rect would narrow the next commit's repaint. Cleared here rather than in the
++         * walk so every pass and parallel slice of this commit reads the same rect. */
++        if (pn->painted_seq == s_commit_seq && (pn->type == ER_NODE_VECTOR || pn->type == ER_NODE_ARC))
++            pn->vec_has_dirty = false;
+     }
+ 
+     /* Publish only when this commit painted, so the accessors keep reporting the last commit that did
+diff --git a/engine/scene/er_node_internal.h b/engine/scene/er_node_internal.h
+index e690565..6b18d22 100644
+--- a/engine/scene/er_node_internal.h
++++ b/engine/scene/er_node_internal.h
+@@ -444,6 +444,11 @@ struct ERNode
+                                         The damage pre-pass has to predict the same fallback or the two
+                                         never agree and the node reads as moved on every commit. Only
+                                         meaningful alongside has_last_paint. */
++    ERLayoutRect buried_paint_rect;  /**< The record of a pass that walked this node OCCLUDED, applied by er_commit's
++                                          post-pass only when no pass painted it that commit (see render_tree). */
++    bool buried_paint_untransformed; /**< last_paint_untransformed for buried_paint_rect. */
++    uint32_t buried_paint_seq;       /**< er_commit sequence that last wrote buried_paint_rect. */
++    uint32_t visible_paint_seq;      /**< er_commit sequence that last recorded a painted (unoccluded) footprint. */
+     uint32_t layout_props_hash;    /**< Hash of the layout (Yoga) block of the last applied ERProps. */
+     uint32_t visual_props_hash;    /**< Hash of everything after it — appearance, text, image, transform. */
+     bool has_props_hash;           /**< Whether the two hashes above hold a previous update yet. */
+diff --git a/engine/tests/rendering/test_parallel.c b/engine/tests/rendering/test_parallel.c
+index e2ea147..ca97c89 100644
+--- a/engine/tests/rendering/test_parallel.c
++++ b/engine/tests/rendering/test_parallel.c
+@@ -251,6 +251,22 @@ static void host_sync(void* ctx)
+     pthread_mutex_unlock(&s_done_mtx);
+ }
+ 
++static int s_lock_count = 0;
++static pthread_mutex_t s_serial_mtx = PTHREAD_MUTEX_INITIALIZER;
++
++static void host_lock(void* ctx)
++{
++    (void)ctx;
++    pthread_mutex_lock(&s_serial_mtx);
++    s_lock_count++;
++}
++
++static void host_unlock(void* ctx)
++{
++    (void)ctx;
++    pthread_mutex_unlock(&s_serial_mtx);
++}
++
+ static int host_worker_id(void)
+ {
+     const pthread_t self = pthread_self();
+@@ -470,14 +486,17 @@ int main(void)
+         embedded_renderer_set_workers(&hooks); /* restore for the uninstall test below */
+     }
+ 
+-    /* ---- A reset ends the old scene's hold on single-core rendering. ---- */
++    /* ================================================================================
++     * Arcs and vectors fork too. Arcs keep per-worker span caches; vector rasterization runs
++     * under the host's serial lock, so a scene full of icons still slices everything else.
++     * ================================================================================ */
+     {
+         ERNode* root = new_scene();
+         ERNode* arc = er_node_create(ER_NODE_ARC);
+         ERProps ap = auto_props();
+         ap.position = ER_POS_ABSOLUTE;
+-        ap.left = 10;
+-        ap.top = 10;
++        ap.left = 4;
++        ap.top = 12;
+         ap.width = 40;
+         ap.height = 40;
+         ap.arc_width = 6;
+@@ -486,15 +505,87 @@ int main(void)
+         er_node_set_props(arc, &ap);
+         er_tree_append_child(root, arc);
+ 
+-        const uint32_t forks = er_parallel_frames();
++        /* Two vectors: a disc straddling the slice boundary and a triangle wholly in one slice. */
++        ERNode* disc = er_node_create(ER_NODE_VECTOR);
++        ERProps dp = auto_props();
++        dp.position = ER_POS_ABSOLUTE;
++        dp.left = 40;
++        dp.top = 16;
++        dp.width = 22;
++        dp.height = 32;
++        er_node_set_props(disc, &dp);
++        const float disc_ops[] = {ER_VOP_SHAPE, 0, ER_VOP_ARC, 11, 16, 10, 0, 6.2831853f, 0, ER_VOP_CLOSE};
++        const ERVectorPaint disc_paint = {0xFFF97316U, 0xFF1D4ED8U, 2.0f, 0, ER_VCAP_ROUND, ER_VJOIN_ROUND, 0, 0, 0};
++        er_node_set_vector_ops(disc, disc_ops, (int)(sizeof disc_ops / sizeof disc_ops[0]), &disc_paint, 1, NULL, 0);
++        er_tree_append_child(root, disc);
++
++        ERNode* tri = er_node_create(ER_NODE_VECTOR);
++        ERProps trp = auto_props();
++        trp.position = ER_POS_ABSOLUTE;
++        trp.left = 46;
++        trp.top = 2;
++        trp.width = 14;
++        trp.height = 12;
++        er_node_set_props(tri, &trp);
++        const float tri_ops[] = {ER_VOP_SHAPE, 0, ER_VOP_MOVE, 1, 11, ER_VOP_LINE, 7, 1, ER_VOP_LINE, 13, 11, ER_VOP_CLOSE};
++        const ERVectorPaint tri_paint = {0xFF22C55EU, 0, 0.0f, 0, 0, 0, ER_VFILL_NONZERO, 0, 0};
++        er_node_set_vector_ops(tri, tri_ops, (int)(sizeof tri_ops / sizeof tri_ops[0]), &tri_paint, 1, NULL, 0);
++        er_tree_append_child(root, tri);
++
++        static uint32_t fb_parallel[FB_W * FB_H];
++        static uint32_t fb_serial[FB_W * FB_H];
++
++        /* Workers WITHOUT the serial lock must keep a vector scene single-core. */
++        const EmbeddedRenderWorkers unlocked = hooks;
++        embedded_renderer_set_workers(&unlocked);
++        uint32_t forks = er_parallel_frames();
+         er_commit();
+         if (er_parallel_frames() != forks)
+-            return fail("reset: a scene with an Arc must render single-core, or the scenario proves nothing");
++            return fail("vectors: a vector scene forked without a serial lock");
++        memcpy(fb_serial, s_fb, sizeof(s_fb));
++
++        EmbeddedRenderWorkers locked = hooks;
++        locked.lock = host_lock;
++        locked.unlock = host_unlock;
++        embedded_renderer_set_workers(&locked);
++        memset(s_fb, 0, sizeof(s_fb));
++        er_force_full_repaint();
++        forks = er_parallel_frames();
++        s_lock_count = 0;
++        er_commit();
++        if (er_parallel_frames() != forks + 1)
++            return fail("vectors: a vector scene with a serial lock did not fork");
++        if (s_lock_count == 0)
++            return fail("vectors: the parallel commit rasterized vectors without taking the serial lock");
++        if (memcmp(fb_serial, s_fb, sizeof(s_fb)) != 0)
++            return fail("vectors: parallel and serial framebuffers differ (arc + vectors, full repaint)");
++
++        /* Partial damage through the arc and the straddling disc, parallel then serial. */
++        ap.arc_value = 80.0f;
++        er_node_set_props(arc, &ap);
++        dp.top = 20;
++        er_node_set_props(disc, &dp);
++        er_commit();
++        if (er_parallel_frames() != forks + 2)
++            return fail("vectors: the damage-clipped arc + vector commit did not fork");
++        memcpy(fb_parallel, s_fb, sizeof(s_fb));
+ 
++        embedded_renderer_set_workers(NULL);
++        memset(s_fb, 0, sizeof(s_fb));
++        er_force_full_repaint();
++        er_commit();
++        if (memcmp(fb_parallel, s_fb, sizeof(s_fb)) != 0)
++            return fail("vectors: parallel and serial framebuffers differ (arc + vectors, partial damage)");
++
++        /* A reset ends a vector scene's hold on single-core rendering under unlocked workers. */
++        embedded_renderer_set_workers(&unlocked);
+         new_scene();
++        forks = er_parallel_frames();
+         er_commit();
+         if (er_parallel_frames() != forks + 1)
+-            return fail("reset: a scene without an Arc still rendered single-core after a reset from one with");
++            return fail("reset: a scene without vectors still rendered single-core after a reset from one with");
++
++        embedded_renderer_set_workers(&hooks);
+     }
+ 
+     /* ---- Uninstall: back to the exact single-core path. ---- */

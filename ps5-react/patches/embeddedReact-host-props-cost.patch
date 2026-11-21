@@ -1,0 +1,54 @@
+Embedded React: less work per host element in the JavaScript bridge.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, after the patches listed before this
+one there. Changed files: bridges/quickjs/js/src/props.js and
+bridges/quickjs/js/src/embedded-react/split-style.js.
+
+Every host element the reconciler creates or updates goes through
+splitAnimatedStyle and buildProps. buildProps looked each of the 40 passthrough
+prop names up on the element's props, which carry a handful, so nearly every
+lookup missed; it now walks the props it was given against a set of the same
+names. splitAnimatedStyle copied a plain style object into a temporary before
+copying it again; it now reads the object directly and flattens only arrays.
+Same results. In a profile of a screen of cards mounting, buildProps was the
+largest single self time.
+
+--- a/bridges/quickjs/js/src/props.js
++++ b/bridges/quickjs/js/src/props.js
+@@ -179,11 +179,15 @@
+   return null;
+ }
+ 
++const PASSTHROUGH_KEYS = new Set(PASSTHROUGH);
++
+ export function buildProps(type, props, flatStyle) {
+   const flat = flatStyle ? {...flatStyle} : {};
+   if (!flatStyle) flattenStyle(props.style, flat);
+-  for (const k of PASSTHROUGH) {
+-    if (props[k] !== undefined) flat[k] = props[k];
++  // An element's props hold a handful of keys: checking each against the set costs far less than
++  // looking every passthrough name up on them, most of which they do not have.
++  for (const k in props) {
++    if (PASSTHROUGH_KEYS.has(k) && props[k] !== undefined) flat[k] = props[k];
+   }
+   // <Svg> takes width/height as DIRECT props (the react-native-svg convention) — the engine sizes the
+   // vector node from them. Fold them into the resolved style (an explicit style width/height still wins)
+--- a/bridges/quickjs/js/src/embedded-react/split-style.js
++++ b/bridges/quickjs/js/src/embedded-react/split-style.js
+@@ -24,8 +24,13 @@
+   const staticStyle = {};
+   const bindings = [];
+ 
+-  const flat = {};
+-  flattenStyle(style, flat);
++  // A plain style object (the usual case) is read as it is; only an array is flattened first, rather
++  // than copying every style into a temporary object before copying it again into staticStyle.
++  let flat = style;
++  if (!style || Array.isArray(style)) {
++    flat = {};
++    flattenStyle(style, flat);
++  }
+ 
+   for (const key in flat) {
+     const val = flat[key];

@@ -1,0 +1,207 @@
+Embedded React: a paint-free container that only moves damages nothing itself.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, after the patches listed before this
+one there. Changed files: engine/scene/er_node_internal.h,
+engine/scene/compositor.c, engine/tests/rendering/CMakeLists.txt and the new
+engine/tests/rendering/test_paint_free_container.c. Proposed upstream as pull
+request #315.
+
+The damage pre-pass damaged the whole box of every node whose screen rect
+changed. A list that grows at its unseen end (a VirtualList filling rows, a
+taller spacer) changes its container's height every frame of a scroll, and the
+container's box clipped to the viewport is the whole viewport: a full repaint
+per frame where the scroll copy would repaint a strip. A container that paints
+nothing (no background, border, opacity, gradient, shadow or complex
+transform), painted nothing last time, does not clip its children and only
+moved or resized now adds no damage of its own; its children report their own
+moves. Each node records whether its last paint was such an empty one.
+
+diff --git a/engine/scene/compositor.c b/engine/scene/compositor.c
+index 0bcf041..76fc93e 100644
+--- a/engine/scene/compositor.c
++++ b/engine/scene/compositor.c
+@@ -1722,6 +1722,7 @@ static uint32_t s_prof_composites = 0; /* composite_with_opacity calls that comp
+ #endif
+ 
+ static void render_tree(ERNode* n, bool parent_dirty, bool occluded, int translate_x, int translate_y);
++static bool paints_nothing(const ERNode* a);
+ 
+ /**
+  * @brief Renders a node's own content and recurses into its children.
+@@ -2424,6 +2425,7 @@ static void render_tree(ERNode* n, bool parent_dirty, bool occluded, int transla
+         n->last_paint_rect.h = (int16_t)lp_h;
+         n->last_paint_untransformed = !doing_affine;
+         n->has_last_paint = true;
++        n->last_paint_empty = paints_nothing(n);
+     }
+ 
+     /* Shadow: rendered before opacity scratch so the shadow lands in the outer destination
+@@ -5569,6 +5571,15 @@ void er_commit(void)
+                                    || spans_paint_window(rx, ry, rw, rh));
+             if (!n->source_dirty && !moved)
+                 continue; /* unchanged and in place: contributes nothing to the damage */
++            /* A container that only MOVED (or resized) and paints nothing, now or last time, has no pixels
++             * of its own to repaint or erase: its children report their own moves. Damaging its box instead
++             * made a list that grows at its unseen end (more rows, a taller spacer) repaint the whole
++             * viewport on every frame of a scroll. A clipping container still damages its box, since a new
++             * clip hides children that did not change, and a changed one (source_dirty) still does: a new
++             * zIndex, say, reorders children that did not change either. */
++            if (!n->source_dirty && paints_nothing(n) && !node_clips_children(n)
++                && (!n->has_last_paint || n->last_paint_empty))
++                continue;
+             if (scrim_modal)
+             {
+                 modal_scrim_damage(n, &dmg, rb_x0, rb_y0, rb_x1, rb_y1);
+diff --git a/engine/scene/er_node_internal.h b/engine/scene/er_node_internal.h
+index 9f9062c..60f8250 100644
+--- a/engine/scene/er_node_internal.h
++++ b/engine/scene/er_node_internal.h
+@@ -420,6 +420,7 @@ struct ERNode
+                                        answers from props that may have changed since, which is how
+                                        clearing a shadow used to erase only the box (issue #140). */
+     bool has_last_paint;          /**< Whether last_paint_rect holds a valid prior-frame rect. */
++    bool last_paint_empty;        /**< The last paint was of a container that paints nothing itself. */
+     bool last_paint_untransformed; /**< The last paint of this TRANSFORMED node degraded to its raw,
+                                         untransformed box: the scratch capture could not be started, so
+                                         last_paint_rect holds that box (knob reach and shadow bleed included
+diff --git a/engine/tests/rendering/CMakeLists.txt b/engine/tests/rendering/CMakeLists.txt
+index 1d0cb1a..2c8d3d1 100644
+--- a/engine/tests/rendering/CMakeLists.txt
++++ b/engine/tests/rendering/CMakeLists.txt
+@@ -202,3 +202,7 @@ add_test(NAME rendering_text_padding COMMAND test_text_padding)
+ add_executable(test_content_padding test_content_padding.c)
+ target_link_libraries(test_content_padding PRIVATE embedded-react)
+ add_test(NAME rendering_content_padding COMMAND test_content_padding)
++
++add_executable(test_paint_free_container test_paint_free_container.c)
++target_link_libraries(test_paint_free_container PRIVATE embedded-react)
++add_test(NAME rendering_paint_free_container COMMAND test_paint_free_container)
+diff --git a/engine/tests/rendering/test_paint_free_container.c b/engine/tests/rendering/test_paint_free_container.c
+new file mode 100644
+index 0000000..a618c09
+--- /dev/null
++++ b/engine/tests/rendering/test_paint_free_container.c
+@@ -0,0 +1,122 @@
++/*
++ * Copyright 2026 Cory Lamming
++ * Copyright 2026 PS5 React contributors
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++/*
++ * A container that paints nothing and only grows (a child appended past the screen's bottom edge)
++ * repaints nothing on screen: its children report their own changes. Damaging its whole box made a
++ * list growing at its unseen end repaint the viewport on every frame of a scroll.
++ */
++
++#include "er_scene.h"
++#include "native_renderer.h"
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++#define FB_W 200
++#define FB_H 200
++
++static long s_painted;
++
++static void fill_cb(uint32_t argb, int x, int y, int w, int h, void* ctx)
++{
++    (void)argb, (void)x, (void)y, (void)ctx;
++    if (w > 0 && h > 0)
++        s_painted += (long)w * h;
++}
++
++static void copy_cb(const void* src, int stride, int x, int y, int w, int h, void* ctx)
++{
++    (void)src, (void)stride, (void)x, (void)y, (void)ctx;
++    if (w > 0 && h > 0)
++        s_painted += (long)w * h;
++}
++
++static void blend_cb(const void* src, int stride, uint8_t alpha, int x, int y, int w, int h, void* ctx)
++{
++    (void)alpha;
++    copy_cb(src, stride, x, y, w, h, ctx);
++}
++
++static ERProps props_default(void)
++{
++    ERProps p = {0};
++    p.left = p.top = p.right = p.bottom = ER_LAYOUT_AUTO;
++    p.width = p.height = ER_LAYOUT_AUTO;
++    p.min_width = p.max_width = ER_LAYOUT_AUTO;
++    p.min_height = p.max_height = ER_LAYOUT_AUTO;
++    p.padding = p.padding_left = p.padding_top = ER_LAYOUT_AUTO;
++    p.padding_right = p.padding_bottom = ER_LAYOUT_AUTO;
++    p.margin = p.margin_left = p.margin_top = ER_LAYOUT_AUTO;
++    p.margin_right = p.margin_bottom = ER_LAYOUT_AUTO;
++    p.gap = p.row_gap = p.column_gap = ER_LAYOUT_AUTO;
++    p.flex_basis = ER_LAYOUT_AUTO;
++    p.opacity = 255U;
++    return p;
++}
++
++static ERNode* box(int height, uint32_t color)
++{
++    ERNode* n = er_node_create(ER_NODE_VIEW);
++    ERProps p = props_default();
++    p.width = FB_W;
++    p.height = (int16_t)height;
++    p.background_color = color;
++    er_node_set_props(n, &p);
++    return n;
++}
++
++int main(void)
++{
++    EmbeddedRenderBackend be = {fill_cb, copy_cb, blend_cb, NULL, NULL, NULL};
++    embedded_renderer_set_backend(&be);
++
++    ERNode* root = box(FB_H, 0xFF101010U);
++    ERNode* list = er_node_create(ER_NODE_VIEW);
++    ERProps lp = props_default();
++    lp.width = FB_W;
++    er_node_set_props(list, &lp);
++    er_tree_append_child(list, box(250, 0xFF2255AAU));
++    er_tree_append_child(root, list);
++    er_tree_set_root(root);
++    er_commit();
++
++    /* The list grows below the screen: nothing on screen changed. */
++    s_painted = 0;
++    er_tree_append_child(list, box(150, 0xFF22AA55U));
++    er_commit();
++    if (s_painted != 0)
++    {
++        fprintf(stderr, "FAIL: a paint-free container growing off screen repainted %ld px\n", s_painted);
++        return EXIT_FAILURE;
++    }
++
++    /* The same container with a background still repaints the part of it that shows. */
++    lp.background_color = 0xFF303030U;
++    er_node_set_props(list, &lp);
++    er_commit();
++    s_painted = 0;
++    er_tree_append_child(list, box(150, 0xFFAA5522U));
++    er_commit();
++    if (s_painted == 0)
++    {
++        fprintf(stderr, "FAIL: a painted container growing did not repaint\n");
++        return EXIT_FAILURE;
++    }
++    return EXIT_SUCCESS;
++}

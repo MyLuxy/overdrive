@@ -1,0 +1,19 @@
+{
+  "$schema": "../../app.schema.json",
+  "titleId": "PPSA99064",
+  "contentId": "UP9000-PPSA99064_00-VIDEOLAB00000000",
+  "name": "Video Lab",
+  "version": "01.000.000",
+  "render": {
+    "width": 3840,
+    "height": 2160
+  },
+  "surface": {
+    "width": 3840,
+    "height": 2160
+  },
+  "timeoutSeconds": 0,
+  "filesystemAccess": "console",
+  "networking": true,
+  "video": true
+}

@@ -1,0 +1,168 @@
+Embedded React: stop repainting nodes a translate moved off the root.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, after the patches listed before this
+one there. Changed files: engine/scene/compositor.c and
+engine/tests/rendering/test_anim_translate_offscreen.c.
+Not proposed upstream: PS5 React maintains this change here.
+
+A header translated past the top edge of the screen in one frame leaves its
+items' records of where they last painted on screen: render_tree prunes nodes
+off the root, so nothing refreshes them. The damage pre-pass then counted each
+of them as moved on every commit and repainted their old footprints whatever
+else changed; in a PS5 app with its top bar scrolled away, a focus ring's
+animated sweep repainted 1.4 million pixels per frame instead of its bands. A
+node measured wholly outside the root now records where it is, so it stops
+contributing damage, and moving back on screen reads as a move again.
+
+diff --git a/engine/scene/compositor.c b/engine/scene/compositor.c
+index ff6815d..f101963 100644
+--- a/engine/scene/compositor.c
++++ b/engine/scene/compositor.c
+@@ -6342,6 +6342,17 @@ void er_commit(void)
+                  * source_dirty, so its viewport enters the damage and the walk reaches the child again. */
+                 if (nw <= 0 || nh <= 0)
+                     n->has_last_paint = false;
++                /* Moved wholly off the root (a header translated past the top edge): render_tree prunes it,
++                 * so it would stay `moved` against its on-screen record and repaint that footprint every
++                 * commit. Record where it is instead; moving back on screen then reads as a move again,
++                 * which repaints it and its overflowing children there. */
++                else if (nx >= rb_x1 || ny >= rb_y1 || nx + nw <= rb_x0 || ny + nh <= rb_y0)
++                {
++                    n->last_paint_rect.x = (int16_t)rx;
++                    n->last_paint_rect.y = (int16_t)ry;
++                    n->last_paint_rect.w = (int16_t)rw;
++                    n->last_paint_rect.h = (int16_t)rh;
++                }
+             }
+         }
+         /* Padding + clamping happened per-insert (add_damage), so an empty set covers both "nothing
+diff --git a/engine/tests/rendering/test_anim_translate_offscreen.c b/engine/tests/rendering/test_anim_translate_offscreen.c
+index 81c2876..cabb092 100644
+--- a/engine/tests/rendering/test_anim_translate_offscreen.c
++++ b/engine/tests/rendering/test_anim_translate_offscreen.c
+@@ -312,6 +312,116 @@ static int run_lift(TestCtx* t, float to, bool translucent)
+     return EXIT_SUCCESS;
+ }
+ 
++/**
++ * @brief A header slid wholly off the top stops costing repaints, and comes back whole.
++ *
++ * Once off the root its nodes are never painted, so their record of where they last painted stays on
++ * screen (when one frame took them past the edge, the spot they had before the slide); measured against it they read as moved on every commit, and each commit repainted the
++ * header's old footprint, whatever else changed. Sliding back must still repaint the header with the
++ * item that hangs below its box.
++ *
++ * @param[in,out] t  TestCtx owning the framebuffer.
++ *
++ * @return EXIT_SUCCESS on pass, EXIT_FAILURE on the first failed check.
++ */
++static int run_rest_and_return(TestCtx* t)
++{
++    er_reset();
++    memset(t->fb, 0, sizeof(uint32_t) * FB_W * FB_H);
++
++    ERNode* root = er_node_create(ER_NODE_VIEW);
++    ERProps rp = props_default();
++    rp.width = FB_W;
++    rp.height = FB_H;
++    rp.background_color = 0xFF101010U;
++    er_node_set_props(root, &rp);
++
++    ERNode* header = er_node_create(ER_NODE_VIEW);
++    ERProps hp = props_default();
++    hp.position = ER_POS_ABSOLUTE;
++    hp.left = 0;
++    hp.top = 0;
++    hp.width = FB_W;
++    hp.height = 128;
++    hp.background_color = 0xFF4DA3FFU;
++    er_node_set_props(header, &hp);
++
++    ERNode* item = er_node_create(ER_NODE_VIEW);
++    ERProps ip = props_default();
++    ip.position = ER_POS_ABSOLUTE;
++    ip.left = 0;
++    ip.top = 90;
++    ip.width = 200;
++    ip.height = 80; /* hangs 42 px below the header */
++    ip.background_color = ITEM_COLOR;
++    er_node_set_props(item, &ip);
++
++    ERNode* blinker = er_node_create(ER_NODE_VIEW);
++    ERProps bp = props_default();
++    bp.position = ER_POS_ABSOLUTE;
++    bp.left = 2000;
++    bp.top = 320;
++    bp.width = 40;
++    bp.height = 40;
++    bp.background_color = 0xFFFF0000U;
++    er_node_set_props(blinker, &bp);
++
++    er_tree_append_child(header, item);
++    er_tree_append_child(root, header);
++    er_tree_append_child(root, blinker);
++    er_tree_set_root(root);
++    er_force_full_repaint();
++    er_commit();
++
++    ERAnimConfig cfg = {0};
++    cfg.type = ER_ANIM_TIMING;
++    cfg.duration_ms = ANIM_MS;
++    cfg.easing = ER_EASE_LINEAR;
++    ERAnimValueHandle lift = er_anim_value_create(0.0f);
++    er_anim_value_bind(lift, header, ER_PROP_TRANSLATE_Y);
++    /* Gone in one frame, as a slow frame can jump it: its items never paint part-way out. */
++    cfg.duration_ms = FRAME_MS;
++    er_anim_value_animate(lift, -400.0f, &cfg);
++    /* Not checked against full repaints: a full repaint walks every node and so refreshes the record. */
++    for (int f = 0; f < 4; f++)
++    {
++        embedded_renderer_tick(FRAME_MS);
++        er_commit();
++    }
++
++    for (int i = 0; i < 3; i++)
++    {
++        bp.background_color = (i & 1) ? 0xFFFF0000U : 0xFF00FF00U;
++        er_node_set_props(blinker, &bp);
++        er_commit();
++        ERRect dirty;
++        if (!er_get_dirty_rect(&dirty) || dirty.y < 300)
++        {
++            char msg[160];
++            snprintf(msg, sizeof(msg), "a change below the gone header repainted from y=%d (commit %d)", dirty.y, i);
++            return fail(msg);
++        }
++    }
++
++    cfg.duration_ms = ANIM_MS;
++    er_anim_value_animate(lift, 0.0f, &cfg);
++    for (int f = 0; f < FRAMES; f++)
++    {
++        embedded_renderer_tick(FRAME_MS);
++        er_commit();
++    }
++    static uint32_t incremental[FB_W * FB_H];
++    memcpy(incremental, t->fb, sizeof(incremental));
++    memset(t->fb, 0, sizeof(uint32_t) * FB_W * FB_H);
++    er_force_full_repaint();
++    er_commit();
++    if (memcmp(incremental, t->fb, sizeof(incremental)) != 0)
++        return fail("back on screen, the header differs from a full repaint");
++    if (t->fb[20 * FB_W + 1000] != 0xFF4DA3FFU || t->fb[150 * FB_W + 10] != ITEM_COLOR)
++        return fail("the header or the item hanging below it did not come back");
++    return EXIT_SUCCESS;
++}
++
+ int main(void)
+ {
+     static uint32_t fb[FB_W * FB_H];
+@@ -325,5 +435,7 @@ int main(void)
+         for (int translucent = 0; translucent < 2; translucent++)
+             if (run_lift(&tc, targets[i], translucent) != EXIT_SUCCESS)
+                 result = EXIT_FAILURE;
++    if (run_rest_and_return(&tc) != EXIT_SUCCESS)
++        result = EXIT_FAILURE;
+     return result;
+ }

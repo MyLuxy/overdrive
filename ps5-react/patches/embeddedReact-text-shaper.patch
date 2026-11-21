@@ -1,0 +1,303 @@
+Embedded React: hand text the bitmap fonts cannot draw to a host shaper.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, after the patches listed before this
+one there. Changed files: engine/text/text_renderer.c, engine/scene/compositor.c,
+and the new engine/text/er_text_shaper.h. Not yet proposed upstream.
+
+Baked bitmap fonts draw one glyph per codepoint, left to right, from the
+characters chosen at build time. That cannot cover CJK (tens of thousands of
+characters) nor scripts that need shaping. er_text_set_shaper() installs an
+ERTextShaper: er_text_render, er_text_measure, er_text_measure_spans and
+er_text_wrap ask its claims() first and hand the text over when it returns
+true, so layout and drawing agree. The shaper draws through the new
+er_text_draw_glyph (a baked glyph), er_text_draw_coverage (an 8-bit coverage
+bitmap) and er_text_fill. Without a shaper nothing changes.
+
+Text and TextInput strings copied into a node at ER_TEXT_MAX bytes no longer
+keep a UTF-8 sequence cut in half at the end.
+
+diff --git a/engine/scene/compositor.c b/engine/scene/compositor.c
+index c04c6e2..93fa426 100644
+--- a/engine/scene/compositor.c
++++ b/engine/scene/compositor.c
+@@ -62,6 +62,21 @@ static inline bool cursor_blink_on(uint64_t now_ms)
+     return ((uint32_t)now_ms % ER_CURSOR_BLINK_MS) < (ER_CURSOR_BLINK_MS / 2U);
+ }
+ 
++/** @brief Drops a UTF-8 sequence cut short at the end of @p s, as a copy truncated to a byte limit leaves. */
++static void trim_partial_utf8(char* s)
++{
++    const size_t n = strlen(s);
++    size_t lead = n;
++    while (lead > 0 && ((uint8_t)s[lead - 1] & 0xC0U) == 0x80U)
++        lead--;
++    if (lead == 0 || (uint8_t)s[lead - 1] < 0xC0U)
++        return;
++    const uint8_t b = (uint8_t)s[lead - 1];
++    const size_t need = (b >= 0xF0U) ? 4U : (b >= 0xE0U) ? 3U : 2U;
++    if (n - (lead - 1) < need)
++        s[lead - 1] = '\0';
++}
++
+ /*----------------------------------------------------------------------------------------------------------------------
+  - Variables: Private
+  ---------------------------------------------------------------------------------------------------------------------*/
+@@ -3525,6 +3540,7 @@ void er_node_set_props(ERNode* node, const ERProps* props)
+         case ER_NODE_TEXT:
+             strncpy(node->props.text.text, props->text, ER_TEXT_MAX);
+             node->props.text.text[ER_TEXT_MAX] = '\0';
++            trim_partial_utf8(node->props.text.text);
+             strncpy(node->props.text.font_family, props->font_family, ER_FONT_FAMILY_MAX);
+             node->props.text.font_family[ER_FONT_FAMILY_MAX] = '\0';
+             node->props.text.color = props->color;
+@@ -3869,6 +3885,7 @@ void er_text_input_set_text(ERNode* node, const char* text)
+         return;
+     strncpy(node->input_text, text, ER_TEXT_MAX);
+     node->input_text[ER_TEXT_MAX] = '\0';
++    trim_partial_utf8(node->input_text);
+     er_mark_dirty_upward(node);
+ }
+ 
+diff --git a/engine/text/er_text_shaper.h b/engine/text/er_text_shaper.h
+new file mode 100644
+index 0000000..59fd724
+--- /dev/null
++++ b/engine/text/er_text_shaper.h
+@@ -0,0 +1,100 @@
++/*
++ * Copyright 2026 Cory Lamming
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#ifndef EMBEDDED_REACT_TEXT_SHAPER_H
++#define EMBEDDED_REACT_TEXT_SHAPER_H
++
++#include <stdbool.h>
++#include <stdint.h>
++
++#ifdef __cplusplus
++extern "C"
++{
++#endif
++
++/* Both are C headers without their own linkage guard; a C++ shaper calls font_glyph(). */
++#include "font_bitmap.h"
++#include "text_renderer.h"
++
++    /**
++     * @brief A host-provided text layout engine for text the baked bitmap fonts cannot draw alone.
++     *
++     * The bitmap path draws one baked glyph per codepoint, left to right. Scripts that need shaping,
++     * glyphs that were never baked (a CJK font has tens of thousands) and right-to-left text go to a
++     * shaper when one is installed: er_text_render, er_text_measure, er_text_measure_spans and
++     * er_text_wrap ask claims() first and hand the text over when it returns true, so layout and
++     * drawing always agree. All callbacks run on the render thread.
++     */
++    typedef struct ERTextShaper
++    {
++        /** True when the shaper lays out @p text (UTF-8, spans already merged). Must be cheap. */
++        bool (*claims)(const char* text, const char* font_family, uint8_t font_size);
++        /** Single-line width and line height, as er_text_measure() reports them. */
++        void (*measure)(const char* text,
++                        uint8_t font_size,
++                        const char* font_family,
++                        int16_t letter_spacing,
++                        uint8_t font_weight,
++                        int* out_width,
++                        int* out_height);
++        /** Line count and widest line at @p max_w, as er_text_wrap() reports them. */
++        int (*wrap)(const char* text,
++                    uint8_t font_size,
++                    const char* font_family,
++                    int16_t letter_spacing,
++                    uint8_t font_weight,
++                    int max_w,
++                    int max_lines,
++                    int* out_width);
++        /** Draws @p text with @p params; @p span_map gives each byte's span index, or is NULL. */
++        void (*render)(const ERTextRenderParams* params, const char* text, const uint8_t* span_map);
++    } ERTextShaper;
++
++    /** @brief Installs (or, with NULL, removes) the shaper. The struct must outlive its use. */
++    void er_text_set_shaper(const ERTextShaper* shaper);
++
++    /** @brief The baked font text of this family and size is drawn with (clamped as the renderer does). */
++    const BitmapFont* er_text_font(const char* font_family, uint8_t font_size);
++
++    /** @brief Draws one baked glyph with its cursor at @p x and its line box top at @p line_top. */
++    void er_text_draw_glyph(const BitmapFont* font,
++                            uint32_t codepoint,
++                            int x,
++                            int line_top,
++                            const ERRect* clip,
++                            uint32_t color,
++                            bool italic);
++
++    /**
++     * @brief Blends an 8-bit coverage bitmap (@p width ≤ 255 bytes per row) with its top-left at (@p x, @p y).
++     */
++    void er_text_draw_coverage(const uint8_t* coverage,
++                               int width,
++                               int height,
++                               int x,
++                               int y,
++                               const ERRect* clip,
++                               uint32_t color,
++                               bool italic);
++
++    /** @brief Fills a rectangle (an underline or strike-through); the caller clips it. */
++    void er_text_fill(uint32_t color, int x, int y, int width, int height);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif
+diff --git a/engine/text/text_renderer.c b/engine/text/text_renderer.c
+index 4899b7c..29ab28a 100644
+--- a/engine/text/text_renderer.c
++++ b/engine/text/text_renderer.c
+@@ -15,6 +15,7 @@
+  */
+ 
+ #include "text_renderer.h"
++#include "er_text_shaper.h"
+ #include "font_bitmap.h"
+ #include "font_registry.h"
+ #include "renderer_internal.h"
+@@ -59,6 +60,9 @@ typedef struct
+  * the layout pass's measure_content() cache is actually skipping redundant remeasurement. */
+ static uint32_t s_text_measure_count = 0;
+ 
++/* The installed shaper (er_text_shaper.h), or NULL for bitmap-only text. */
++static const ERTextShaper* s_shaper = NULL;
++
+ /*----------------------------------------------------------------------------------------------------------------------
+  - Functions: Private
+  ---------------------------------------------------------------------------------------------------------------------*/
+@@ -577,6 +581,12 @@ void er_text_render(const ERTextRenderParams* params)
+     if (!render_src || !render_src[0])
+         return;
+ 
++    if (s_shaper && s_shaper->claims(render_src, params->font_family, sz))
++    {
++        s_shaper->render(params, render_src, span_mode ? span_map : NULL);
++        return;
++    }
++
+     /* ---- Line breaking (always uses parent ls for measurement). ---- */
+     /* Faux bold draws each glyph a pixel wider, so lines break at the advance they are drawn with:
+      * breaking at the regular advance let a bold line overrun the box by a pixel per glyph. */
+@@ -773,6 +783,17 @@ void er_text_measure(const char* text,
+ 
+     font_size = er_text_clamp_font_size(font_size);
+ 
++    if (s_shaper && text && text[0] && s_shaper->claims(text, font_family, font_size))
++    {
++        int w = 0, h = 0;
++        s_shaper->measure(text, font_size, font_family, letter_spacing, font_weight, &w, &h);
++        if (out_width)
++            *out_width = w;
++        if (out_height)
++            *out_height = h;
++        return;
++    }
++
+     const BitmapFont* font = font_registry_get(font_family, font_size);
+     if (!font)
+     {
+@@ -830,6 +851,26 @@ void er_text_measure_spans(const ERTextSpan* spans,
+         return;
+     }
+ 
++    if (s_shaper)
++    {
++        char merged[ER_TEXT_MAX_SPANS * (ER_SPAN_TEXT_MAX + 1) + 1];
++        size_t pos = 0;
++        for (uint8_t si = 0; si < span_count && pos < sizeof(merged) - 1U; si++)
++            for (const char* s = spans[si].text; *s && pos < sizeof(merged) - 1U;)
++                merged[pos++] = *s++;
++        merged[pos] = '\0';
++        if (merged[0] && s_shaper->claims(merged, font_family, font_size))
++        {
++            int w = 0, h = 0;
++            s_shaper->measure(merged, font_size, font_family, base_letter_spacing, base_font_weight, &w, &h);
++            if (out_width)
++                *out_width = w;
++            if (out_height)
++                *out_height = h;
++            return;
++        }
++    }
++
+     const bool base_bold = (base_font_weight != 0U);
+     long width = 0;
+     for (uint8_t si = 0; si < span_count; si++)
+@@ -891,6 +932,10 @@ int er_text_wrap(const char* text,
+     if (!src || !src[0])
+         return 1;
+ 
++    if (s_shaper && s_shaper->claims(src, font_family, er_text_clamp_font_size(font_size)))
++        return s_shaper->wrap(src, er_text_clamp_font_size(font_size), font_family, letter_spacing, font_weight, max_w,
++                              max_lines, out_width);
++
+     LineSpan lines[TEXT_MAX_LINES];
+     bool truncated = false;
+     const int n = break_lines(src, font, max_w, (int)letter_spacing + (font_weight != 0U ? 1 : 0), max_lines, lines,
+@@ -905,3 +950,44 @@ uint32_t er_text_measure_count(void)
+ {
+     return s_text_measure_count;
+ }
++
++void er_text_set_shaper(const ERTextShaper* shaper)
++{
++    s_shaper = shaper;
++}
++
++const BitmapFont* er_text_font(const char* font_family, uint8_t font_size)
++{
++    return font_registry_get(font_family, er_text_clamp_font_size(font_size));
++}
++
++void er_text_draw_glyph(const BitmapFont* font,
++                        uint32_t codepoint,
++                        int x,
++                        int line_top,
++                        const ERRect* clip,
++                        uint32_t color,
++                        bool italic)
++{
++    draw_cp(font, codepoint, x, line_top, clip, color, italic);
++}
++
++void er_text_draw_coverage(const uint8_t* coverage,
++                           int width,
++                           int height,
++                           int x,
++                           int y,
++                           const ERRect* clip,
++                           uint32_t color,
++                           bool italic)
++{
++    if (width <= 0 || height <= 0 || width > 255 || height > 255)
++        return;
++    const GlyphInfo g = {.bitmap_offset = 0U, .width = (uint8_t)width, .height = (uint8_t)height};
++    draw_glyph_aa(&g, coverage, ERUI_FONT_FMT_8BIT, x, y, clip, color, italic);
++}
++
++void er_text_fill(uint32_t color, int x, int y, int width, int height)
++{
++    er_blit_fill(color, x, y, width, height);
++}

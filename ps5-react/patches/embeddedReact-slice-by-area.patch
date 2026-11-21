@@ -1,0 +1,267 @@
+Embedded React: fork a repaint across workers by area, once per commit.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, after the patches listed before this
+one there. Changed files: engine/core/er_parallel.c,
+engine/core/renderer_internal.h and engine/scene/compositor.c.
+
+Each damage rect of at least 16 rows per worker forked across every worker on
+its own, so a row of cards repainting as six rects woke eight threads six times
+and walked the tree 48 times, and a narrow focus ring forked as wide as the
+screen. A damage-clipped commit now forks once for all its rects: worker k
+renders each rect's rows in its band, the bands cut so that each holds about an
+equal share of the damaged area, at least 16 rows and ER_SLICE_MIN_PIXELS
+(128 Ki) each. A full repaint slices by the same minimum. Workers without a
+band are not woken. Output is unchanged: bands clip like the serial passes.
+
+--- a/engine/core/er_parallel.c
++++ b/engine/core/er_parallel.c
+@@ -123,8 +123,14 @@
+ 
+ void er_parallel_for(ERParallelFn fn, void* arg)
+ {
++    er_parallel_for_n(fn, arg, er_render_workers_active());
++}
++
++void er_parallel_for_n(ERParallelFn fn, void* arg, int n)
++{
+ #if ERUI_RENDER_WORKERS > 1
+-    const int n = er_render_workers_active();
++    if (n > er_render_workers_active())
++        n = er_render_workers_active();
+     if (n > 1 && !s_forking)
+     {
+         s_forking = true;
+@@ -141,6 +147,8 @@
+         s_forking = false;
+         return;
+     }
++#else
++    (void)n;
+ #endif
+     fn(0, arg);
+ }
+--- a/engine/core/renderer_internal.h
++++ b/engine/core/renderer_internal.h
+@@ -170,6 +170,12 @@
+  * or a call from inside a worker) this is exactly fn(0, arg) — no locks, no signalling.
+  */
+ void er_parallel_for(ERParallelFn fn, void* arg);
++
++/**
++ * @brief er_parallel_for on the first n active workers only (fewer when fewer are active):
++ *        workers past n are not woken.
++ */
++void er_parallel_for_n(ERParallelFn fn, void* arg, int n);
+ 
+ /**
+  * @brief Number of commits rendered via the sliced parallel fork since boot.
+--- a/engine/scene/compositor.c
++++ b/engine/scene/compositor.c
+@@ -5243,6 +5243,24 @@
+     int nslices;
+     int kbd_y;
+ } ParallelRenderJob;
++
++#ifndef ER_SLICE_MIN_PIXELS
++/* Each slice walks the whole tree and wakes a thread, so a small rect forks across fewer workers. */
++#define ER_SLICE_MIN_PIXELS (128 * 1024)
++#endif
++
++/**
++ * @brief Slices for a sliced render of a w x h region on nworkers: at least 16 rows and
++ *        ER_SLICE_MIN_PIXELS each, at most nworkers. Below 2 the region renders serially.
++ */
++static int slice_count(int w, int h, int nworkers)
++{
++    int n = h / 16;
++    const long by_area = (long)w * h / ER_SLICE_MIN_PIXELS;
++    if (by_area < n)
++        n = (int)by_area;
++    return n < nworkers ? n : nworkers;
++}
+ 
+ /**
+  * @brief er_parallel_for job: renders slice `worker` of the repaint region.
+@@ -5264,6 +5282,86 @@
+     er_push_clip_rect(j->x0, sy0, j->x1 - j->x0, sy1 - sy0);
+     render_tree(j->root, j->full_recomposite, false, 0, j->kbd_y);
+     er_pop_clip_rect();
++}
++
++/**
++ * @brief A damage-clipped render forked once for all its rects: worker k renders each rect's rows in
++ *        [cut[k], cut[k + 1]), the cuts balancing the damaged area between the bands.
++ */
++typedef struct
++{
++    ERNode* root;
++    bool full_recomposite;
++    const ERDamageSet* dmg;
++    int cut[ERUI_RENDER_WORKERS + 1];
++    int kbd_y;
++} ParallelDamageJob;
++
++static void render_damage_job(int worker, void* arg)
++{
++    const ParallelDamageJob* j = (const ParallelDamageJob*)arg;
++    const int b0 = j->cut[worker], b1 = j->cut[worker + 1];
++    for (uint8_t ri = 0U; ri < j->dmg->count; ri++)
++    {
++        const ERRect* R = &j->dmg->r[ri];
++        const int y0 = R->y > b0 ? R->y : b0;
++        const int y1 = R->y + R->h < b1 ? R->y + R->h : b1;
++        if (y0 >= y1)
++            continue;
++        er_push_clip_rect(R->x, y0, R->w, y1 - y0);
++        render_tree(j->root, j->full_recomposite, false, 0, j->kbd_y);
++        er_pop_clip_rect();
++    }
++}
++
++/** @brief Damaged pixels of @p dmg above row @p y. */
++static long damage_area_above(const ERDamageSet* dmg, int y)
++{
++    long area = 0;
++    for (uint8_t ri = 0U; ri < dmg->count; ri++)
++    {
++        const ERRect* R = &dmg->r[ri];
++        const int rows = y - R->y;
++        area += (long)R->w * (rows <= 0 ? 0 : rows > R->h ? R->h : rows);
++    }
++    return area;
++}
++
++/**
++ * @brief Splits @p dmg into @p n bands of about equal damaged area, at least 16 rows each where the
++ *        damage allows; returns the number of non-empty bands.
++ */
++static int damage_cuts(const ERDamageSet* dmg, int n, int* cut)
++{
++    int top = dmg->r[0].y, bottom = dmg->r[0].y + dmg->r[0].h;
++    for (uint8_t ri = 1U; ri < dmg->count; ri++)
++    {
++        if (dmg->r[ri].y < top)
++            top = dmg->r[ri].y;
++        if (dmg->r[ri].y + dmg->r[ri].h > bottom)
++            bottom = dmg->r[ri].y + dmg->r[ri].h;
++    }
++    const long total = damage_area_above(dmg, bottom);
++    int bands = 0;
++    cut[0] = top;
++    for (int k = 1; k < n; k++)
++    {
++        const long want = total * k / n;
++        int lo = cut[bands] + 16, hi = bottom - 16;
++        if (lo > hi)
++            break;
++        while (lo < hi)
++        {
++            const int mid = lo + (hi - lo) / 2;
++            if (damage_area_above(dmg, mid) < want)
++                lo = mid + 1;
++            else
++                hi = mid;
++        }
++        cut[++bands] = lo;
++    }
++    cut[++bands] = bottom;
++    return bands;
+ }
+ 
+ /*----------------------------------------------------------------------------------------------------------------------
+@@ -6869,7 +6967,8 @@
+         {
+             /* Full repaint: one unclipped pass over the whole tree (sliced across workers when the
+              * screen is tall enough to pay for the fork). */
+-            if (can_parallel && (rb_y1 - rb_y0) >= nworkers * 16)
++            const int nslices = can_parallel ? slice_count(rb_x1 - rb_x0, rb_y1 - rb_y0, nworkers) : 1;
++            if (nslices > 1)
+             {
+                 ParallelRenderJob job;
+                 job.root = root;
+@@ -6878,10 +6977,10 @@
+                 job.x1 = rb_x1;
+                 job.ry0 = rb_y0;
+                 job.ry1 = rb_y1;
+-                job.nslices = nworkers;
++                job.nslices = nslices;
+                 job.kbd_y = s_kbd_avoid_y;
+                 s_parallel_render = true;
+-                er_parallel_for(render_slice_job, &job);
++                er_parallel_for_n(render_slice_job, &job, nslices);
+                 s_parallel_render = false;
+                 s_parallel_frames++;
+                 er_push_clip_rect(rb_x0, rb_y0, rb_x1 - rb_x0, rb_y1 - rb_y0);
+@@ -6901,41 +7000,46 @@
+              * construction: passes only stamp painted_seq (flags clear in the sequential post-pass
+              * below), the rects are pairwise disjoint so no pixel composites twice (which would darken
+              * translucent blends), and each pass prunes to its own clip so a pass over a small rect
+-             * walks only that corner's subtrees. Each rect independently takes the sliced parallel
+-             * fork when it is tall enough to pay for it (see render_slice_job — slices behave exactly
+-             * like the serial damage clip). The persistent framebuffer retains untouched pixels. */
+-            bool any_parallel = false;
++             * walks only that corner's subtrees. Enough damage forks once for all the rects: each
++             * worker takes a band of rows holding about an equal share of the damaged area and runs
++             * those passes clipped to it (see render_damage_job). The persistent framebuffer retains
++             * untouched pixels. */
++            long area = 0;
+             for (uint8_t ri = 0U; ri < dmg.count; ri++)
+-            {
+-                const ERRect* R = &dmg.r[ri];
+-                if (can_parallel && R->h >= nworkers * 16)
+-                {
+-                    ParallelRenderJob job;
+-                    job.root = root;
+-                    job.full_recomposite = full_recomposite;
+-                    job.x0 = R->x;
+-                    job.x1 = R->x + R->w;
+-                    job.ry0 = R->y;
+-                    job.ry1 = R->y + R->h;
+-                    job.nslices = nworkers;
+-                    job.kbd_y = s_kbd_avoid_y;
+-                    s_parallel_render = true;
+-                    er_parallel_for(render_slice_job, &job);
+-                    s_parallel_render = false;
+-                    any_parallel = true;
+-                }
+-                else
++                area += (long)dmg.r[ri].w * dmg.r[ri].h;
++            const long by_area = area / ER_SLICE_MIN_PIXELS;
++            int nslices = can_parallel && dmg.count > 0U ? (by_area < nworkers ? (int)by_area : nworkers) : 1;
++            ParallelDamageJob job;
++            if (nslices > 1)
++                nslices = damage_cuts(&dmg, nslices, job.cut);
++            if (nslices > 1)
++            {
++                job.root = root;
++                job.full_recomposite = full_recomposite;
++                job.dmg = &dmg;
++                job.kbd_y = s_kbd_avoid_y;
++                s_parallel_render = true;
++                er_parallel_for_n(render_damage_job, &job, nslices);
++                s_parallel_render = false;
++                s_parallel_frames++;
++            }
++            else
++            {
++                for (uint8_t ri = 0U; ri < dmg.count; ri++)
+                 {
++                    const ERRect* R = &dmg.r[ri];
+                     er_push_clip_rect(R->x, R->y, R->w, R->h);
+                     render_tree(root, full_recomposite, false, 0, s_kbd_avoid_y); /* scene shifted up for keyboard */
+                     er_pop_clip_rect();
+                 }
++            }
++            for (uint8_t ri = 0U; ri < dmg.count; ri++)
++            {
++                const ERRect* R = &dmg.r[ri];
+                 er_push_clip_rect(R->x, R->y, R->w, R->h);
+                 er_keyboard_draw((int)root->computed.w, (int)root->computed.h); /* overlay, per-rect clip */
+                 er_pop_clip_rect();
+             }
+-            if (any_parallel)
+-                s_parallel_frames++;
+         }
+     }
+ 

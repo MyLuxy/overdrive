@@ -1,0 +1,73 @@
+Embedded React: size the main axis from a definite cross size and aspectRatio.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json. Changed file: engine/layout/
+layout_engine.c. Proposed upstream as pull request #305.
+
+aspectRatio only derived a flow child's cross size from its main size. A child
+whose cross size is definite (an explicit length or a percentage) and whose main
+size is auto fell back to its content size instead, so an image in a row sized
+`h-full aspect-[3/4]` was as wide as its bitmap: 0 until a remote image arrived,
+then the bitmap's width. CSS and React Native derive the width from the height;
+the main size now does the same, from the cross size after its min/max clamps.
+Content measurement (an auto-sized parent sizing itself around such children)
+applies the same rule to one explicit axis, so the parent and its laid-out
+children agree. Children with a main size, a flex basis or no aspectRatio are
+unchanged. Derived sizes saturate at the int16 range.
+
+diff --git a/engine/layout/layout_engine.c b/engine/layout/layout_engine.c
+--- a/engine/layout/layout_engine.c
++++ b/engine/layout/layout_engine.c
+@@ -425,6 +425,12 @@
+ }
+ 
+ static void measure_content(const uint16_t tag, const int16_t avail_w, int16_t* out_w, int16_t* out_h);
++
++/** Rounds a size derived through aspect_ratio to whole pixels within the int16 range. */
++static int16_t aspect_px(const float v)
++{
++    return v >= (float)INT16_MAX ? INT16_MAX : (v <= 0.0f ? 0 : (int16_t)(v + 0.5f));
++}
+ 
+ /**
+  * @brief Measures a child's intrinsic content size at most once, on first use.
+@@ -651,8 +657,16 @@
+         }
+     }
+ 
+-    const int16_t iw = (exp_w != ER_LAYOUT_AUTO) ? exp_w : (int16_t)(content_w + pad.left + pad.right);
+-    const int16_t ih = (exp_h != ER_LAYOUT_AUTO) ? exp_h : (int16_t)(content_h + pad.top + pad.bottom);
++    int16_t iw = (exp_w != ER_LAYOUT_AUTO) ? exp_w : (int16_t)(content_w + pad.left + pad.right);
++    int16_t ih = (exp_h != ER_LAYOUT_AUTO) ? exp_h : (int16_t)(content_h + pad.top + pad.bottom);
++    /* One explicit axis and an aspect ratio give the other, as layout does for flow children. */
++    if (L->aspect_ratio > 0.0f && (exp_w != ER_LAYOUT_AUTO) != (exp_h != ER_LAYOUT_AUTO))
++    {
++        if (exp_w != ER_LAYOUT_AUTO)
++            ih = aspect_px((float)clamp_size(exp_w, L->min_width, L->max_width) / L->aspect_ratio);
++        else
++            iw = aspect_px((float)clamp_size(exp_h, L->min_height, L->max_height) * L->aspect_ratio);
++    }
+     *out_w = clamp_size(iw, L->min_width, L->max_width);
+     *out_h = clamp_size(ih, L->min_height, L->max_height);
+     if (cacheable)
+@@ -784,6 +798,20 @@
+                     hypo_main = (int16_t)((float)main_size * main_pct / 100.0f + 0.5f);
+                 else if (mainsz != ER_LAYOUT_AUTO)
+                     hypo_main = mainsz;
++                else if (cl->aspect_ratio > 0.0f &&
++                         ((is_row ? cl->height : cl->width) != ER_LAYOUT_AUTO || (is_row ? cl->height_pct : cl->width_pct) > 0.0f))
++                {
++                    /* A definite cross size and an aspect ratio give the main size, as in CSS and React
++                     * Native: an element sized by its height alone (h-full aspect-[3/4] in a row) gets
++                     * its width from it rather than from its content. */
++                    const float cross_pct_def = is_row ? cl->height_pct : cl->width_pct;
++                    const int16_t cross_def = clamp_size(
++                        cross_pct_def > 0.0f ? (int16_t)((float)cross_avail * cross_pct_def / 100.0f + 0.5f)
++                                             : (is_row ? cl->height : cl->width),
++                        is_row ? cl->min_height : cl->min_width,
++                        is_row ? cl->max_height : cl->max_width);
++                    hypo_main = aspect_px(is_row ? (float)cross_def * cl->aspect_ratio : (float)cross_def / cl->aspect_ratio);
++                }
+                 else
+                 {
+                     measure_lazy(ct, avail_w, &measured, &intr_w, &intr_h);

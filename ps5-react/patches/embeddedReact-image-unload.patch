@@ -1,0 +1,159 @@
+Embedded React: unload registered images, and register ARGB with known opacity.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json. Changed files: engine/include/
+er_scene.h, engine/rendering/image_registry.{c,h}, engine/rendering/
+image_scaler.c. Proposed upstream as pull request #307.
+
+The registry could only add or replace images, so an image cache could never
+give a slot back or let go of pixels: every remote image would have kept its
+slot (and the caller its buffer) for the life of the app. er_image_unload(name)
+frees the slot; the caller frees the pixels after it.
+
+er_image_load() scans every pixel for opacity on the registering thread, about
+a millisecond for a full-width image. A decoder already knows whether it
+produced alpha, so er_image_load_argb(name, pixels, w, h, opaque) takes that
+instead. Both are additive; existing calls behave as before.
+
+diff --git a/engine/include/er_scene.h b/engine/include/er_scene.h
+--- a/engine/include/er_scene.h
++++ b/engine/include/er_scene.h
+@@ -1255,8 +1255,36 @@
+      * @param[in] h           Image height in pixels.
+      */
+     void er_image_load_rgb565(const char* name, const void* rgb565_buf, int w, int h);
++
++    /**
++     * @brief Registers premultiplied ARGB8888 pixels whose opacity the caller already knows.
++     *
++     * Same ownership and replacement rules as er_image_load(), without its scan of every pixel
++     * for opacity: a decoder that produced the pixels knows it already, and the scan of a
++     * full-width image costs about a millisecond on the thread that registers it.
++     *
++     * @param[in] name      Null-terminated image asset name.
++     * @param[in] argb_buf  Premultiplied ARGB8888 pixel data (row-major), caller-owned.
++     * @param[in] w         Image width in pixels.
++     * @param[in] h         Image height in pixels.
++     * @param[in] opaque    Every alpha is 0xFF; opaque images take the copy path.
++     *
++     * @return false when the registry is full or an argument is invalid.
++     */
++    bool er_image_load_argb(const char* name, const void* argb_buf, int w, int h, bool opaque);
+ 
+     /**
++     * @brief Removes a registered image and frees its registry slot.
++     *
++     * Image nodes naming it draw nothing until the name is registered again. The engine keeps no
++     * reference to the pixels afterwards, so the caller may free them; it must not unload an image
++     * that a node draws before the next commit.
++     *
++     * @param[in] name  Null-terminated image asset name; unknown names are ignored.
++     */
++    void er_image_unload(const char* name);
++
++    /**
+      * @brief Starts an animation on a node property.
+      *
+      * Any previously running animation on the same node+prop is cancelled before
+diff --git a/engine/rendering/image_registry.c b/engine/rendering/image_registry.c
+--- a/engine/rendering/image_registry.c
++++ b/engine/rendering/image_registry.c
+@@ -54,7 +54,7 @@
+     return true;
+ }
+ 
+-bool image_registry_store(const char* name, const void* buf, int w, int h, ERImageFormat format)
++static bool store_entry(const char* name, const void* buf, int w, int h, ERImageFormat format, int opaque)
+ {
+     if (!name || !buf || w <= 0 || h <= 0)
+         return false;
+@@ -84,7 +84,7 @@
+             s_entries[i].w = w;
+             s_entries[i].h = h;
+             s_entries[i].format = (uint8_t)format;
+-            s_entries[i].opaque = scan_opaque(buf, w, h, format);
++            s_entries[i].opaque = opaque < 0 ? scan_opaque(buf, w, h, format) : opaque != 0;
+             return true;
+         }
+         if (!s_entries[i].in_use && free_slot < 0)
+@@ -107,11 +107,35 @@
+     e->w = w;
+     e->h = h;
+     e->format = (uint8_t)format;
+-    e->opaque = scan_opaque(buf, w, h, format);
++    e->opaque = opaque < 0 ? scan_opaque(buf, w, h, format) : opaque != 0;
+     e->in_use = true;
+     return true;
+ }
+ 
++bool image_registry_store(const char* name, const void* buf, int w, int h, ERImageFormat format)
++{
++    return store_entry(name, buf, w, h, format, -1);
++}
++
++bool image_registry_store_argb(const char* name, const void* buf, int w, int h, bool opaque)
++{
++    return store_entry(name, buf, w, h, ER_IMG_ARGB8888, opaque ? 1 : 0);
++}
++
++void image_registry_remove(const char* name)
++{
++    if (!name)
++        return;
++    for (int i = 0; i < (int)ERUI_IMAGE_REGISTRY_MAX; i++)
++    {
++        if (s_entries[i].in_use && strncmp(s_entries[i].name, name, IMAGE_NAME_MAX) == 0)
++        {
++            memset(&s_entries[i], 0, sizeof(s_entries[i]));
++            return;
++        }
++    }
++}
++
+ unsigned image_registry_in_use(void)
+ {
+     unsigned n = 0U;
+diff --git a/engine/rendering/image_registry.h b/engine/rendering/image_registry.h
+--- a/engine/rendering/image_registry.h
++++ b/engine/rendering/image_registry.h
+@@ -98,6 +98,20 @@
+ bool image_registry_store(const char* name, const void* buf, int w, int h, ERImageFormat format);
+ 
+ /**
++ * @brief image_registry_store() for premultiplied ARGB8888 whose opacity the caller already knows.
++ *
++ * Skips the registration scan, which costs a pass over every pixel on the calling thread.
++ */
++bool image_registry_store_argb(const char* name, const void* buf, int w, int h, bool opaque);
++
++/**
++ * @brief Frees the slot holding name; lookups miss until the name is stored again.
++ *
++ * The registry never owned the pixels, so the caller frees them afterwards.
++ */
++void image_registry_remove(const char* name);
++
++/**
+  * @brief Retrieves a registered image entry by name.
+  *
+  * @param[in] name  Null-terminated asset name to look up.
+diff --git a/engine/rendering/image_scaler.c b/engine/rendering/image_scaler.c
+--- a/engine/rendering/image_scaler.c
++++ b/engine/rendering/image_scaler.c
+@@ -328,6 +328,16 @@
+ void er_image_load_rgb565(const char* name, const void* rgb565_buf, int w, int h)
+ {
+     image_registry_store(name, rgb565_buf, w, h, ER_IMG_RGB565);
++}
++
++bool er_image_load_argb(const char* name, const void* argb_buf, int w, int h, bool opaque)
++{
++    return image_registry_store_argb(name, argb_buf, w, h, opaque);
++}
++
++void er_image_unload(const char* name)
++{
++    image_registry_remove(name);
+ }
+ 
+ void er_image_render(const ERImageProps* props, int x, int y, int w, int h)

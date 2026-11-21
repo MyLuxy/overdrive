@@ -1,0 +1,9 @@
+PS5 hardware video decoding (native/ps5/video_decoder.cpp)
+
+The libSceVideodec2 interface used here - structure layouts, codec tags, levels, memory types and the
+order of calls - follows what ProsperoLight (blackbearreloaded/ProsperoLight) and EVO Player
+(sainsaji/EVO-PLAYER-PS5) established on hardware, both GPL-3.0. So do the findings that the decoder
+module must be loaded, and its decoders set up, before the process's credentials change, and that
+each decoder needs its own compute queue. The implementation in PS5 React is new code under
+GPL-3.0-or-later. No Sony code, headers or binaries are included: the import stub is generated from
+the function names at build time.

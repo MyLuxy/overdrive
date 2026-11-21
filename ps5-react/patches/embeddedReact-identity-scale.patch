@@ -1,0 +1,28 @@
+Embedded React: treat an explicit scale of 1 as no transform.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json. Changed file: engine/rendering/
+transform.c. Proposed upstream as pull request #287.
+
+er_transform_is_translate_only() recognised identity scale only as the unset
+value 0. A node whose scale is bound to an animated value resting at 1 (every
+focus lift such as whileFocus={{scale: 1.04}} once it settles) therefore stayed
+"complex": each repaint captured its whole subtree into the transform scratch
+and mapped it back out. Scale 1 with no rotation now takes the plain-offset
+path, as 0 does; the damage pre-pass, render pass and hit test share this
+predicate, so they stay in agreement.
+
+diff --git a/engine/rendering/transform.c b/engine/rendering/transform.c
+--- a/engine/rendering/transform.c
++++ b/engine/rendering/transform.c
+@@ -336,7 +336,9 @@
+     if (n->tp_rotate_x != 0.0f || n->tp_rotate_y != 0.0f || n->tp_perspective != 0.0f)
+         return false;
+ #endif
+-    return n->tp_scale_x == 0.0f && n->tp_scale_y == 0.0f && n->tp_rotate_z == 0.0f;
++    /* 0 is the unset sentinel; an explicit 1 (a scale animation at rest) is no less an identity. */
++    return (n->tp_scale_x == 0.0f || n->tp_scale_x == 1.0f) && (n->tp_scale_y == 0.0f || n->tp_scale_y == 1.0f)
++           && n->tp_rotate_z == 0.0f;
+ }
+ 
+ #if ERUI_3D_TRANSFORMS

@@ -1,0 +1,522 @@
+Embedded React: render scaled images and gradients wider than the row buffer.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, after the patches listed before this
+one there. Changed files: engine/core/er_limits.h,
+engine/rendering/image_scaler.c, engine/rendering/gradient.c and
+engine/tests/rendering/CMakeLists.txt; new file
+engine/tests/rendering/test_wide_rows.c.
+Not proposed upstream: PS5 React maintains this change here.
+
+A scaled or tinted image and a linear or radial gradient assemble each row in
+a buffer of ERUI_MAX_IMG_ROW_PIXELS columns, and both clamped the box to it:
+everything right of that many columns from the box's left edge was never
+drawn. At 3840x2160 with a 2560-column buffer, a full-width cover image lost
+its right third (more when it starts left of the screen). Both now walk the
+visible span in chunks of the buffer's width.
+
+A gradient row also started its fixed-point ramp from the first visible
+column, so a column's colour moved by one step with the clip window. Rows now
+start from box column 0, and a chunk or a damage-clipped repaint gives the
+same pixels as a full one.
+
+test_wide_rows renders boxes more than two buffers wide, starting left of the
+framebuffer, in one pass and in clip strips narrower than the buffer. Every
+column must be painted and the two renders must match.
+
+diff --git a/engine/core/er_limits.h b/engine/core/er_limits.h
+--- a/engine/core/er_limits.h
++++ b/engine/core/er_limits.h
+@@ -82,10 +82,9 @@
+ /**
+  * @brief Static row-buffer width for the per-row rasterizers.
+  *
+- * rendering/image_scaler.c and rendering/gradient.c both assemble one row here, but they do NOT handle an
+- * over-wide row alike: the image scaler chunks across it, while the gradient renders only the first
+- * ERUI_MAX_IMG_ROW_PIXELS columns and truncates the rest. So size this to cover the widest GRADIENT on the
+- * screen, not just the widest scaled image — below that, wide gradients lose their right-hand side.
++ * rendering/image_scaler.c and rendering/gradient.c both assemble one row here, and both render a wider
++ * visible span in chunks of this many columns. It costs one row per render worker in each pool (plus a tap
++ * per column with ERUI_BILINEAR_SCALE); a span within it renders in one pass.
+  */
+ #ifndef ERUI_MAX_IMG_ROW_PIXELS
+ #define ERUI_MAX_IMG_ROW_PIXELS 800
+diff --git a/engine/rendering/gradient.c b/engine/rendering/gradient.c
+--- a/engine/rendering/gradient.c
++++ b/engine/rendering/gradient.c
+@@ -234,8 +234,8 @@
+  */
+ typedef struct
+ {
+-    int c0; /**< First column. */
+-    int c1; /**< One past the last column (never beyond the row buffer). */
++    int c0; /**< First column; row buffers hold columns from here. */
++    int c1; /**< One past the last column. */
+     int r0; /**< First row. */
+     int r1; /**< One past the last row. */
+ } GradWindow;
+@@ -246,14 +246,14 @@
+  * @param[out] win       Receives the visible window.
+  * @param[in]  x         Box left edge in framebuffer pixels.
+  * @param[in]  y         Box top edge in framebuffer pixels.
+- * @param[in]  capped_w  Box width capped to the row buffer.
++ * @param[in]  w         Box width.
+  * @param[in]  h         Box height.
+  * @return False when nothing of the box is visible.
+  */
+-static bool window_init(GradWindow* win, int x, int y, int capped_w, int h)
++static bool window_init(GradWindow* win, int x, int y, int w, int h)
+ {
+     win->c0 = 0;
+-    win->c1 = capped_w;
++    win->c1 = w;
+     win->r0 = 0;
+     win->r1 = h;
+     int cx, cy, cw, ch;
+@@ -323,8 +323,8 @@
+  * gradient's corner is the same shape a solid background would have painted).
+  *
+  * @param[in] m        Silhouette to clip to.
+- * @param[in] win      Visible window; only row[win->c0 .. win->c1) was assembled.
+- * @param[in] row      Assembled premultiplied ARGB8888 row, indexed by box column.
++ * @param[in] win      Visible window, at most ERUI_MAX_IMG_ROW_PIXELS wide.
++ * @param[in] row      Assembled premultiplied ARGB8888 row; row[0] is box column win->c0.
+  * @param[in] x        Destination left edge of the box in framebuffer pixels.
+  * @param[in] y        Destination row in framebuffer pixels.
+  * @param[in] row_idx  Row index within the box, 0 = top.
+@@ -333,8 +333,7 @@
+ {
+     if (!m->rounded)
+     {
+-        er_blit_blend(&row[win->c0], (win->c1 - win->c0) * (int)sizeof(uint32_t), 255, x + win->c0, y,
+-                      win->c1 - win->c0, 1);
++        er_blit_blend(row, (win->c1 - win->c0) * (int)sizeof(uint32_t), 255, x + win->c0, y, win->c1 - win->c0, 1);
+         return;
+     }
+ 
+@@ -344,7 +343,7 @@
+     const int x0 = (rr.x0 > win->c0) ? rr.x0 : win->c0;
+     const int x1 = (rr.x1 < win->c1) ? rr.x1 : win->c1;
+     if (x1 > x0)
+-        er_blit_blend(&row[x0], (x1 - x0) * (int)sizeof(uint32_t), 255, x + x0, y, x1 - x0, 1);
++        er_blit_blend(&row[x0 - win->c0], (x1 - x0) * (int)sizeof(uint32_t), 255, x + x0, y, x1 - x0, 1);
+ 
+ #if ERUI_BORDER_AA
+     /* Fringe pixels take the gradient colour at their own column, faded by the arc's coverage. */
+@@ -356,7 +355,7 @@
+         const int ax = rr.x0 - 1 - k;
+         if (cov < 1.0f && ax >= win->c0 && ax < win->c1)
+         {
+-            const uint32_t p = er_px_scale_premul(row[ax], (uint32_t)(cov * 255.0f + 0.5f));
++            const uint32_t p = er_px_scale_premul(row[ax - win->c0], (uint32_t)(cov * 255.0f + 0.5f));
+             er_blit_blend(&p, (int)sizeof(uint32_t), 255, x + ax, y, 1, 1);
+         }
+     }
+@@ -368,7 +367,7 @@
+         const int ax = rr.x1 + k;
+         if (cov < 1.0f && ax >= win->c0 && ax < win->c1 && ax < m->w)
+         {
+-            const uint32_t p = er_px_scale_premul(row[ax], (uint32_t)(cov * 255.0f + 0.5f));
++            const uint32_t p = er_px_scale_premul(row[ax - win->c0], (uint32_t)(cov * 255.0f + 0.5f));
+             er_blit_blend(&p, (int)sizeof(uint32_t), 255, x + ax, y, 1, 1);
+         }
+     }
+@@ -378,7 +377,7 @@
+ /**
+  * @brief Assembles row[c0 .. c1) of a linear gradient from the ramp.
+  *
+- * @param[out] buf    Row buffer, indexed by box column.
++ * @param[out] buf    Row buffer; buf[0] is box column c0.
+  * @param[in]  lut    Ramp from build_lut.
+  * @param[in]  n      Ramp entries.
+  * @param[in]  f      Ramp index at column c0, 16.16 fixed point.
+@@ -405,10 +404,10 @@
+             idx = 0;
+         else if (idx >= n)
+             idx = n - 1;
+-        buf[col] = dither_px(lut[idx] + thr[(col - c0) & 3]);
++        buf[col - c0] = dither_px(lut[idx] + thr[(col - c0) & 3]);
+     }
+     for (int col = end; col < c1; col++)
+-        buf[col] = buf[col - 4];
++        buf[col - c0] = buf[col - c0 - 4];
+ }
+ 
+ /**
+@@ -478,9 +477,8 @@
+     if (vp->gradient_stop_count < 2 || w <= 0 || h <= 0)
+         return;
+ 
+-    const int capped_w = (w <= ERUI_MAX_IMG_ROW_PIXELS) ? w : ERUI_MAX_IMG_ROW_PIXELS;
+-    GradWindow win;
+-    if (!window_init(&win, x, y, capped_w, h))
++    GradWindow vis;
++    if (!window_init(&vis, x, y, w, h))
+         return;
+ 
+     GradMask mask;
+@@ -501,30 +499,35 @@
+     const float span = max_p - min_p;
+     const int n = build_lut(vp, span);
+     const uint64_t* lut = s_grad_lut_pool[er_render_worker_id()];
+-    /* Ramp index per pixel step, in 16.16 fixed point. */
++    /* Ramp index per pixel step, in 16.16 fixed point. Each row starts from box column 0 and advances by
++     * whole steps, so a column's colour does not depend on where the clip window or a chunk begins. */
+     const float to_idx = (span > 1e-6f) ? (float)(n - 1) / span : 0.0f;
+     const int32_t step = (int32_t)lrintf(ddx * to_idx * 65536.0f);
+ 
+     uint32_t* buf = grow();
+-    if (ddy == 0.0f)
++    for (GradWindow win = vis; win.c0 < vis.c1; win.c0 = win.c1)
+     {
+-        /* A ramp that runs purely along x repeats every 4 rows (the dither cycle): assemble each phase
+-         * once and blit it to all of its rows. The blits never overlap, so their order does not matter. */
+-        const int32_t f = (int32_t)lrintf(((float)win.c0 * ddx - min_p) * to_idx * 65536.0f);
+-        for (int first = win.r0; first < win.r0 + 4 && first < win.r1; first++)
++        win.c1 = (vis.c1 - win.c0) < ERUI_MAX_IMG_ROW_PIXELS ? vis.c1 : win.c0 + ERUI_MAX_IMG_ROW_PIXELS;
++        if (ddy == 0.0f)
+         {
+-            assemble_row(buf, lut, n, f, step, k_bayer4[(y + first) & 3], x, win.c0, win.c1);
+-            for (int row = first; row < win.r1; row += 4)
+-                mask_blit_row(&mask, &win, buf, x, y + row, row);
++            /* A ramp that runs purely along x repeats every 4 rows (the dither cycle): assemble each phase
++             * once and blit it to all of its rows. The blits never overlap, so their order does not matter. */
++            const int32_t f = (int32_t)lrintf(-min_p * to_idx * 65536.0f) + win.c0 * step;
++            for (int first = win.r0; first < win.r0 + 4 && first < win.r1; first++)
++            {
++                assemble_row(buf, lut, n, f, step, k_bayer4[(y + first) & 3], x, win.c0, win.c1);
++                for (int row = first; row < win.r1; row += 4)
++                    mask_blit_row(&mask, &win, buf, x, y + row, row);
++            }
++            continue;
+         }
+-        return;
++        for (int row = win.r0; row < win.r1; row++)
++        {
++            const int32_t f = (int32_t)lrintf(((float)row * ddy - min_p) * to_idx * 65536.0f) + win.c0 * step;
++            assemble_row(buf, lut, n, f, step, k_bayer4[(y + row) & 3], x, win.c0, win.c1);
++            mask_blit_row(&mask, &win, buf, x, y + row, row);
++        }
+     }
+-    for (int row = win.r0; row < win.r1; row++)
+-    {
+-        const int32_t f = (int32_t)lrintf(((float)win.c0 * ddx + (float)row * ddy - min_p) * to_idx * 65536.0f);
+-        assemble_row(buf, lut, n, f, step, k_bayer4[(y + row) & 3], x, win.c0, win.c1);
+-        mask_blit_row(&mask, &win, buf, x, y + row, row);
+-    }
+ }
+ 
+ #if ERUI_GRADIENT_RADIAL
+@@ -548,9 +551,8 @@
+     if (vp->gradient_stop_count < 2 || w <= 0 || h <= 0)
+         return;
+ 
+-    const int capped_w = (w <= ERUI_MAX_IMG_ROW_PIXELS) ? w : ERUI_MAX_IMG_ROW_PIXELS;
+-    GradWindow win;
+-    if (!window_init(&win, x, y, capped_w, h))
++    GradWindow vis;
++    if (!window_init(&vis, x, y, w, h))
+         return;
+ 
+     GradMask mask;
+@@ -564,19 +566,23 @@
+     const float to_idx = (r > 1e-6f) ? (float)(n - 1) / r : 0.0f;
+ 
+     uint32_t* buf = grow();
+-    for (int row = win.r0; row < win.r1; row++)
++    for (GradWindow win = vis; win.c0 < vis.c1; win.c0 = win.c1)
+     {
+-        const uint8_t* bayer = k_bayer4[(y + row) & 3];
+-        const float dy2 = ((float)row - cy) * ((float)row - cy);
+-        for (int col = win.c0; col < win.c1; col++)
++        win.c1 = (vis.c1 - win.c0) < ERUI_MAX_IMG_ROW_PIXELS ? vis.c1 : win.c0 + ERUI_MAX_IMG_ROW_PIXELS;
++        for (int row = win.r0; row < win.r1; row++)
+         {
+-            const float dx = (float)col - cx;
+-            int idx = (int)(sqrtf(dx * dx + dy2) * to_idx + 0.5f);
+-            if (idx >= n)
+-                idx = n - 1;
+-            buf[col] = dither_px(lut[idx] + ((uint64_t)bayer[(x + col) & 3] * 16u + 8u) * GRAD_LANES);
++            const uint8_t* bayer = k_bayer4[(y + row) & 3];
++            const float dy2 = ((float)row - cy) * ((float)row - cy);
++            for (int col = win.c0; col < win.c1; col++)
++            {
++                const float dx = (float)col - cx;
++                int idx = (int)(sqrtf(dx * dx + dy2) * to_idx + 0.5f);
++                if (idx >= n)
++                    idx = n - 1;
++                buf[col - win.c0] = dither_px(lut[idx] + ((uint64_t)bayer[(x + col) & 3] * 16u + 8u) * GRAD_LANES);
++            }
++            mask_blit_row(&mask, &win, buf, x, y + row, row);
+         }
+-        mask_blit_row(&mask, &win, buf, x, y + row, row);
+     }
+ }
+ 
+diff --git a/engine/rendering/image_scaler.c b/engine/rendering/image_scaler.c
+--- a/engine/rendering/image_scaler.c
++++ b/engine/rendering/image_scaler.c
+@@ -401,38 +401,41 @@
+         return;
+     }
+ 
+-    /* General path: scale and/or tint via a one-row scratch buffer, over the visible part only. */
+-    const int capped_w = (dst_w <= ERUI_MAX_IMG_ROW_PIXELS) ? dst_w : ERUI_MAX_IMG_ROW_PIXELS;
++    /* General path: scale and/or tint via a one-row scratch buffer, over the visible part only, in
++     * chunks of the row buffer's width. */
+     int vx0, vy0, vx1, vy1;
+-    if (!visible_part(dst_x, dst_y, capped_w, dst_h, &vx0, &vy0, &vx1, &vy1))
++    if (!visible_part(dst_x, dst_y, dst_w, dst_h, &vx0, &vy0, &vx1, &vy1))
+         return;
+-    const int vis_w = vx1 - vx0;
+     uint32_t* const row = irow();
++    const ImageMask* const m = s_mask[er_render_worker_id()];
++    for (int cx0 = vx0; cx0 < vx1; cx0 += ERUI_MAX_IMG_ROW_PIXELS)
++    {
++        const int vis_w = (vx1 - cx0) < ERUI_MAX_IMG_ROW_PIXELS ? (vx1 - cx0) : ERUI_MAX_IMG_ROW_PIXELS;
+ #if ERUI_BILINEAR_SCALE
+-    Tap* const cols = s_col_pool[er_render_worker_id()];
+-    for (int dx = vx0; dx < vx1; dx++)
+-        cols[dx - vx0] = bilinear_tap(src_x, src_w, dst_w, dx);
++        Tap* const cols = s_col_pool[er_render_worker_id()];
++        for (int i = 0; i < vis_w; i++)
++            cols[i] = bilinear_tap(src_x, src_w, dst_w, cx0 + i);
+ #endif
+-    for (int dy = vy0; dy < vy1; dy++)
+-    {
++        for (int dy = vy0; dy < vy1; dy++)
++        {
+ #if ERUI_BILINEAR_SCALE
+-        bilinear_row(img, cols, vis_w, bilinear_tap(src_y, src_h, dst_h, dy), row);
++            bilinear_row(img, cols, vis_w, bilinear_tap(src_y, src_h, dst_h, dy), row);
+ #else
+-        const int sy = src_y + (dy * src_h) / dst_h;
+-        for (int dx = vx0; dx < vx1; dx++)
+-            row[dx - vx0] = fetch_px(img, src_x + (dx * src_w) / dst_w, sy);
+-#endif
+-        if (has_tint)
++            const int sy = src_y + (dy * src_h) / dst_h;
+             for (int i = 0; i < vis_w; i++)
+-                row[i] = apply_tint(row[i], tr, tg, tb);
+-        /* Tint preserves alpha, and integer weights keep opaque samples exactly opaque. */
+-        const ImageMask* const m = s_mask[er_render_worker_id()];
+-        if (m)
+-            mask_row(m, row, dst_x + vx0, dst_y + dy, vis_w, img->opaque);
+-        else if (img->opaque)
+-            er_blit_copy(row, vis_w * (int)sizeof(uint32_t), dst_x + vx0, dst_y + dy, vis_w, 1);
+-        else
+-            er_blit_blend(row, vis_w * (int)sizeof(uint32_t), 255, dst_x + vx0, dst_y + dy, vis_w, 1);
++                row[i] = fetch_px(img, src_x + ((cx0 + i) * src_w) / dst_w, sy);
++#endif
++            if (has_tint)
++                for (int i = 0; i < vis_w; i++)
++                    row[i] = apply_tint(row[i], tr, tg, tb);
++            /* Tint preserves alpha, and integer weights keep opaque samples exactly opaque. */
++            if (m)
++                mask_row(m, row, dst_x + cx0, dst_y + dy, vis_w, img->opaque);
++            else if (img->opaque)
++                er_blit_copy(row, vis_w * (int)sizeof(uint32_t), dst_x + cx0, dst_y + dy, vis_w, 1);
++            else
++                er_blit_blend(row, vis_w * (int)sizeof(uint32_t), 255, dst_x + cx0, dst_y + dy, vis_w, 1);
++        }
+     }
+ }
+ 
+diff --git a/engine/tests/rendering/CMakeLists.txt b/engine/tests/rendering/CMakeLists.txt
+--- a/engine/tests/rendering/CMakeLists.txt
++++ b/engine/tests/rendering/CMakeLists.txt
+@@ -221,3 +221,12 @@
+ add_executable(test_deferred_raster test_deferred_raster.c)
+ target_link_libraries(test_deferred_raster PRIVATE embedded-react)
+ add_test(NAME rendering_deferred_raster COMMAND test_deferred_raster)
++
++add_executable(test_wide_rows test_wide_rows.c)
++target_link_libraries(test_wide_rows PRIVATE embedded-react)
++# test_wide_rows renders through er_image_render and er_gradient_render directly, under er_push_clip_rect, and
++# sizes its rows from the engine's row buffer, which the engine defines privately.
++target_compile_definitions(test_wide_rows PRIVATE ERUI_MAX_IMG_ROW_PIXELS=${ERUI_MAX_IMG_ROW_PIXELS})
++target_include_directories(test_wide_rows PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../core ${CMAKE_CURRENT_SOURCE_DIR}/../../rendering
++                           ${CMAKE_CURRENT_SOURCE_DIR}/../../scene)
++add_test(NAME rendering_wide_rows COMMAND test_wide_rows)
+diff --git a/engine/tests/rendering/test_wide_rows.c b/engine/tests/rendering/test_wide_rows.c
+new file mode 100644
+--- /dev/null
++++ b/engine/tests/rendering/test_wide_rows.c
+@@ -0,0 +1,177 @@
++/*
++ * Copyright 2026 PS5 React contributors
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++/*
++ * Scaled images and gradients wider than the row buffer (ERUI_MAX_IMG_ROW_PIXELS) render in full.
++ *
++ * Each case renders a box more than two row buffers wide, starting left of the framebuffer, once under a
++ * full-width clip and once in clip strips narrower than the row buffer. Every column must be painted, and
++ * the two renders must match pixel for pixel, so the chunk seams are invisible.
++ */
++
++#include "er_limits.h"
++#include "er_scene.h"
++#include "gradient.h"
++#include "image_scaler.h"
++#include "native_renderer.h"
++#include "renderer_internal.h"
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++#define FB_W (2 * ERUI_MAX_IMG_ROW_PIXELS + 300)
++#define FB_H 16
++#define BOX_X (-37)
++#define BOX_W (FB_W + 80)
++#define STRIP 97
++#define SRC_W 64
++#define SRC_H 8
++
++static uint32_t s_fb[FB_W * FB_H];
++static uint32_t s_full[FB_W * FB_H];
++static uint32_t s_src[SRC_W * SRC_H];
++static int g_failures = 0;
++
++static void fill_cb(uint32_t argb, int x, int y, int w, int h, void* ctx)
++{
++    (void)ctx;
++    for (int py = y; py < y + h; py++)
++        for (int px = x; px < x + w; px++)
++            if (px >= 0 && py >= 0 && px < FB_W && py < FB_H)
++                s_fb[py * FB_W + px] = argb;
++}
++
++static void copy_cb(const void* src, int stride, int x, int y, int w, int h, void* ctx)
++{
++    (void)ctx;
++    for (int row = 0; row < h; row++)
++    {
++        const uint32_t* s = (const uint32_t*)((const uint8_t*)src + (size_t)row * (size_t)stride);
++        for (int col = 0; col < w; col++)
++            if (x + col >= 0 && y + row >= 0 && x + col < FB_W && y + row < FB_H)
++                s_fb[(y + row) * FB_W + x + col] = s[col];
++    }
++}
++
++static void blend_cb(const void* src, int stride, uint8_t alpha, int x, int y, int w, int h, void* ctx)
++{
++    (void)alpha;
++    copy_cb(src, stride, x, y, w, h, ctx);
++}
++
++typedef void (*RenderFn)(void);
++
++static ERImageProps s_image;
++static ERViewProps s_view;
++
++static void render_image(void)
++{
++    er_image_render(&s_image, BOX_X, 0, BOX_W, FB_H);
++}
++
++static void render_gradient(void)
++{
++    er_gradient_render(&s_view, BOX_X, 0, BOX_W, FB_H);
++}
++
++static void check(const char* what, RenderFn render)
++{
++    memset(s_fb, 0, sizeof(s_fb));
++    er_push_clip_rect(0, 0, FB_W, FB_H);
++    render();
++    er_pop_clip_rect();
++    memcpy(s_full, s_fb, sizeof(s_full));
++
++    memset(s_fb, 0, sizeof(s_fb));
++    for (int x = 0; x < FB_W; x += STRIP)
++    {
++        er_push_clip_rect(x, 0, STRIP, FB_H);
++        render();
++        er_pop_clip_rect();
++    }
++
++    for (int x = 0; x < FB_W; x++)
++    {
++        if (s_full[(FB_H / 2) * FB_W + x] == 0U)
++        {
++            fprintf(stderr, "FAIL %s: column %d of %d not painted (row buffer %d)\n", what, x, FB_W,
++                    ERUI_MAX_IMG_ROW_PIXELS);
++            g_failures++;
++            return;
++        }
++    }
++    for (int i = 0; i < FB_W * FB_H; i++)
++    {
++        if (s_full[i] != s_fb[i])
++        {
++            fprintf(stderr, "FAIL %s: (%d,%d) is %08x in one pass, %08x in strips\n", what, i % FB_W, i / FB_W,
++                    s_full[i], s_fb[i]);
++            g_failures++;
++            return;
++        }
++    }
++}
++
++int main(void)
++{
++    static EmbeddedRenderBackend be;
++    be.fill_rect = fill_cb;
++    be.copy_rect = copy_cb;
++    be.blend_rect = blend_cb;
++    embedded_renderer_set_backend(&be);
++
++    /* Every source column a different colour, so a column sampled from the wrong place shows. */
++    for (int y = 0; y < SRC_H; y++)
++        for (int x = 0; x < SRC_W; x++)
++            s_src[y * SRC_W + x] = 0xFF000000U | ((uint32_t)(x * 4) << 16) | ((uint32_t)(y * 30) << 8) | (uint32_t)(255 - x * 4);
++    er_image_load("wide", s_src, SRC_W, SRC_H);
++
++    strncpy(s_image.image_name, "wide", ER_IMAGE_NAME_MAX);
++    s_image.resize_mode = ER_RESIZE_STRETCH;
++    check("stretched image", render_image);
++    s_image.resize_mode = ER_RESIZE_COVER;
++    check("cover image", render_image);
++    s_image.tint_color = 0xFF80C040U;
++    check("tinted image", render_image);
++    s_image.tint_color = 0U;
++    s_image.radius_tl = s_image.radius_tr = s_image.radius_br = s_image.radius_bl = 6;
++    check("rounded image", render_image);
++
++#if ERUI_GRADIENT
++    s_view.gradient_type = ER_GRADIENT_LINEAR;
++    s_view.gradient_stop_count = 3;
++    s_view.gradient_stops[0] = (ERGradientStop){0xFF0000FFU, 0.0f};
++    s_view.gradient_stops[1] = (ERGradientStop){0xC000FF00U, 0.5f};
++    s_view.gradient_stops[2] = (ERGradientStop){0xFFFF0000U, 1.0f};
++    s_view.gradient_angle = 90.0f;
++    check("horizontal gradient", render_gradient);
++    s_view.gradient_angle = 30.0f;
++    check("diagonal gradient", render_gradient);
++    s_view.border_radius = 6;
++    check("rounded gradient", render_gradient);
++    s_view.border_radius = 0;
++#if ERUI_GRADIENT_RADIAL
++    s_view.gradient_type = ER_GRADIENT_RADIAL;
++    check("radial gradient", render_gradient);
++#endif
++#endif
++
++    if (g_failures)
++        return EXIT_FAILURE;
++    printf("PASS: rows %d px wide render in full across a %d px row buffer\n", FB_W, ERUI_MAX_IMG_ROW_PIXELS);
++    return EXIT_SUCCESS;
++}

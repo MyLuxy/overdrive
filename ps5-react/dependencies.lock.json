@@ -1,0 +1,166 @@
+{
+  "embeddedReact": {
+    "url": "https://github.com/TheMasterCoder007/embedded-react.git",
+    "revision": "cf5dfe4fae966fe21a265acc3dd3b054d245f981",
+    "patches": [
+      "patches/embeddedReact-flex-wrap-auto-height.patch",
+      "patches/embeddedReact-scaled-image-clip.patch",
+      "patches/embeddedReact-identity-scale.patch",
+      "patches/embeddedReact-view-gradient.patch",
+      "patches/embeddedReact-scroll-offset.patch",
+      "patches/embeddedReact-scroll-to.patch",
+      "patches/embeddedReact-scroll-copy.patch",
+      "patches/embeddedReact-damage-split.patch",
+      "patches/embeddedReact-scroll-copy-paint-free.patch",
+      "patches/embeddedReact-software-avx2.patch",
+      "patches/embeddedReact-image-unload.patch",
+      "patches/embeddedReact-aspect-main-size.patch",
+      "patches/embeddedReact-translate-subtree.patch",
+      "patches/embeddedReact-occluded-translate.patch",
+      "patches/embeddedReact-text-wrap-height.patch",
+      "patches/embeddedReact-image-radius.patch",
+      "patches/embeddedReact-bold-wrap.patch",
+      "patches/embeddedReact-paint-free-move.patch",
+      "patches/embeddedReact-border-sweep.patch",
+      "patches/embeddedReact-border-gradient.patch",
+      "patches/embeddedReact-border-radial.patch",
+      "patches/embeddedReact-european-glyphs.patch",
+      "patches/embeddedReact-text-shaper.patch",
+      "patches/embeddedReact-text-direction.patch",
+      "patches/embeddedReact-text-clip.patch",
+      "patches/embeddedReact-parallel-vectors.patch",
+      "patches/embeddedReact-worker-context-lookups.patch",
+      "patches/embeddedReact-transform-cache.patch",
+      "patches/embeddedReact-deferred-raster.patch",
+      "patches/embeddedReact-wide-rows.patch",
+      "patches/embeddedReact-layers.patch",
+      "patches/embeddedReact-offscreen-record.patch",
+      "patches/embeddedReact-translate-copy.patch",
+      "patches/embeddedReact-batched-updates.patch",
+      "patches/embeddedReact-text-half-leading.patch",
+      "patches/embeddedReact-host-props-cost.patch",
+      "patches/embeddedReact-slice-by-area.patch",
+      "patches/embeddedReact-layer-radius.patch",
+      "patches/embeddedReact-rounded-clip-blend.patch"
+    ]
+  },
+  "platform": {
+    "url": "https://gitlab.com/myluxy/overdrive-deps.git",
+    "revision": "4bd942579dd981b3df9c740438489ca6a614ddc0",
+    "patches": [
+      "patches/platform-heap-size.patch",
+      "patches/platform-trigger-effect.patch"
+    ]
+  },
+  "ps5OpenGL": {
+    "version": "1.0.0",
+    "sha256": "f93643c04c843d56143b00951df1f8042ea7706ae9f19e4e9abf158e1ead77c5",
+    "manifestSha256": "f4b91f672be037fbac3f82494f1225deaf4c227a03f37ac3ffa56abb213b943f",
+    "url": "https://github.com/JVK3R/ps5-opengl/releases/download/v1.0.0/ps5-opengl-sdk-1.0.0.tar.gz"
+  },
+  "sdk": {
+    "version": "0.42",
+    "url": "https://github.com/ps5-payload-dev/sdk/releases/download/v0.42/ps5-payload-sdk.zip",
+    "sha256": "8cfbc7cd5811e719eb4f0c47eea668d3dc7b40bc8ab11c4a5031d40c23ec02da"
+  },
+  "react": "18.3.1",
+  "reactReconciler": "0.29.2",
+  "quickjs": "0.15.0",
+  "quickjsSource": {
+    "url": "https://github.com/quickjs-ng/quickjs.git",
+    "revision": "433941b99fb3c5e7f98b7ebd78727972bcf467ee",
+    "patches": [
+      "patches/quickjs-sample-stack.patch"
+    ]
+  },
+  "stbImage": {
+    "version": "2.30",
+    "url": "https://raw.githubusercontent.com/nothings/stb/2c980bb59875b0d32144a71867fbdebb2f77cd20/stb_image.h",
+    "sha256": "594c2fe35d49488b4382dbfaec8f98366defca819d916ac95becf3e75f4200b3"
+  },
+  "runtimeShim": {
+    "sha256": "e6ff45d16adf687855cc3b33b0c8a4132b6504360b221e0a34c7e99fb3ba0036"
+  },
+  "compilerRt": {
+    "package": "libclang-rt-18-dev_18.1.8~++20240731024944+3b5b5c1ec4a3-1~exp1~20240731145000.144_amd64.deb",
+    "sha256": "ce2669c51272b70bc0aafe9a4e6223e5c7720edaebb40201db191634aa503f5e"
+  },
+  "filesystemHelperClient": {
+    "url": "https://github.com/JVK3R/ProsperoStore.git",
+    "revision": "335d8c43f916020205f445b76b66106ee50d2eeb"
+  },
+  "filesystemHelper": {
+    "url": "https://github.com/mpereiraesaa/PS5-Lapy-JB-Daemon.git",
+    "revision": "54a095c0f19161825e845daa760a03b446e654fa",
+    "patches": [
+      "patches/lapy-sdk-042-attributes.patch"
+    ]
+  },
+  "filesystemHelperLogging": {
+    "url": "https://raw.githubusercontent.com/mpereiraesaa/ps5-agc-gears/1ae1f9182abd2770c131b97419034fb85173c2dc/native/ps5log/ps5log.h",
+    "sha256": "394af67d0f8b60b3335deb53396e52855ea2daa50ca914a456ea7663f48900c6"
+  },
+  "networkPorts": {
+    "version": "v0.40.2",
+    "url": "https://github.com/ps5-payload-dev/pacbrew-repo/releases/download/v0.40.2/ps5-payload-dev.tar.gz",
+    "sha256": "a85f65de418a8e6a898c6c3e3c870d50fff7618a200e4dd59ea9692af6ecec4d"
+  },
+  "harfbuzz": {
+    "version": "14.6.0",
+    "url": "https://github.com/harfbuzz/harfbuzz/releases/download/14.6.0/harfbuzz-14.6.0.tar.xz",
+    "sha256": "d07a007327277708a2a73ae437887cdbaf282937f6d03ca5467723e9099af586"
+  },
+  "notoFonts": {
+    "NotoSansSC-Regular.otf": {
+      "url": "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf",
+      "sha256": "faa6c9df652116dde789d351359f3d7e5d2285a2b2a1f04a2d7244df706d5ea9"
+    },
+    "NotoSansTC-Regular.otf": {
+      "url": "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/SubsetOTF/TC/NotoSansTC-Regular.otf",
+      "sha256": "5bab0cb3c1cf89dde07c4a95a4054b195afbcfe784d69d75c340780712237537"
+    },
+    "NotoSansJP-Regular.otf": {
+      "url": "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/SubsetOTF/JP/NotoSansJP-Regular.otf",
+      "sha256": "dff723ba59d57d136764a04b9b2d03205544f7cd785a711442d6d2d085ac5073"
+    },
+    "NotoSansDevanagari-Regular.ttf": {
+      "url": "https://raw.githubusercontent.com/notofonts/notofonts.github.io/47acfd3806a2b2c7f2b8a7cc95030ead55d03c21/fonts/NotoSansDevanagari/unhinted/ttf/NotoSansDevanagari-Regular.ttf",
+      "sha256": "9c7d935139ea6a1e6ad9dbac4f6d27ece1e04bca8123c8888d00a0f9df4724cd"
+    },
+    "NotoSansBengali-Regular.ttf": {
+      "url": "https://raw.githubusercontent.com/notofonts/notofonts.github.io/47acfd3806a2b2c7f2b8a7cc95030ead55d03c21/fonts/NotoSansBengali/unhinted/ttf/NotoSansBengali-Regular.ttf",
+      "sha256": "5dceda02816fece18ea6796f474f5d3170f1d862f21b1e809cdc94b1caa4b6ec"
+    },
+    "NotoSansArabic-Regular.ttf": {
+      "url": "https://raw.githubusercontent.com/notofonts/notofonts.github.io/47acfd3806a2b2c7f2b8a7cc95030ead55d03c21/fonts/NotoSansArabic/unhinted/ttf/NotoSansArabic-Regular.ttf",
+      "sha256": "bd86ca02f087d7f3c3788ba458fb6b73744c7639ed276b8d870dba6def6c40d0"
+    }
+  },
+  "sheenBidi": {
+    "version": "3.0.0",
+    "url": "https://github.com/Tehreer/SheenBidi/archive/refs/tags/v3.0.0.tar.gz",
+    "sha256": "86c56014034739ba39a24c23eb00323b0bf6f737354f665786015fca842af786"
+  },
+  "unrarSource": {
+    "version": "7.2.1",
+    "url": "https://www.rarlab.com/rar/unrarsrc-7.2.1.tar.gz",
+    "sha256": "3fe3b4d710da45521625353dc2e023dad48c010f02a93302756e1061a8f3ae8e",
+    "patches": [
+      "patches/unrar-worker.patch"
+    ]
+  },
+  "ffmpeg": {
+    "version": "7.1.5",
+    "url": "https://ffmpeg.org/releases/ffmpeg-7.1.5.tar.xz",
+    "sha256": "de668509caf9e35e3cd162473441fdb29538c6d96ed080292b3cf9e6fc5d558f",
+    "patches": [
+      "patches/ffmpeg-mov-hls-seek.patch",
+      "patches/ffmpeg-hls-init-section.patch"
+    ]
+  },
+  "caBundle": {
+    "version": "2026-10-20",
+    "url": "https://curl.se/ca/cacert-2026-10-20.pem",
+    "sha256": "796f1389bfea13c0ed78f663b765baaff54a508e5483786bd6ece73c5e3e3cbe"
+  }
+}

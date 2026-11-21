@@ -1,0 +1,122 @@
+Embedded React: break bold text at the width it is drawn with.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, after the patches listed before this
+one there. Changed files: engine/text/text_renderer.c,
+engine/text/text_renderer.h, engine/layout/layout_engine.c and
+engine/tests/text/test_text.c. Proposed upstream as pull request #321.
+
+Faux bold draws every glyph a pixel wider, and the measurement counts it, but
+line breaking used the regular advance. A bold title slightly wider than its
+box measured as one line and was drawn as one line overrunning it, cut at the
+box edge instead of wrapping onto its second line. The renderer and
+er_text_wrap (layout) now break bold text at the bold advance.
+
+diff --git a/engine/layout/layout_engine.c b/engine/layout/layout_engine.c
+index 46b1d27..d3d365b 100644
+--- a/engine/layout/layout_engine.c
++++ b/engine/layout/layout_engine.c
+@@ -662,6 +662,7 @@ static void measure_content(const uint16_t tag, const int16_t avail_w, int16_t*
+                                      n->props.text.font_size,
+                                      n->props.text.font_family,
+                                      n->props.text.letter_spacing,
++                                     n->props.text.font_weight,
+                                      limit,
+                                      (int)n->props.text.number_of_lines,
+                                      &wrapped_w);
+diff --git a/engine/tests/text/test_text.c b/engine/tests/text/test_text.c
+index acb617e..e5d5aed 100644
+--- a/engine/tests/text/test_text.c
++++ b/engine/tests/text/test_text.c
+@@ -644,5 +644,34 @@ int main(void)
+             return fail("mixed-weight span render emitted out-of-bounds pixels");
+     }
+ 
++    /* ---- Faux bold breaks at the advance it is drawn with ----
++     * A bold run exactly as wide as its regular measurement does not fit at that width: it breaks
++     * into two lines (in layout's er_text_wrap and in the renderer alike) instead of drawing one
++     * line that overruns the box. */
++    {
++        const char* run = "Hello World";
++        int regular = 0, line_h = 0;
++        er_text_measure(run, 14, NULL, 0, 0, &regular, &line_h);
++        int widest = 0;
++        if (er_text_wrap(run, NULL, 0, 14, NULL, 0, 0, regular, 2, &widest) != 1)
++            return fail("regular run does not fit its own measured width");
++        if (er_text_wrap(run, NULL, 0, 14, NULL, 0, 1, regular, 2, &widest) != 2 || widest > regular)
++            return fail("bold run measured as fitting the regular width");
++
++        ctx_reset(&tc);
++        ERTextRenderParams pb = {0};
++        pb.text = run;
++        pb.clip = (ERRect){0, 0, (int16_t)regular, (int16_t)(3 * line_h)};
++        pb.color = 0xFFFFFFFFU;
++        pb.font_size = 14;
++        pb.font_weight = 1;
++        pb.number_of_lines = 2;
++        er_text_render(&pb);
++        if (tc.max_y <= line_h)
++            return fail("bold run at its regular width did not wrap onto a second line");
++        if (tc.max_x > regular)
++            return fail("bold run drew past its box");
++    }
++
+     return EXIT_SUCCESS;
+ }
+diff --git a/engine/text/text_renderer.c b/engine/text/text_renderer.c
+index b3db90c..4899b7c 100644
+--- a/engine/text/text_renderer.c
++++ b/engine/text/text_renderer.c
+@@ -578,10 +578,12 @@ void er_text_render(const ERTextRenderParams* params)
+         return;
+ 
+     /* ---- Line breaking (always uses parent ls for measurement). ---- */
++    /* Faux bold draws each glyph a pixel wider, so lines break at the advance they are drawn with:
++     * breaking at the regular advance let a bold line overrun the box by a pixel per glyph. */
+     LineSpan lines[TEXT_MAX_LINES];
+     bool truncated = false;
+-    const int n_lines = break_lines(
+-        render_src, font, params->clip.w, ls, (int)params->number_of_lines, lines, TEXT_MAX_LINES, &truncated);
++    const int n_lines = break_lines(render_src, font, params->clip.w, ls + (bold ? 1 : 0),
++                                    (int)params->number_of_lines, lines, TEXT_MAX_LINES, &truncated);
+     if (n_lines == 0)
+         return;
+ 
+@@ -862,6 +864,7 @@ int er_text_wrap(const char* text,
+                  uint8_t font_size,
+                  const char* font_family,
+                  int16_t letter_spacing,
++                 uint8_t font_weight,
+                  int max_w,
+                  int max_lines,
+                  int* out_width)
+@@ -890,7 +893,8 @@ int er_text_wrap(const char* text,
+ 
+     LineSpan lines[TEXT_MAX_LINES];
+     bool truncated = false;
+-    const int n = break_lines(src, font, max_w, (int)letter_spacing, max_lines, lines, TEXT_MAX_LINES, &truncated);
++    const int n = break_lines(src, font, max_w, (int)letter_spacing + (font_weight != 0U ? 1 : 0), max_lines, lines,
++                              TEXT_MAX_LINES, &truncated);
+     for (int i = 0; i < n; i++)
+         if (lines[i].px_width > *out_width)
+             *out_width = lines[i].px_width;
+diff --git a/engine/text/text_renderer.h b/engine/text/text_renderer.h
+index d0eaeb0..3e76450 100644
+--- a/engine/text/text_renderer.h
++++ b/engine/text/text_renderer.h
+@@ -146,6 +146,7 @@ void er_text_measure_spans(const ERTextSpan* spans,
+  * @param[in]  font_size       Font size in pixels (clamped to [8, 96]).
+  * @param[in]  font_family     Font family name, or NULL for the built-in default.
+  * @param[in]  letter_spacing  Extra pixels per glyph advance.
++ * @param[in]  font_weight     0 = normal; non-zero = faux bold, a pixel wider per glyph, as drawn.
+  * @param[in]  max_w           Line width in pixels; 0 breaks only at newlines.
+  * @param[in]  max_lines       Most lines kept, as numberOfLines; 0 = unlimited.
+  * @param[out] out_width       Receives the widest line's width in pixels.
+@@ -158,6 +159,7 @@ int er_text_wrap(const char* text,
+                  uint8_t font_size,
+                  const char* font_family,
+                  int16_t letter_spacing,
++                 uint8_t font_weight,
+                  int max_w,
+                  int max_lines,
+                  int* out_width);

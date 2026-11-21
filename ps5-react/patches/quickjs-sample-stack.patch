@@ -1,0 +1,77 @@
+QuickJS: sample the running stack from an interrupt handler.
+
+Modified from QuickJS-ng (MIT, Copyright Fabrice Bellard, Charlie Gordon, Ben
+Noordhuis and the QuickJS-ng contributors) at the revision pinned in
+dependencies.lock.json.
+Changed files: quickjs.c and quickjs.h.
+Not proposed upstream: PS5 React maintains this change here.
+
+PS5 React's JavaScript profiler (native/shared/js_profiler.cpp) samples the
+stack about once a millisecond from the interrupt handler. JS_SampleStack walks
+the runtime's stack frames and reports each function's name and the line its
+definition starts on, reading names from the bytecode or, for a native
+function, its own `name` property, without allocating or running JavaScript.
+
+diff --git a/quickjs.c b/quickjs.c
+index 38a724f..3fedc2d 100644
+--- a/quickjs.c
++++ b/quickjs.c
+@@ -7742,6 +7742,41 @@ static const char *get_func_name(JSContext *ctx, JSValueConst func)
+     return JS_ToCString(ctx, val);
+ }
+ 
++int JS_SampleStack(JSRuntime *rt, JSStackSampleFunc *visit, void *opaque, int max_frames)
++{
++    char buf[ATOM_GET_STR_BUF_SIZE];
++    int count = 0;
++    for (JSStackFrame *sf = rt->current_stack_frame; sf && count < max_frames; sf = sf->prev_frame, count++) {
++        const char *name = "";
++        int line = -1;
++        if (JS_VALUE_GET_TAG(sf->cur_func) == JS_TAG_OBJECT) {
++            JSObject *p = JS_VALUE_GET_OBJ(sf->cur_func);
++            if (js_class_has_bytecode(p->class_id)) {
++                JSFunctionBytecode *b = p->u.func.function_bytecode;
++                if (b->func_name != JS_ATOM_NULL)
++                    name = JS_AtomGetStrRT(rt, buf, sizeof buf, b->func_name);
++                line = b->line_num;
++            } else {
++                /* A native function's name is its own `name` property, read without a getter. */
++                JSProperty *pr;
++                JSShapeProperty *prs = find_own_property(&pr, p, JS_ATOM_name);
++                if (prs && (prs->flags & JS_PROP_TMASK) == JS_PROP_NORMAL
++                    && JS_VALUE_GET_TAG(pr->u.value) == JS_TAG_STRING) {
++                    JSString *str = JS_VALUE_GET_STRING(pr->u.value);
++                    if (!str->is_wide_char) {
++                        size_t len = min_uint32(str->len, sizeof buf - 1);
++                        memcpy(buf, strv(str), len);
++                        buf[len] = '\0';
++                        name = buf;
++                    }
++                }
++            }
++        }
++        visit(opaque, name, line);
++    }
++    return count;
++}
++
+ /* Note: it is important that no exception is returned by this function */
+ static bool can_add_backtrace(JSValueConst obj)
+ {
+diff --git a/quickjs.h b/quickjs.h
+index b9ed275..4ba4efe 100644
+--- a/quickjs.h
++++ b/quickjs.h
+@@ -1139,6 +1139,12 @@ JS_EXTERN void JS_SetHostPromiseRejectionTracker(JSRuntime *rt, JSHostPromiseRej
+ /* return != 0 if the JS code needs to be interrupted */
+ typedef int JSInterruptHandler(JSRuntime *rt, void *opaque);
+ JS_EXTERN void JS_SetInterruptHandler(JSRuntime *rt, JSInterruptHandler *cb, void *opaque);
++/* Calls `visit` for each frame of the running stack, innermost first, at most `max_frames`: the
++   function's name ("" when it has none; valid only during the call) and the line its definition
++   starts on (-1 for native functions). Allocates nothing and runs no JavaScript, so an interrupt
++   handler may call it to sample the stack. Returns the frames visited. */
++typedef void JSStackSampleFunc(void *opaque, const char *name, int line);
++JS_EXTERN int JS_SampleStack(JSRuntime *rt, JSStackSampleFunc *visit, void *opaque, int max_frames);
+ /* if can_block is true, Atomics.wait() can be used */
+ JS_EXTERN void JS_SetCanBlock(JSRuntime *rt, bool can_block);
+ /* set the [IsHTMLDDA] internal slot */

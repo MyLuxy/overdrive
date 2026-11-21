@@ -1,0 +1,394 @@
+Embedded React: keep an occluded translated node's paint record translated.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, after the patches listed before this
+one there. Changed files: engine/scene/compositor.c,
+engine/tests/rendering/CMakeLists.txt and the new
+engine/tests/rendering/test_occluded_translate.c. Proposed upstream as pull
+request #313.
+
+An opaque node covering a damage rect buries the subtrees painted before it
+whose cached prune flag says they hold no transform, but a clipping container
+leaves its children's transforms out of that flag. A translated node inside
+such a container (a header's sliding section pill, beside a spinner under an
+opaque cover) was walked as occluded, which skipped its translate, so it
+recorded its untranslated box as where it last painted. The next move erased
+that box instead of the pixels it had painted and left pieces of the pill on
+screen. The translate-only offset is now applied to occluded nodes too; the
+transform capture is still skipped for them.
+
+diff --git a/engine/scene/compositor.c b/engine/scene/compositor.c
+index b57968d..e5ad8a0 100644
+--- a/engine/scene/compositor.c
++++ b/engine/scene/compositor.c
+@@ -2278,8 +2278,16 @@ static void render_tree(ERNode* n, bool parent_dirty, bool occluded, int transla
+     const bool complex_xf = er_node_has_complex_transform(n);
+ #endif
+     /* An occluded node never captures a transform source: the scratch render would be thrown away,
+-     * and the cull only ever occludes transform-free subtrees anyway (see the subtree_prunable gate). */
+-    if (n->has_transform && !occluded)
++     * and the cull only ever occludes transform-free subtrees anyway (see the subtree_prunable gate).
++     * A translate is still applied: it is arithmetic, and it is where the node and its subtree record
++     * last_paint_rect. Burying is not as transform-free as that gate suggests, since a clipping
++     * container leaves its children's transforms out of its own flag; an occluded translated node
++     * that recorded its untranslated box made the next move erase that box and leave a trail. */
++#if ERUI_TRANSFORMS_FULL
++    if (n->has_transform && !(occluded && complex_xf))
++#else
++    if (n->has_transform)
++#endif
+     {
+ #if ERUI_3D_TRANSFORMS && ERUI_TRANSFORMS_FULL
+         if (complex_xf && er_transform_is_3d(n))
+diff --git a/engine/tests/rendering/CMakeLists.txt b/engine/tests/rendering/CMakeLists.txt
+index 799bacb..1d0cb1a 100644
+--- a/engine/tests/rendering/CMakeLists.txt
++++ b/engine/tests/rendering/CMakeLists.txt
+@@ -31,6 +31,11 @@ target_link_libraries(test_anim_translate_offscreen PRIVATE embedded-react)
+ target_include_directories(test_anim_translate_offscreen PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../core)
+ add_test(NAME rendering_anim_translate_offscreen COMMAND test_anim_translate_offscreen)
+ 
++add_executable(test_occluded_translate test_occluded_translate.c)
++target_link_libraries(test_occluded_translate PRIVATE embedded-react)
++target_include_directories(test_occluded_translate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../core)
++add_test(NAME rendering_occluded_translate COMMAND test_occluded_translate)
++
+ add_executable(test_parallel test_parallel.c)
+ target_link_libraries(test_parallel PRIVATE embedded-react Threads::Threads)
+ # test_parallel needs engine/core for renderer_internal.h (er_parallel_for / worker contexts).
+diff --git a/engine/tests/rendering/test_occluded_translate.c b/engine/tests/rendering/test_occluded_translate.c
+new file mode 100644
+index 0000000..fd26db7
+--- /dev/null
++++ b/engine/tests/rendering/test_occluded_translate.c
+@@ -0,0 +1,330 @@
++/*
++ * Copyright 2026 Cory Lamming
++ * Copyright 2026 PS5 React contributors
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++/*
++ * A translated node walked as occluded must still record where it paints.
++ *
++ * The bug this guards: an opaque sibling covering a damage rect buries the subtrees painted before
++ * it whose cached prune flag says they hold no transform, and a clipping container does not pass its
++ * children's transforms up into that flag. A translated node under such a container was walked
++ * occluded, which skipped its translate, so its last_paint_rect went back to its untranslated box.
++ * The next move erased that box instead of the pixels it had actually painted, and left a trail.
++ */
++#include "er_scene.h"
++#include "native_renderer.h"
++#include "renderer_internal.h"
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++/*----------------------------------------------------------------------------------------------------------------------
++ - Constants
++ ---------------------------------------------------------------------------------------------------------------------*/
++
++#define FB_W 320
++#define FB_H 60
++
++#define ANIM_MS 480 /* animation duration */
++#define FRAME_MS 16 /* per-tick advance */
++#define FRAMES 40   /* ticks driven (runs past the end so the settled frames are checked too) */
++
++/*----------------------------------------------------------------------------------------------------------------------
++ - Types: Private
++ ---------------------------------------------------------------------------------------------------------------------*/
++
++/**
++ * @brief Framebuffer the backend stubs rasterise into.
++ */
++typedef struct
++{
++    uint32_t* fb; /**< Flat ARGB8888 framebuffer. */
++    int fb_w;     /**< Width in pixels. */
++    int fb_h;     /**< Height in pixels. */
++} TestCtx;
++
++/*----------------------------------------------------------------------------------------------------------------------
++ - Functions: Private — backend stubs
++ ---------------------------------------------------------------------------------------------------------------------*/
++
++/** @brief Rounds a 0–65025 product back to 0–255 the way the engine's blenders do. */
++static uint32_t div255(uint32_t v)
++{
++    return (v + 127U) / 255U;
++}
++
++/**
++ * @brief Backend fill_rect: source-over composites a straight-alpha colour into the framebuffer.
++ *
++ * @param[in] argb  Straight-alpha ARGB8888 fill colour.
++ * @param[in] x     Left edge.
++ * @param[in] y     Top edge.
++ * @param[in] w     Width in pixels.
++ * @param[in] h     Height in pixels.
++ * @param[in] ctx   Pointer to TestCtx.
++ */
++static void fill_cb(uint32_t argb, int x, int y, int w, int h, void* ctx)
++{
++    TestCtx* t = ctx;
++    const uint32_t a = (argb >> 24) & 0xFFU;
++    if (a == 0U || w <= 0 || h <= 0)
++        return;
++    const uint32_t inv = 255U - a;
++    const uint32_t sr = (argb >> 16) & 0xFFU, sg = (argb >> 8) & 0xFFU, sb = argb & 0xFFU;
++
++    for (int row = y; row < y + h; row++)
++    {
++        if (row < 0 || row >= t->fb_h)
++            continue;
++        for (int col = x; col < x + w; col++)
++        {
++            if (col < 0 || col >= t->fb_w)
++                continue;
++            uint32_t* d = &t->fb[row * t->fb_w + col];
++            const uint32_t dr = (*d >> 16) & 0xFFU, dg = (*d >> 8) & 0xFFU, db = *d & 0xFFU;
++            *d = 0xFF000000U | ((div255(sr * a) + div255(dr * inv)) << 16) | ((div255(sg * a) + div255(dg * inv)) << 8)
++                 | (div255(sb * a) + div255(db * inv));
++        }
++    }
++}
++
++/**
++ * @brief Backend copy_rect: source-over composites a premultiplied buffer into the framebuffer.
++ *
++ * Fully transparent source pixels are skipped and the rest blended, matching the engine's own
++ * scratch copy — an unconditional overwrite would erase the background under antialiased edges and
++ * make the comparison depend on repaint history rather than on scene state.
++ *
++ * @param[in] src     Source pixel buffer (premultiplied ARGB8888).
++ * @param[in] stride  Source row stride in bytes.
++ * @param[in] x       Destination left edge.
++ * @param[in] y       Destination top edge.
++ * @param[in] w       Width in pixels.
++ * @param[in] h       Height in pixels.
++ * @param[in] ctx     Pointer to TestCtx.
++ */
++static void copy_cb(const void* src, int stride, int x, int y, int w, int h, void* ctx)
++{
++    TestCtx* t = ctx;
++    for (int row = 0; row < h; row++)
++    {
++        const uint32_t* s = (const uint32_t*)((const uint8_t*)src + (size_t)row * (size_t)stride);
++        for (int col = 0; col < w; col++)
++        {
++            const int dx = x + col, dy = y + row;
++            if (dx < 0 || dx >= t->fb_w || dy < 0 || dy >= t->fb_h)
++                continue;
++            const uint32_t sp = s[col];
++            const uint32_t sa = (sp >> 24) & 0xFFU;
++            if (sa == 0U)
++                continue;
++            uint32_t* d = &t->fb[dy * t->fb_w + dx];
++            if (sa == 0xFFU)
++            {
++                *d = sp;
++                continue;
++            }
++            const uint32_t inv = 255U - sa;
++            const uint32_t dr = (*d >> 16) & 0xFFU, dg = (*d >> 8) & 0xFFU, db = *d & 0xFFU;
++            *d = 0xFF000000U | ((((sp >> 16) & 0xFFU) + div255(dr * inv)) << 16)
++                 | ((((sp >> 8) & 0xFFU) + div255(dg * inv)) << 8) | ((sp & 0xFFU) + div255(db * inv));
++        }
++    }
++}
++
++/**
++ * @brief Backend blend_rect: source-over composites premultiplied pixels scaled by a global alpha.
++ *
++ * @param[in] src     Source pixel buffer (premultiplied ARGB8888).
++ * @param[in] stride  Source row stride in bytes.
++ * @param[in] alpha   Global alpha scale 0–255.
++ * @param[in] x       Destination left edge.
++ * @param[in] y       Destination top edge.
++ * @param[in] w       Width in pixels.
++ * @param[in] h       Height in pixels.
++ * @param[in] ctx     Pointer to TestCtx.
++ */
++static void blend_cb(const void* src, int stride, uint8_t alpha, int x, int y, int w, int h, void* ctx)
++{
++    TestCtx* t = ctx;
++    for (int row = 0; row < h; row++)
++    {
++        const uint32_t* s = (const uint32_t*)((const uint8_t*)src + (size_t)row * (size_t)stride);
++        for (int col = 0; col < w; col++)
++        {
++            const int dx = x + col, dy = y + row;
++            if (dx < 0 || dx >= t->fb_w || dy < 0 || dy >= t->fb_h)
++                continue;
++            const uint32_t sp = s[col];
++            const uint32_t sa = div255(((sp >> 24) & 0xFFU) * (uint32_t)alpha);
++            if (sa == 0U)
++                continue;
++            const uint32_t inv = 255U - sa;
++            /* Source is premultiplied: scale its colour by the same global alpha, not by sa. */
++            const uint32_t sr = div255(((sp >> 16) & 0xFFU) * (uint32_t)alpha);
++            const uint32_t sg = div255(((sp >> 8) & 0xFFU) * (uint32_t)alpha);
++            const uint32_t sb = div255((sp & 0xFFU) * (uint32_t)alpha);
++            uint32_t* d = &t->fb[dy * t->fb_w + dx];
++            const uint32_t dr = (*d >> 16) & 0xFFU, dg = (*d >> 8) & 0xFFU, db = *d & 0xFFU;
++            *d = 0xFF000000U | ((sr + div255(dr * inv)) << 16) | ((sg + div255(dg * inv)) << 8)
++                 | (sb + div255(db * inv));
++        }
++    }
++}
++
++/*----------------------------------------------------------------------------------------------------------------------
++ - Functions: Private — helpers
++ ---------------------------------------------------------------------------------------------------------------------*/
++
++/**
++ * @brief Prints a failure message.
++ *
++ * @param[in] msg  Message describing the failed assertion.
++ *
++ * @return EXIT_FAILURE, so callers can `return fail(...)`.
++ */
++static int fail(const char* msg)
++{
++    fprintf(stderr, "FAIL: %s\n", msg);
++    return EXIT_FAILURE;
++}
++
++/**
++ * @brief Returns an ERProps with every int16_t layout field set to ER_LAYOUT_AUTO.
++ *
++ * @return Initialised ERProps with opacity 255.
++ */
++static ERProps props_default(void)
++{
++    ERProps p = {0};
++    p.left = p.top = p.right = p.bottom = ER_LAYOUT_AUTO;
++    p.width = p.height = ER_LAYOUT_AUTO;
++    p.min_width = p.max_width = ER_LAYOUT_AUTO;
++    p.min_height = p.max_height = ER_LAYOUT_AUTO;
++    p.padding = p.padding_left = p.padding_top = ER_LAYOUT_AUTO;
++    p.padding_right = p.padding_bottom = ER_LAYOUT_AUTO;
++    p.margin = p.margin_left = p.margin_top = ER_LAYOUT_AUTO;
++    p.margin_right = p.margin_bottom = ER_LAYOUT_AUTO;
++    p.gap = p.row_gap = p.column_gap = ER_LAYOUT_AUTO;
++    p.flex_basis = ER_LAYOUT_AUTO;
++    p.opacity = 255U;
++    return p;
++}
++
++/**
++ * @brief Slides a pill inside a clipping bar while a blinker under an opaque cover repaints every frame.
++ *
++ * @param[in,out] t  TestCtx owning the framebuffer.
++ *
++ * @return EXIT_SUCCESS on pass, EXIT_FAILURE when the settled frame differs from a full repaint.
++ */
++static int run_slide(TestCtx* t)
++{
++    static uint32_t incremental[FB_W * FB_H];
++
++    er_reset();
++    memset(t->fb, 0, sizeof(uint32_t) * FB_W * FB_H);
++
++    ERNode* root = er_node_create(ER_NODE_VIEW);
++    ERProps rp = props_default();
++    rp.width = FB_W;
++    rp.height = FB_H;
++    rp.background_color = 0xFF101010U;
++    er_node_set_props(root, &rp);
++
++    ERNode* bar = er_node_create(ER_NODE_VIEW);
++    ERProps bp = props_default();
++    bp.position = ER_POS_ABSOLUTE;
++    bp.left = 0;
++    bp.top = 0;
++    bp.width = FB_W;
++    bp.height = 40;
++    bp.overflow = ER_OVERFLOW_HIDDEN;
++    er_node_set_props(bar, &bp);
++
++    ERNode* pill = er_node_create(ER_NODE_VIEW);
++    ERProps pp = props_default();
++    pp.position = ER_POS_ABSOLUTE;
++    pp.left = 0;
++    pp.top = 10;
++    pp.width = 40;
++    pp.height = 20;
++    pp.background_color = 0xFF4DA3FFU;
++    er_node_set_props(pill, &pp);
++
++    ERNode* cover = er_node_create(ER_NODE_VIEW);
++    ERProps cp = props_default();
++    cp.position = ER_POS_ABSOLUTE;
++    cp.left = 260;
++    cp.top = 0;
++    cp.width = 60;
++    cp.height = 40;
++    cp.background_color = 0xFF202020U;
++    er_node_set_props(cover, &cp);
++
++    ERNode* blinker = er_node_create(ER_NODE_VIEW);
++    ERProps kp = props_default();
++    kp.position = ER_POS_ABSOLUTE;
++    kp.left = 20;
++    kp.top = 15;
++    kp.width = 10;
++    kp.height = 10;
++    kp.background_color = 0xFF3DDC84U;
++    er_node_set_props(blinker, &kp);
++
++    er_tree_append_child(bar, pill);
++    er_tree_append_child(root, bar);
++    er_tree_append_child(cover, blinker);
++    er_tree_append_child(root, cover);
++    er_tree_set_root(root);
++    er_force_full_repaint();
++    er_commit();
++
++    ERAnimConfig cfg = {0};
++    cfg.type = ER_ANIM_TIMING;
++    cfg.duration_ms = ANIM_MS;
++    cfg.easing = ER_EASE_LINEAR;
++    ERAnimValueHandle slide = er_anim_value_create(200.0f);
++    er_anim_value_bind(slide, pill, ER_PROP_TRANSLATE_X);
++    er_anim_value_animate(slide, 0.0f, &cfg);
++
++    /* Incremental frames only: a full repaint in between would also refresh the trail being tested. */
++    for (int f = 0; f < FRAMES; f++)
++    {
++        /* The blinker changes in the same commit as the slide, as a spinner or a focus ring does. */
++        kp.background_color = (f & 1) ? 0xFF3DDC84U : 0xFFE0E040U;
++        er_node_set_props(blinker, &kp);
++        embedded_renderer_tick(FRAME_MS);
++        er_commit();
++    }
++    memcpy(incremental, t->fb, sizeof(incremental));
++    memset(t->fb, 0, sizeof(uint32_t) * FB_W * FB_H);
++    er_force_full_repaint();
++    er_commit();
++    if (memcmp(incremental, t->fb, sizeof(incremental)) != 0)
++        return fail("the settled slide differs from a full repaint: the pill left a trail");
++    return EXIT_SUCCESS;
++}
++
++int main(void)
++{
++    static uint32_t fb[FB_W * FB_H];
++    TestCtx tc = {fb, FB_W, FB_H};
++    EmbeddedRenderBackend be = {fill_cb, copy_cb, blend_cb, NULL, NULL, &tc};
++    embedded_renderer_set_backend(&be);
++    return run_slide(&tc);
++}

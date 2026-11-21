@@ -1,0 +1,564 @@
+Embedded React: move an opaque page that only a translate moves by copying its pixels.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, after the patches listed before this
+one there. Changed files: engine/animation/animation.c,
+engine/scene/compositor.c, engine/scene/er_node_internal.h and
+engine/tests/rendering/CMakeLists.txt; new file
+engine/tests/rendering/test_translate_copy.c.
+Not proposed upstream: PS5 React maintains this change here.
+
+A full-screen sheet sliding in by an animated translate repainted its whole box
+and what it uncovered on every frame: about 8 million pixels, 10 to 15 ms of
+raster per frame at 3840x2160 on eight PS5 cores. An animated translate that is
+the only change to its node since the last commit (the new translate_moved
+flag) now moves the painted pixels when everything the node paints is one
+opaque, plain page inside which its whole subtree lies, seen through no
+ancestor that blends or transforms. Like a ScrollView's scroll by copy, it then
+repaints only what the move cannot carry: the strips of the page it uncovers,
+the area the page left, nodes painted over it, and the moved copies of
+footprints vacated inside it. Descendants that changed in the same commit are
+repainted by the damage pre-pass at their moved footprints.
+
+diff --git a/engine/animation/animation.c b/engine/animation/animation.c
+index 9479070..a8551e5 100644
+--- a/engine/animation/animation.c
++++ b/engine/animation/animation.c
+@@ -904,8 +904,17 @@ static void push_to_value_bindings(ERAnimValue* val)
+                                (int)bind->interp.point_count,
+                                bind->interp.extrapolate_left,
+                                bind->interp.extrapolate_right);
++        const bool was_clean = !n->source_dirty;
+         if (apply_numeric_value(n, bind->prop, v))
+         {
++            /* Only moved: the compositor may move its painted pixels instead of repainting them. */
++            if (bind->prop == ER_PROP_TRANSLATE_X || bind->prop == ER_PROP_TRANSLATE_Y)
++            {
++                if (was_clean)
++                    n->translate_moved = true;
++            }
++            else
++                n->translate_moved = false;
+             /* An animated opacity value changes only the blend, not the subtree's rendered
+              * content — mark visual-only so the compositor's fade cache stays valid. Every
+              * other prop (position, scale, rotation, color) changes content. */
+diff --git a/engine/scene/compositor.c b/engine/scene/compositor.c
+index f101963..ee0ebf6 100644
+--- a/engine/scene/compositor.c
++++ b/engine/scene/compositor.c
+@@ -4047,6 +4047,7 @@ void er_node_set_props(ERNode* node, const ERProps* props)
+     {
+         mark_layout_dirty();
+         node->sweep_moved = false; /* a real change repaints the box, not just the sweep's bands */
++        node->translate_moved = false;
+         if (visual_changed || !node->has_last_paint)
+             er_mark_dirty_upward(node);
+         else
+@@ -5577,6 +5578,256 @@ static void resolve_scroll_moves(bool tracking, ERDamageSet* dmg, int rb_x0, int
+     s_scroll_pending_count = 0U;
+ }
+ 
++static bool paints_before(const ERNode* a, const ERNode* b);
++
++/* Containers between a translated node and the opaque page it carries, at most. */
++#define ER_TRANSLATE_COPY_CHAIN 6
++/* Nodes painted over a moved page that can be repainted around the copy, at most. */
++#define ER_TRANSLATE_COPY_FOREIGN_MAX 16
++
++/** @brief Damages and reports @p a minus @p b: up to four rects around their intersection. */
++static void damage_difference(ERDamageSet* dmg, ERRect a, ERRect b, int rb_x0, int rb_y0, int rb_x1, int rb_y1)
++{
++    int ix = b.x, iy = b.y, iw = b.w, ih = b.h;
++    if (!rect_intersect(&ix, &iy, &iw, &ih, a.x, a.y, a.w, a.h))
++    {
++        add_damage(dmg, a.x, a.y, a.w, a.h, rb_x0, rb_y0, rb_x1, rb_y1);
++        report_repaint_clamped(a.x, a.y, a.w, a.h, rb_x0, rb_y0, rb_x1, rb_y1);
++        return;
++    }
++    const int parts[4][4] = {{a.x, a.y, a.w, iy - a.y},
++                             {a.x, iy + ih, a.w, a.y + a.h - (iy + ih)},
++                             {a.x, iy, ix - a.x, ih},
++                             {ix + iw, iy, a.x + a.w - (ix + iw), ih}};
++    for (int i = 0; i < 4; i++)
++        if (parts[i][2] > 0 && parts[i][3] > 0)
++        {
++            add_damage(dmg, parts[i][0], parts[i][1], parts[i][2], parts[i][3], rb_x0, rb_y0, rb_x1, rb_y1);
++            report_repaint_clamped(parts[i][0], parts[i][1], parts[i][2], parts[i][3], rb_x0, rb_y0, rb_x1, rb_y1);
++        }
++}
++
++/** @brief Whether @p n is @p ancestor or lies under it. */
++static bool node_within(const ERNode* n, const ERNode* ancestor)
++{
++    for (; n; n = er_get_node(n->parent_tag))
++        if (n == ancestor)
++            return true;
++    return false;
++}
++
++/** @brief The node's screen footprint clipped like last_paint_rect records it; false under a complex transform. */
++static bool recorded_rect(const ERNode* n, ERRect* out)
++{
++    int x, y, w, h;
++    if (!node_screen_rect(n, &x, &y, &w, &h))
++        return false;
++    clip_rect_axis(&x, &w);
++    clip_rect_axis(&y, &h);
++    out->x = x;
++    out->y = y;
++    out->w = w;
++    out->h = h;
++    return true;
++}
++
++/**
++ * @brief Moves the pixels of a page that only an animated translate moved, instead of repainting it.
++ *
++ * A sheet sliding over the screen otherwise repaints its whole box, and what it uncovers, on every frame.
++ * Moving is exact when everything the translated node paints is an opaque, plain page (the node itself
++ * or the end of a chain of single, paint-free children) and lies inside it: the page's pixels then
++ * depend on nothing beneath it. What the move cannot carry is damaged instead: the strips of the page
++ * it uncovers, the area the page left, nodes painted over it, and the moved copies of footprints that
++ * were vacated inside it. Descendants that changed this commit are damaged by the pre-pass at their
++ * moved footprints, as for a scroll.
++ *
++ * @param[in,out] t                        Node whose translate is all that changed since it was painted.
++ * @param[in,out] dmg                      The commit's damage set.
++ * @param[in]     rb_x0,rb_y0,rb_x1,rb_y1  Root bounds the damage and the reported rects are clamped to.
++ *
++ * @return true when the pixels were moved (or did not move at all); false to repaint as usual.
++ */
++static bool translate_by_copy(ERNode* t, ERDamageSet* dmg, int rb_x0, int rb_y0, int rb_x1, int rb_y1)
++{
++    if (s_display_buffer_count != 1 || !er_blit_can_move() || s_kbd_avoid_y != 0)
++        return false;
++    if (t->subtree_hidden || !t->has_last_paint || t->overflow_toggled || !node_translates_subtree(t))
++        return false;
++    ERRect now;
++    if (!recorded_rect(t, &now) || now.w != t->last_paint_rect.w || now.h != t->last_paint_rect.h
++        || spans_paint_window(now.x, now.y, now.w, now.h))
++        return false;
++    const int mx = now.x - t->last_paint_rect.x, my = now.y - t->last_paint_rect.y;
++
++    /* The page: an opaque plain container at the end of a chain of single, paint-free containers. */
++    ERNode* page = t;
++    for (int depth = 0;; depth++)
++    {
++        int border, radius;
++        if (depth == ER_TRANSLATE_COPY_CHAIN || !is_plain_container(page, &border, &radius))
++            return false;
++        if (page != t && page->has_transform)
++            return false;
++        if ((page->props.view.background_color >> 24) == 0xFFU && border == 0 && radius == 0
++            && page->type == ER_NODE_VIEW)
++            break;
++        if (!paints_nothing(page) || node_clips_children(page))
++            return false;
++        uint16_t only[2];
++        if (er_collect_children(page, only, 2) != 1)
++            return false;
++        page = er_get_node(only[0]);
++        if (!page || page->layout.display == ER_DISPLAY_NONE)
++            return false;
++    }
++    /* Everything under the page paints inside it, or the move would carry pixels composited over what
++     * lies beneath. */
++    if (!node_clips_children(page))
++    {
++        int sx, sy, sw, sh, px, py, pw, ph;
++        if (!s_prune_ok || !node_subtree_screen_rect(t, &sx, &sy, &sw, &sh)
++            || !node_screen_rect(page, &px, &py, &pw, &ph) || sx < px || sy < py || sx + sw > px + pw
++            || sy + sh > py + ph)
++            return false;
++    }
++    /* Seen through ancestors that blend or transform it, the page is not alone in its pixels. */
++    for (const ERNode* a = er_get_node(t->parent_tag); a; a = er_get_node(a->parent_tag))
++        if (a->has_transform
++            || ((a->type == ER_NODE_VIEW || a->type == ER_NODE_SCROLL_VIEW || a->type == ER_NODE_PRESSABLE
++                 || a->type == ER_NODE_FLAT_LIST)
++                && a->props.view.opacity != 255U))
++            return false;
++
++    ERRect page_now;
++    if (!page->has_last_paint || !recorded_rect(page, &page_now) || page->last_paint_rect.w != page_now.w
++        || page->last_paint_rect.h != page_now.h || page->last_paint_rect.x != page_now.x - mx
++        || page->last_paint_rect.y != page_now.y - my)
++        return false; /* the page was not painted where the move assumes */
++    if (mx == 0 && my == 0)
++    {
++        t->source_dirty = false; /* a sub-pixel translate lands on the same pixels */
++        return true;
++    }
++
++    /* Visible before and after: the page's box inside its clippers and the root. */
++    int nx = page_now.x, ny = page_now.y, nw = page_now.w, nh = page_now.h;
++    clip_rect_to_clippers(page, &nx, &ny, &nw, &nh);
++    int ox = page_now.x - mx, oy = page_now.y - my, ow = page_now.w, oh = page_now.h;
++    clip_rect_to_clippers(page, &ox, &oy, &ow, &oh);
++    const bool visible_now = rect_intersect(&nx, &ny, &nw, &nh, rb_x0, rb_y0, rb_x1 - rb_x0, rb_y1 - rb_y0);
++    const bool visible_before = rect_intersect(&ox, &oy, &ow, &oh, rb_x0, rb_y0, rb_x1 - rb_x0, rb_y1 - rb_y0);
++    /* Where moved pixels land: the old visible box, shifted, inside the new one. */
++    int dx = ox + mx, dy = oy + my, dw = ow, dh = oh;
++    if (!visible_now || !visible_before || !rect_intersect(&dx, &dy, &dw, &dh, nx, ny, nw, nh))
++        return false;
++
++    /* Painted over the page by nodes outside the moved subtree: repainted where they are and where the
++     * move carried their pixels. Nodes painted beneath it are hidden by it inside the new box. */
++    ERRect foreign[ER_TRANSLATE_COPY_FOREIGN_MAX];
++    int foreign_count = 0;
++    long foreign_area = 0;
++    for (uint16_t tag = 0U; tag < (uint16_t)ERUI_MAX_NODES; tag++)
++    {
++        ERNode* n = er_get_node(tag);
++        if (!n || n->subtree_hidden || !n->has_last_paint || paints_nothing(n) || node_within(n, t)
++            || node_within(t, n) || !paints_before(t, n))
++            continue;
++        int fx = (int)n->last_paint_rect.x, fy = (int)n->last_paint_rect.y, fw = (int)n->last_paint_rect.w,
++            fh = (int)n->last_paint_rect.h;
++        clip_rect_to_clippers(n, &fx, &fy, &fw, &fh);
++        int bx = fx, by = fy, bw = fw, bh = fh;
++        if (!rect_intersect(&fx, &fy, &fw, &fh, ox, oy, ow, oh) && !rect_intersect(&bx, &by, &bw, &bh, nx, ny, nw, nh))
++            continue;
++        if (foreign_count == ER_TRANSLATE_COPY_FOREIGN_MAX)
++            return false;
++        foreign[foreign_count].x = n->last_paint_rect.x;
++        foreign[foreign_count].y = n->last_paint_rect.y;
++        foreign[foreign_count].w = n->last_paint_rect.w;
++        foreign[foreign_count].h = n->last_paint_rect.h;
++        foreign_count++;
++        foreign_area += 2L * n->last_paint_rect.w * n->last_paint_rect.h;
++        mark_reflow_upward(n);
++    }
++    if (foreign_area * 2L > (long)dw * dh)
++        return false; /* overlays cover too much: the copy would save little */
++
++    /* Committed from here: the subtree's footprints follow its pixels. */
++    for (uint16_t tag = 0U; tag < (uint16_t)ERUI_MAX_NODES; tag++)
++    {
++        ERNode* n = er_get_node(tag);
++        if (!n || !node_within(n, t))
++            continue;
++        if (n->has_last_paint)
++        {
++            n->last_paint_rect.x = (int16_t)(n->last_paint_rect.x + mx);
++            n->last_paint_rect.y = (int16_t)(n->last_paint_rect.y + my);
++        }
++        n->buried_paint_rect.x = (int16_t)(n->buried_paint_rect.x + mx);
++        n->buried_paint_rect.y = (int16_t)(n->buried_paint_rect.y + my);
++    }
++    t->source_dirty = false;
++
++    er_blit_move(dx - mx, dy - my, dw, dh, dx, dy);
++    report_repaint_clamped(dx, dy, dw, dh, rb_x0, rb_y0, rb_x1, rb_y1);
++    const ERRect moved = {dx, dy, dw, dh};
++    const ERRect visible_new = {nx, ny, nw, nh};
++    const ERRect visible_old = {ox, oy, ow, oh};
++    damage_difference(dmg, visible_new, moved, rb_x0, rb_y0, rb_x1, rb_y1);       /* uncovered page */
++    damage_difference(dmg, visible_old, visible_new, rb_x0, rb_y0, rb_x1, rb_y1); /* left behind */
++    for (int i = 0; i < foreign_count; i++)
++    {
++        const ERRect* f = &foreign[i];
++        add_damage(dmg, f->x, f->y, f->w, f->h, rb_x0, rb_y0, rb_x1, rb_y1);
++        report_repaint_clamped(f->x, f->y, f->w, f->h, rb_x0, rb_y0, rb_x1, rb_y1);
++        int cx = f->x + mx, cy = f->y + my, cw = f->w, ch = f->h;
++        if (rect_intersect(&cx, &cy, &cw, &ch, dx, dy, dw, dh))
++        {
++            add_damage(dmg, cx, cy, cw, ch, rb_x0, rb_y0, rb_x1, rb_y1);
++            report_repaint_clamped(cx, cy, cw, ch, rb_x0, rb_y0, rb_x1, rb_y1);
++        }
++    }
++    for (uint8_t ri = 0U; ri < s_removed_set.count; ri++)
++    {
++        int cx = s_removed_set.r[ri].x + mx, cy = s_removed_set.r[ri].y + my, cw = s_removed_set.r[ri].w,
++            ch = s_removed_set.r[ri].h;
++        if (rect_intersect(&cx, &cy, &cw, &ch, dx, dy, dw, dh))
++        {
++            add_damage(dmg, cx, cy, cw, ch, rb_x0, rb_y0, rb_x1, rb_y1);
++            report_repaint_clamped(cx, cy, cw, ch, rb_x0, rb_y0, rb_x1, rb_y1);
++        }
++    }
++    return true;
++}
++
++/**
++ * @brief Moves, where it can, every page that only an animated translate moved since the last commit.
++ *
++ * With `tracking` false (a full repaint) nothing is moved; the flags are consumed either way. A page
++ * inside another one that moves is left to the outer one.
++ */
++static void resolve_translate_moves(bool tracking, ERDamageSet* dmg, int rb_x0, int rb_y0, int rb_x1, int rb_y1)
++{
++    if (tracking)
++        for (uint16_t tag = 0U; tag < (uint16_t)ERUI_MAX_NODES; tag++)
++        {
++            ERNode* n = er_get_node(tag);
++            if (!n || !n->translate_moved)
++                continue;
++            bool outer = true;
++            for (const ERNode* a = er_get_node(n->parent_tag); a && outer; a = er_get_node(a->parent_tag))
++                outer = !a->translate_moved;
++            if (outer)
++                translate_by_copy(n, dmg, rb_x0, rb_y0, rb_x1, rb_y1);
++        }
++    for (uint16_t tag = 0U; tag < (uint16_t)ERUI_MAX_NODES; tag++)
++    {
++        ERNode* n = er_get_node(tag);
++        if (n)
++            n->translate_moved = false;
++    }
++}
++
+ /*----------------------------------------------------------------------------------------------------------------------
+  - Host layers (er_set_layers_enabled)
+  ---------------------------------------------------------------------------------------------------------------------*/
+@@ -6050,6 +6301,7 @@ void er_commit(void)
+          * rendered); for single-buffer it simply repaints the one framebuffer. */
+         root->dirty = true;
+         resolve_scroll_moves(false, &dmg, rb_x0, rb_y0, rb_x1, rb_y1);
++        resolve_translate_moves(false, &dmg, rb_x0, rb_y0, rb_x1, rb_y1);
+     }
+     else
+     {
+@@ -6070,6 +6322,8 @@ void er_commit(void)
+         /* After the vacated footprints (the copy re-damages them where it moves their pixels), before the
+          * per-node walk (which then measures scrolled children against their moved footprints). */
+         resolve_scroll_moves(true, &dmg, rb_x0, rb_y0, rb_x1, rb_y1);
++        /* Before the walk too, which then measures the moved subtree against its moved footprints. */
++        resolve_translate_moves(true, &dmg, rb_x0, rb_y0, rb_x1, rb_y1);
+ #if ERUI_ONSCREEN_KEYBOARD
+         /* On-screen keyboard show/hide/layer-switch: repaint its bottom strip once (then GRAM retains it). */
+         if (s_kbd_dirty)
+diff --git a/engine/scene/er_node_internal.h b/engine/scene/er_node_internal.h
+index 19aad3c..6d3cc91 100644
+--- a/engine/scene/er_node_internal.h
++++ b/engine/scene/er_node_internal.h
+@@ -443,6 +443,7 @@ struct ERNode
+     bool has_last_paint;          /**< Whether last_paint_rect holds a valid prior-frame rect. */
+     bool last_paint_empty;        /**< The last paint was of a container that paints nothing itself. */
+     bool sweep_moved;             /**< Only the border sweep phase changed since the last commit. */
++    bool translate_moved;         /**< Only an animated translate changed since the last commit. */
+     bool last_paint_untransformed; /**< The last paint of this TRANSFORMED node degraded to its raw,
+                                         untransformed box: the scratch capture could not be started, so
+                                         last_paint_rect holds that box (knob reach and shadow bleed included
+diff --git a/engine/tests/rendering/CMakeLists.txt b/engine/tests/rendering/CMakeLists.txt
+index 762f3ed..d153e3a 100644
+--- a/engine/tests/rendering/CMakeLists.txt
++++ b/engine/tests/rendering/CMakeLists.txt
+@@ -235,3 +235,9 @@ target_compile_definitions(test_wide_rows PRIVATE ERUI_MAX_IMG_ROW_PIXELS=${ERUI
+ target_include_directories(test_wide_rows PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../core ${CMAKE_CURRENT_SOURCE_DIR}/../../rendering
+                            ${CMAKE_CURRENT_SOURCE_DIR}/../../scene)
+ add_test(NAME rendering_wide_rows COMMAND test_wide_rows)
++
++add_executable(test_translate_copy test_translate_copy.c ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/software/renderer_backend.c)
++target_link_libraries(test_translate_copy PRIVATE embedded-react)
++target_include_directories(test_translate_copy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/software
++                           ${CMAKE_CURRENT_SOURCE_DIR}/../../core)
++add_test(NAME rendering_translate_copy COMMAND test_translate_copy)
+diff --git a/engine/tests/rendering/test_translate_copy.c b/engine/tests/rendering/test_translate_copy.c
+new file mode 100644
+index 0000000..cf60ad1
+--- /dev/null
++++ b/engine/tests/rendering/test_translate_copy.c
+@@ -0,0 +1,202 @@
++/*
++ * Copyright 2026 PS5 React contributors
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++/*
++ * An opaque page that only an animated translate moves is moved by copying its pixels: a sheet sliding
++ * in over a screen, then out past the edge. Every frame must match a full repaint of the same scene,
++ * with a node inside the page changing, one removed from it, a node beneath it changing and an overlay
++ * painted above it; and the slide must repaint far less than the page. A translucent page cannot be
++ * moved that way and must still match.
++ */
++
++#include "er_scene.h"
++#include "native_renderer.h"
++#include "renderer_internal.h"
++#include "software_backend.h"
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++#define FB_W 320
++#define FB_H 180
++#define FRAME_MS 16
++#define FRAMES 40 /* both slides, settled frames included */
++
++const EmbeddedRenderBackend* er_backend(void);
++
++static EmbeddedRenderBackend g_inner, g_counting;
++static long g_painted_px = 0;
++static int g_moves = 0;
++static uint32_t g_frames[FRAMES][FB_W * FB_H];
++
++static void fill_cb(uint32_t argb, int x, int y, int w, int h, void* ctx)
++{
++    g_inner.fill_rect(argb, x, y, w, h, ctx);
++    g_painted_px += (long)w * h;
++}
++
++static void copy_cb(const void* src, int stride, int x, int y, int w, int h, void* ctx)
++{
++    g_inner.copy_rect(src, stride, x, y, w, h, ctx);
++    g_painted_px += (long)w * h;
++}
++
++static void blend_cb(const void* src, int stride, uint8_t alpha, int x, int y, int w, int h, void* ctx)
++{
++    g_inner.blend_rect(src, stride, alpha, x, y, w, h, ctx);
++    g_painted_px += (long)w * h;
++}
++
++static void move_cb(int sx, int sy, int w, int h, int dx, int dy, void* ctx)
++{
++    g_inner.move_rect(sx, sy, w, h, dx, dy, ctx);
++    g_moves++;
++}
++
++static ERNode* node(ERNode* parent, int left, int top, int w, int h, uint32_t bg)
++{
++    ERNode* n = er_node_create(ER_NODE_VIEW);
++    ERProps p;
++    er_props_default(&p);
++    p.position = ER_POS_ABSOLUTE;
++    p.left = (int16_t)left;
++    p.top = (int16_t)top;
++    p.width = (int16_t)w;
++    p.height = (int16_t)h;
++    p.background_color = bg;
++    er_node_set_props(n, &p);
++    if (parent)
++        er_tree_append_child(parent, n);
++    return n;
++}
++
++static void set_color(ERNode* n, int left, int top, int w, int h, uint32_t bg)
++{
++    ERProps p;
++    er_props_default(&p);
++    p.position = ER_POS_ABSOLUTE;
++    p.left = (int16_t)left;
++    p.top = (int16_t)top;
++    p.width = (int16_t)w;
++    p.height = (int16_t)h;
++    p.background_color = bg;
++    er_node_set_props(n, &p);
++}
++
++/**
++ * @brief Slides a sheet in from 120 px right, changes things around it, then slides it 200 px out.
++ *
++ * @param[in] full        Repaint the whole screen every frame (the reference).
++ * @param[in] page_color  The page's background; translucent pages cannot be moved by copy.
++ * @param[in] check       Compare each frame with the reference stored by an earlier full run.
++ *
++ * @return Pixels painted over the sliding-in frames.
++ */
++static long run(bool full, uint32_t page_color, bool check, const char* what, int* failures)
++{
++    er_reset();
++    embedded_renderer_set_backend(&g_counting);
++    ERNode* root = node(NULL, 0, 0, FB_W, FB_H, 0xFF203040U);
++    ERNode* under = node(root, 10, 20, 60, 40, 0xFF40A060U); /* beneath, half covered at the start */
++    node(root, 200, 120, 80, 30, 0xFFA04060U);
++    ERNode* sheet = node(root, 0, 0, FB_W, FB_H, 0);
++    ERNode* wrapper = node(sheet, 0, 0, FB_W, FB_H, 0);
++    ERNode* page = node(wrapper, 0, 0, FB_W, FB_H, page_color);
++    node(page, 20, 30, 100, 20, 0xFFE0E0E0U);
++    ERNode* badge = node(page, 40, 100, 50, 50, 0xFF3060C0U);
++    ERNode* gone = node(page, 200, 40, 60, 30, 0xFFC0A030U);
++    node(root, 150, 60, 40, 80, 0xC0FFFFFFU); /* translucent overlay above the sheet */
++    er_tree_set_root(root);
++
++    const ERAnimValueHandle slide = er_anim_value_create(120.0f);
++    er_anim_value_bind(slide, sheet, ER_PROP_TRANSLATE_X);
++    er_force_full_repaint();
++    er_commit();
++
++    ERAnimConfig cfg = {0};
++    cfg.type = ER_ANIM_TIMING;
++    cfg.duration_ms = 240;
++    cfg.easing = ER_EASE_LINEAR;
++    er_anim_value_animate(slide, 0.0f, &cfg);
++    long painted_in = 0;
++    for (int f = 0; f < FRAMES; f++)
++    {
++        if (f == 4)
++            set_color(badge, 40, 100, 50, 50, 0xFFC03060U);
++        if (f == 6)
++            set_color(under, 10, 20, 60, 40, 0xFF6040A0U);
++        if (f == 8)
++            er_tree_remove_child(page, gone);
++        if (f == 20)
++            er_anim_value_animate(slide, 200.0f, &cfg);
++        embedded_renderer_tick(FRAME_MS);
++        if (full)
++            er_force_full_repaint();
++        g_painted_px = 0;
++        er_commit();
++        if (f < 16)
++            painted_in += g_painted_px;
++        if (!check)
++            memcpy(g_frames[f], er_software_framebuffer(), sizeof(g_frames[f]));
++        else if (memcmp(g_frames[f], er_software_framebuffer(), sizeof(g_frames[f])) != 0)
++        {
++            fprintf(stderr, "FAIL %s: frame %d differs from a full repaint\n", what, f);
++            (*failures)++;
++            break;
++        }
++    }
++    er_anim_value_destroy(slide);
++    return painted_in;
++}
++
++int main(void)
++{
++    if (!er_software_backend_init(FB_W, FB_H))
++        return 1;
++    g_inner = *er_backend();
++    g_counting = g_inner;
++    g_counting.fill_rect = fill_cb;
++    g_counting.copy_rect = copy_cb;
++    g_counting.blend_rect = blend_cb;
++    g_counting.move_rect = move_cb;
++
++    int failures = 0;
++    const long full_px = run(true, 0xFF101820U, false, "opaque page", &failures);
++    g_moves = 0;
++    const long moved_px = run(false, 0xFF101820U, true, "opaque page", &failures);
++    if (g_moves < 10)
++    {
++        fprintf(stderr, "FAIL opaque page: moved by copy on %d frames\n", g_moves);
++        failures++;
++    }
++    /* Copying leaves the uncovered strips, the changes and the overlay to paint: far below the page. */
++    if (moved_px * 4 > full_px)
++    {
++        fprintf(stderr, "FAIL opaque page: the slide painted %ld px, a full repaint %ld\n", moved_px, full_px);
++        failures++;
++    }
++
++    run(true, 0xE0101820U, false, "translucent page", &failures);
++    g_moves = 0;
++    run(false, 0xE0101820U, true, "translucent page", &failures);
++    if (g_moves != 0)
++    {
++        fprintf(stderr, "FAIL translucent page: moved by copy on %d frames\n", g_moves);
++        failures++;
++    }
++    return failures ? EXIT_FAILURE : EXIT_SUCCESS;
++}

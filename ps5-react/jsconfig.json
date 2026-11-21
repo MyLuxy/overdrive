@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@ps5-react/core": [
+        "runtime/js/index.js"
+      ],
+      "embedded-react": [
+        ".deps/embeddedReact/bridges/quickjs/js/src/embedded-react/index.d.ts"
+      ]
+    }
+  },
+  "include": [
+    "apps/**/*.jsx",
+    "apps/**/*.js",
+    "runtime/js/**/*.js",
+    "runtime/js/**/*.d.ts"
+  ],
+  "exclude": [
+    ".deps",
+    ".build",
+    "dist",
+    "node_modules"
+  ]
+}

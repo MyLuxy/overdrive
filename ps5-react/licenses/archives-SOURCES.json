@@ -1,0 +1,20 @@
+[
+  {
+    "component": "libarchive",
+    "file": "libarchive-LICENSE",
+    "url": "https://raw.githubusercontent.com/libarchive/libarchive/v3.7.4/COPYING",
+    "sha256": "b2cdf763345de2de34cebf54394df3c61a105c3b71288603c251f2fa638200ba"
+  },
+  {
+    "component": "liblzma",
+    "file": "liblzma-LICENSE",
+    "url": "https://raw.githubusercontent.com/tukaani-project/xz/v5.4.6/COPYING",
+    "sha256": "29a1e305b2e34eefe5d4602d00cde1d528b71c5d9f2eec5106972cf6ddb6f73f"
+  },
+  {
+    "component": "bzip2",
+    "file": "bzip2-LICENSE",
+    "url": "https://raw.githubusercontent.com/libarchive/bzip2/bzip2-1.0.8/LICENSE",
+    "sha256": "c6dbbf828498be844a89eaa3b84adbab3199e342eb5cb2ed2f0d4ba7ec0f38a3"
+  }
+]

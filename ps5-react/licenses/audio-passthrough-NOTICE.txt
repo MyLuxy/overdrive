@@ -1,0 +1,13 @@
+HDMI audio passthrough (native/shared/iec61937.hpp, native/ps5/bitstream_output.cpp)
+
+The IEC 61937 packer in native/shared/iec61937.hpp is ported from SlopFin's src/iec61937.hpp (https://github.com/BeLikeBrett/SlopFin, commit 6e22b23e7ececf1af24cb2850536411f91ebb9d6),
+Copyright (C) 2026 Brett, GPL-3.0-or-later (SlopFin, an unofficial Jellyfin client for the PS5). SlopFin
+wrote it as an independent implementation of the burst layout FFmpeg's spdif muxer writes
+(libavformat/spdifenc.c, LGPL-2.1-or-later, the FFmpeg developers); no FFmpeg code is copied, and PS5
+React's tests compare the output with that muxer's byte for byte.
+
+The bitstream output follows SlopFin's findings on the console (src/audio.cpp, tools/bitstream/README.md):
+that an application, unlike a payload, may call sceAudioOutExConfigureOutput and sceAudioOutExOpen; their
+arguments; the output modes for AC-3 (0), DTS (2) and E-AC-3 (3, a 192 kHz port); and restoring the default
+mode (255) on close. The implementation in PS5 React is otherwise new code under GPL-3.0-or-later. No Sony
+code, headers or binaries are included.

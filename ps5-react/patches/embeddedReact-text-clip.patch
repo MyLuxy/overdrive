@@ -1,0 +1,212 @@
+Embedded React: clip Text, TextInput and span strings at a character boundary.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, after the patches listed before this
+one there. Changed files: engine/include/er_scene.h, engine/scene/compositor.c
+and bridges/quickjs/native_ui_bridge.c. Not yet proposed upstream.
+
+A nested Text's span strings were cut at 63 bytes (ER_SPAN_TEXT_MAX) with a
+plain byte count, so a CJK, Devanagari or Bengali segment could end in half a
+UTF-8 sequence; the bridge cut Text strings at 255 bytes (ER_TEXT_MAX) the same
+way before the engine dropped the partial sequence. The new er_utf8_clip()
+returns the longest prefix within a byte limit that ends at a character
+boundary and, when text is dropped, does not separate a combining mark, joiner
+or conjunct consonant (after a virama) from the character it belongs to. The
+bridge's string props, span strings, er_node_set_props(),
+er_node_set_text_spans() and er_text_input_set_text() copy through it. The
+limits stay as they are: a longer span would grow every node, since text
+properties are the largest member of the node's property union.
+
+diff --git a/bridges/quickjs/native_ui_bridge.c b/bridges/quickjs/native_ui_bridge.c
+index 4ffc64a..9a7a18c 100644
+--- a/bridges/quickjs/native_ui_bridge.c
++++ b/bridges/quickjs/native_ui_bridge.c
+@@ -1547,8 +1547,9 @@ static bool enum_from_slot(JSContext* ctx, JSValueConst v, PropId id, uint8_t (*
+             const char* _s = JS_ToCString(ctx, _v);                                                                    \
+             if (_s)                                                                                                    \
+             {                                                                                                          \
+-                strncpy(p.field, _s, (maxlen));                                                                        \
+-                p.field[(maxlen)] = '\0';                                                                              \
++                const size_t _n = er_utf8_clip(_s, (maxlen));                                                          \
++                memcpy(p.field, _s, _n);                                                                               \
++                p.field[_n] = '\0';                                                                                    \
+                 JS_FreeCString(ctx, _s);                                                                               \
+             }                                                                                                          \
+         }                                                                                                              \
+@@ -3588,11 +3589,7 @@ ER_BRIDGE_MARSHAL_FN(js_set_text_spans)
+             const char* s = JS_ToCString(ctx, v);
+             if (s)
+             {
+-                size_t n = strlen(s);
+-                if (n > ER_SPAN_TEXT_MAX)
+-                {
+-                    n = ER_SPAN_TEXT_MAX;
+-                }
++                const size_t n = er_utf8_clip(s, ER_SPAN_TEXT_MAX);
+                 memcpy(sp->text, s, n);
+                 sp->text[n] = '\0';
+                 JS_FreeCString(ctx, s);
+diff --git a/engine/include/er_scene.h b/engine/include/er_scene.h
+index f45de70..b7514f4 100644
+--- a/engine/include/er_scene.h
++++ b/engine/include/er_scene.h
+@@ -1260,6 +1260,18 @@ extern "C"
+      */
+     void er_font_register(const char* family, const BitmapFont* font);
+ 
++    /**
++     * @brief The length of the longest prefix of @p text, at most @p max_bytes, that ends at a character
++     *        boundary: no UTF-8 sequence cut in half and, when text is dropped, no combining mark, joiner or
++     *        conjunct consonant (after a virama) separated from the character it belongs to.
++     *
++     * Text, TextInput and span strings are copied into fixed buffers through it.
++     *
++     * @param[in] text       Null-terminated UTF-8 string.
++     * @param[in] max_bytes  Buffer capacity, excluding the null terminator.
++     */
++    size_t er_utf8_clip(const char* text, size_t max_bytes);
++
+     /**
+      * @brief Registers a premultiplied ARGB8888 image under a name for use by Image nodes.
+      *
+diff --git a/engine/scene/compositor.c b/engine/scene/compositor.c
+index 53e21ba..330fa0b 100644
+--- a/engine/scene/compositor.c
++++ b/engine/scene/compositor.c
+@@ -76,19 +76,85 @@ static uint8_t text_direction(const ERNode* n)
+     return ER_DIRECTION_INHERIT;
+ }
+ 
+-/** @brief Drops a UTF-8 sequence cut short at the end of @p s, as a copy truncated to a byte limit leaves. */
+-static void trim_partial_utf8(char* s)
++/** @brief The codepoint starting at byte @p i of @p s (U+FFFD when malformed or cut short). */
++static uint32_t utf8_at(const uint8_t* s, size_t i)
+ {
+-    const size_t n = strlen(s);
+-    size_t lead = n;
+-    while (lead > 0 && ((uint8_t)s[lead - 1] & 0xC0U) == 0x80U)
++    const uint8_t b = s[i];
++    const size_t count = (b < 0x80U) ? 1U : ((b & 0xE0U) == 0xC0U) ? 2U : ((b & 0xF0U) == 0xE0U) ? 3U : ((b & 0xF8U) == 0xF0U) ? 4U : 0U;
++    if (count == 0U)
++        return 0xFFFDU;
++    uint32_t c = (count == 1U) ? b : (b & (0x7FU >> count));
++    for (size_t k = 1; k < count; k++)
++    {
++        if ((s[i + k] & 0xC0U) != 0x80U)
++            return 0xFFFDU;
++        c = (c << 6) | (s[i + k] & 0x3FU);
++    }
++    return c;
++}
++
++/** @brief Start of the codepoint that ends just before byte @p i (> 0). */
++static size_t utf8_previous(const uint8_t* s, size_t i)
++{
++    size_t lead = i - 1U;
++    while (lead > 0U && i - lead < 4U && (s[lead] & 0xC0U) == 0x80U)
+         lead--;
+-    if (lead == 0 || (uint8_t)s[lead - 1] < 0xC0U)
+-        return;
+-    const uint8_t b = (uint8_t)s[lead - 1];
+-    const size_t need = (b >= 0xF0U) ? 4U : (b >= 0xE0U) ? 3U : 2U;
+-    if (n - (lead - 1) < need)
+-        s[lead - 1] = '\0';
++    return lead;
++}
++
++/** @brief Marks, joiners and modifiers drawn as part of the character before them. */
++static bool utf8_extends(uint32_t c)
++{
++    static const uint32_t ranges[][2] = {
++        {0x0300, 0x036F}, {0x0483, 0x0489}, {0x0591, 0x05BD}, {0x05BF, 0x05C7}, {0x0610, 0x061A},
++        {0x064B, 0x065F}, {0x0670, 0x0670}, {0x06D6, 0x06ED}, {0x0900, 0x0903}, {0x093A, 0x094F},
++        {0x0951, 0x0957}, {0x0962, 0x0963}, {0x0981, 0x0983}, {0x09BC, 0x09BC}, {0x09BE, 0x09D7},
++        {0x09E2, 0x09E3}, {0x09FE, 0x09FE}, {0x0A01, 0x0A03}, {0x0A3C, 0x0A51}, {0x0A70, 0x0A71},
++        {0x0A75, 0x0A75}, {0x0A81, 0x0A83}, {0x0ABC, 0x0ACD}, {0x0B01, 0x0B03}, {0x0B3C, 0x0B57},
++        {0x0BBE, 0x0BCD}, {0x0C00, 0x0C04}, {0x0C3C, 0x0C56}, {0x0C81, 0x0C83}, {0x0CBC, 0x0CD6},
++        {0x0D00, 0x0D03}, {0x0D3B, 0x0D57}, {0x1AB0, 0x1AFF}, {0x1DC0, 0x1DFF}, {0x200C, 0x200D},
++        {0x20D0, 0x20FF}, {0x3099, 0x309A}, {0xFE00, 0xFE0F}, {0xFE20, 0xFE2F}, {0x1F3FB, 0x1F3FF},
++        {0xE0020, 0xE007F}, {0xE0100, 0xE01EF},
++    };
++    for (size_t i = 0; i < sizeof(ranges) / sizeof(ranges[0]); i++)
++        if (c >= ranges[i][0] && c <= ranges[i][1])
++            return true;
++    return false;
++}
++
++/** @brief A virama (Devanagari to Malayalam) or zero-width joiner: it joins the next character to its conjunct. */
++static bool utf8_joins_next(uint32_t c)
++{
++    return c == 0x200DU || (c >= 0x0900U && c <= 0x0D7FU && (c & 0x7FU) == 0x4DU);
++}
++
++size_t er_utf8_clip(const char* text, size_t max_bytes)
++{
++    const uint8_t* s = (const uint8_t*)text;
++    size_t n = 0;
++    while (n < max_bytes && s[n])
++        n++;
++    size_t end = n;
++    if (n > 0U)
++    {
++        /* The last codepoint must be whole. */
++        const size_t lead = utf8_previous(s, n);
++        const uint8_t b = s[lead];
++        const size_t need = (b >= 0xF0U) ? 4U : (b >= 0xE0U) ? 3U : (b >= 0xC0U) ? 2U : 1U;
++        if (n - lead < need)
++            end = lead;
++    }
++    if (end == n && !s[n])
++        return n;
++    /* Text was dropped: also drop the start of a grapheme cluster or conjunct it continues. */
++    while (end > 0U)
++    {
++        const size_t previous = utf8_previous(s, end);
++        if (!utf8_extends(utf8_at(s, end)) && !utf8_joins_next(utf8_at(s, previous)))
++            break;
++        end = previous;
++    }
++    return end;
+ }
+ 
+ /*----------------------------------------------------------------------------------------------------------------------
+@@ -3556,9 +3622,11 @@ void er_node_set_props(ERNode* node, const ERProps* props)
+             copy_view_shadow_and_gradient(node, props);
+             break;
+         case ER_NODE_TEXT:
+-            strncpy(node->props.text.text, props->text, ER_TEXT_MAX);
+-            node->props.text.text[ER_TEXT_MAX] = '\0';
+-            trim_partial_utf8(node->props.text.text);
++        {
++            const size_t text_len = er_utf8_clip(props->text, ER_TEXT_MAX);
++            memcpy(node->props.text.text, props->text, text_len);
++            node->props.text.text[text_len] = '\0';
++        }
+             strncpy(node->props.text.font_family, props->font_family, ER_FONT_FAMILY_MAX);
+             node->props.text.font_family[ER_FONT_FAMILY_MAX] = '\0';
+             node->props.text.color = props->color;
+@@ -3902,9 +3970,9 @@ void er_text_input_set_text(ERNode* node, const char* text)
+ {
+     if (!node || node->type != ER_NODE_TEXT_INPUT || !text)
+         return;
+-    strncpy(node->input_text, text, ER_TEXT_MAX);
+-    node->input_text[ER_TEXT_MAX] = '\0';
+-    trim_partial_utf8(node->input_text);
++    const size_t len = er_utf8_clip(text, ER_TEXT_MAX);
++    memcpy(node->input_text, text, len);
++    node->input_text[len] = '\0';
+     er_mark_dirty_upward(node);
+ }
+ 
+@@ -3924,8 +3992,9 @@ void er_node_set_text_spans(ERNode* node, const ERTextSpan* spans, uint8_t count
+     for (uint8_t i = 0; i < node->props.text.span_count; i++)
+     {
+         ERTextSpan* dst = &node->props.text.spans[i];
+-        strncpy(dst->text, spans[i].text, ER_SPAN_TEXT_MAX);
+-        dst->text[ER_SPAN_TEXT_MAX] = '\0';
++        const size_t len = er_utf8_clip(spans[i].text, ER_SPAN_TEXT_MAX);
++        memcpy(dst->text, spans[i].text, len);
++        dst->text[len] = '\0';
+         dst->color = spans[i].color;
+         dst->font_size = spans[i].font_size;
+         dst->font_weight = spans[i].font_weight;

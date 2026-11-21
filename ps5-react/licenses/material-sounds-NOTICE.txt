@@ -1,0 +1,15 @@
+Interface sounds (apps/starter/assets/sounds/*.wav and copies made from them)
+
+Derived from Google's Material Design sound resources, (c) Google,
+https://m2.material.io/design/sound/sound-resources.html
+licensed under Creative Commons Attribution 4.0 International (CC BY 4.0),
+https://creativecommons.org/licenses/by/4.0/
+
+Changes: mixed to mono, trimmed, shortened, faded, normalized and converted to
+16-bit 48 kHz WAV by tools/ui_sounds.mjs, and renamed:
+  focus.wav    <- navigation_hover-tap
+  confirm.wav  <- navigation_forward-selection-minimal
+  back.wav     <- navigation_backward-selection-minimal
+  error.wav    <- navigation_unavailable-selection
+  page.wav     <- ui_tap-variant-01
+  notify.wav   <- notification_simple-01

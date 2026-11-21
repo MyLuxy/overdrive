@@ -1,0 +1,58 @@
+name: Game request
+description: Ask for a game that isn't in the store, or that is there but has no working source.
+title: "[Request] "
+labels: ["catalog"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One game per request. Search the open issues first: if someone already asked for it, add a 👍 to that issue instead. Overdrive only lists links that third-party hosts already share, so a request can take time or stay open if no working link exists.
+
+  - type: input
+    id: game
+    attributes:
+      label: Game
+      description: Its full name, as on the PlayStation Store.
+      placeholder: Ratchet & Clank Rift Apart
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - PS5
+        - PS4
+        - Either
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What's the request?
+      options:
+        - The game isn't in Overdrive
+        - The game is in Overdrive but none of its sources work
+    validations:
+      required: true
+
+  - type: input
+    id: title-id
+    attributes:
+      label: Title ID
+      description: If you know it, the game's ID, like PPSA01474 or CUSA12345.
+      placeholder: PPSA01474
+
+  - type: textarea
+    id: links
+    attributes:
+      label: Known links
+      description: If you know a working download link for it (a file page on VikingFile, MediaFire, DataNodes and the like), paste it here. It helps a lot.
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: Anything else, like the version or region you need, or your PS5 firmware.

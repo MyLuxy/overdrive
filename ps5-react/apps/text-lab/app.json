@@ -1,0 +1,23 @@
+{
+  "$schema": "../../app.schema.json",
+  "titleId": "PPSA99062",
+  "contentId": "UP9000-PPSA99062_00-PS5REACTTEXTLAB0",
+  "name": "PS5 React Text Lab",
+  "version": "01.000.000",
+  "render": {
+    "width": 1920,
+    "height": 1080
+  },
+  "surface": {
+    "width": 1920,
+    "height": 1080
+  },
+  "timeoutSeconds": 0,
+  "textFonts": [
+    "chinese",
+    "japanese",
+    "devanagari",
+    "bengali",
+    "arabic"
+  ]
+}

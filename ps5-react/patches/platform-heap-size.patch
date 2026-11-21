@@ -1,0 +1,114 @@
+diff --git a/src/runtime/app_heap.c b/src/runtime/app_heap.c
+index 786cba1..a3527af 100644
+--- a/src/runtime/app_heap.c
++++ b/src/runtime/app_heap.c
+@@ -4,7 +4,8 @@
+ //
+ // Adapted from ps5-opengl native-app/app_heap.c. tools/build.sh links with
+ // --wrap for the malloc family whenever this file exists, routing allocations
+-// into a fixed 128 MiB sceLibcMspace that is never unmapped.
++// into one sceLibcMspace that is never unmapped. Its size is chosen once, from
++// the title's free flexible memory, and reported by hui_heap_capacity().
+ 
+ #include <errno.h>
+ #include <stdatomic.h>
+@@ -28,12 +29,25 @@ void sceLibcMspaceFree(void *mspace, void *address);
+ int sceLibcMspacePosixMemalign(void *mspace, void **address, size_t alignment, size_t size);
+ size_t sceLibcMspaceMallocUsableSize(const void *address);
+ 
+-/* Fixed, process-lifetime heap: do not unmap underneath late C++ destructors. */
+-#define HUI_HEAP_SIZE (128u * 1024u * 1024u)
++int sceKernelAvailableFlexibleMemorySize(size_t *size);
+ 
++#define HUI_MIB ((size_t)1024 * 1024)
++/* Largest first; the first that fits under the free flexible memory, less what
++   stays outside the heap (thread stacks, system libraries), and maps wins. */
++static const size_t hui_heap_sizes[] = {1024 * HUI_MIB, 768 * HUI_MIB, 512 * HUI_MIB,
++                                        384 * HUI_MIB,  256 * HUI_MIB, 192 * HUI_MIB,
++                                        128 * HUI_MIB};
++/* An app that sets memory up outside the heap (a hardware video decoder) leaves itself more. */
++#ifndef HUI_HEAP_RESERVE
++#define HUI_HEAP_RESERVE (96 * HUI_MIB)
++#endif
++
++/* Process-lifetime heap: do not unmap underneath late C++ destructors. */
+ static atomic_int hui_heap_state;
+ static void *hui_heap_base;
++static size_t hui_heap_size;
+ static void *hui_heap_mspace;
++static size_t hui_heap_flexible_before, hui_heap_flexible_after;
+ /* Owned-heap usable bytes only; relaxed counters are observations, not fences. */
+ static atomic_size_t hui_heap_live_bytes, hui_heap_peak_bytes, hui_heap_blocks;
+ static atomic_size_t hui_heap_failures;
+@@ -81,22 +92,36 @@ static int hui_heap_ready(void)
+                                                  memory_order_acq_rel, memory_order_acquire))
+         return expected == 2;
+ 
+-    void *base = mmap(NULL, HUI_HEAP_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+-    if (base == MAP_FAILED)
++    size_t available = 0;
++    int known = sceKernelAvailableFlexibleMemorySize(&available) == 0;
++    hui_heap_flexible_before = known ? available : 0;
++    for (size_t i = 0; i < sizeof hui_heap_sizes / sizeof *hui_heap_sizes; ++i)
+     {
+-        atomic_store_explicit(&hui_heap_state, -1, memory_order_release);
+-        return 0;
++        size_t size = hui_heap_sizes[i];
++        int last = i + 1 == sizeof hui_heap_sizes / sizeof *hui_heap_sizes;
++        if (known && !last && size + HUI_HEAP_RESERVE > available)
++            continue;
++        void *base = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
++        if (base == MAP_FAILED)
++            continue;
++        void *mspace = sceLibcMspaceCreate("ps5-homebrew-ui", base, size, 0);
++        if (mspace == NULL)
++        {
++            munmap(base, size);
++            continue;
++        }
++        hui_heap_base = base;
++        hui_heap_size = size;
++        hui_heap_mspace = mspace;
++        break;
+     }
+-
+-    hui_heap_base = base;
+-    hui_heap_mspace = sceLibcMspaceCreate("ps5-homebrew-ui", base, HUI_HEAP_SIZE, 0);
+     if (hui_heap_mspace == NULL)
+     {
+-        hui_heap_base = NULL;
+-        munmap(base, HUI_HEAP_SIZE);
+         atomic_store_explicit(&hui_heap_state, -1, memory_order_release);
+         return 0;
+     }
++    if (sceKernelAvailableFlexibleMemorySize(&available) == 0)
++        hui_heap_flexible_after = available;
+ 
+     atomic_store_explicit(&hui_heap_state, 2, memory_order_release);
+     return 1;
+@@ -109,7 +134,7 @@ static int hui_heap_owns(const void *address)
+         return 0;
+     uintptr_t value = (uintptr_t)address;
+     uintptr_t base = (uintptr_t)hui_heap_base;
+-    return value >= base && value - base < HUI_HEAP_SIZE;
++    return value >= base && value - base < hui_heap_size;
+ }
+ 
+ void *__wrap_malloc(size_t size)
+@@ -186,3 +211,16 @@ void hui_heap_stats(size_t *live_bytes, size_t *peak_bytes, size_t *blocks, size
+     if (failures)
+         *failures = atomic_load_explicit(&hui_heap_failures, memory_order_relaxed);
+ }
++
++/* The heap's size (0 when it could not be created and malloc is the system's),
++   and the free flexible memory before and after it was mapped (0 if unknown). */
++void hui_heap_capacity(size_t *size, size_t *flexible_before, size_t *flexible_after)
++{
++    int ready = atomic_load_explicit(&hui_heap_state, memory_order_acquire) == 2;
++    if (size)
++        *size = ready ? hui_heap_size : 0;
++    if (flexible_before)
++        *flexible_before = hui_heap_flexible_before;
++    if (flexible_after)
++        *flexible_after = hui_heap_flexible_after;
++}

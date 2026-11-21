@@ -1,0 +1,183 @@
+Embedded React: a container that paints nothing is not a foreign footprint.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, after the patches listed before this
+one there. Changed files: engine/scene/compositor.c and
+engine/tests/scroll/test_scroll_copy.c. Proposed upstream as commit e56b83e of
+pull request #293, which also carries embeddedReact-scroll-copy.patch.
+
+Scroll by copy repaints every node outside the scrolled subtree whose last
+paint reaches into the viewport, where it is and where the move carried its
+pixels. That footprint is the node's box, so a container with no background,
+border or effect counted too, although it has no pixels there: its children
+are checked on their own. A horizontal rail whose negative margin let the
+section header's transparent box overlap its top six rows added that strip at
+full width twice per frame, and the damage set grew it into a repaint of the
+whole rail. On the PS5 each frame of a rail scroll then took 23 ms (12.5 ms of
+raster, 17 image draws, 670 kpx uploaded) instead of a strip. A plain
+container with no background and no border is now skipped as a foreign
+footprint. test_scroll_copy adds a paint-free header overlapping the viewport:
+a 6 px scroll paints about 2000 pixels instead of about 4900, and the frame
+still matches a full repaint.
+
+diff --git a/engine/scene/compositor.c b/engine/scene/compositor.c
+index a1742a8..dbf814b 100644
+--- a/engine/scene/compositor.c
++++ b/engine/scene/compositor.c
+@@ -4913,17 +4913,16 @@ static bool rect_intersect(int* x, int* y, int* w, int* h, int cx, int cy, int c
+ }
+ 
+ /**
+- * @brief Whether a node's own paint inside the viewport is the same at every pixel, so moving it is exact.
+- *
+- * True when it paints nothing there, or a solid background whose border band and rounded corners stay
+- * clear of the viewport. Transforms, opacity, shadows and gradients are refused outright.
++ * @brief Whether a container's own paint can be moved with the viewport: no transform, opacity, shadow or
++ *        gradient, so it paints at most a background and a border.
+  *
+- * @param[in] a              Ancestor of the ScrollView, or the ScrollView itself.
+- * @param[in] vx,vy,vw,vh    The viewport's visible screen rect.
++ * @param[in]  a       Node to check.
++ * @param[out] border  Its widest border edge.
++ * @param[out] radius  Its largest corner radius.
+  *
+- * @return true when moving the viewport's pixels leaves this node's paint unchanged.
++ * @return false for anything but a plain container (View, ScrollView, Pressable, FlatList).
+  */
+-static bool paints_uniformly_over(const ERNode* a, int vx, int vy, int vw, int vh)
++static bool is_plain_container(const ERNode* a, int* border, int* radius)
+ {
+ #if ERUI_TRANSFORMS_FULL
+     if (er_node_has_complex_transform(a))
+@@ -4943,15 +4942,45 @@ static bool paints_uniformly_over(const ERNode* a, int vx, int vy, int vw, int v
+         vp->border_width, vp->border_left_width, vp->border_top_width, vp->border_right_width, vp->border_bottom_width};
+     const int16_t radii[] = {
+         vp->border_radius, vp->border_tl_radius, vp->border_tr_radius, vp->border_br_radius, vp->border_bl_radius};
+-    int border = 0, radius = 0;
++    *border = 0;
++    *radius = 0;
+     for (int i = 0; i < 5; i++)
+     {
+-        if (edges[i] > border)
+-            border = edges[i];
+-        if (radii[i] > radius)
+-            radius = radii[i];
++        if (edges[i] > *border)
++            *border = edges[i];
++        if (radii[i] > *radius)
++            *radius = radii[i];
+     }
+-    if ((vp->background_color >> 24) == 0U && border == 0)
++    return true;
++}
++
++/**
++ * @brief Whether a node paints no pixels of its own: a plain container with no background and no border.
++ *        Its descendants are separate nodes and paint for themselves.
++ */
++static bool paints_nothing(const ERNode* a)
++{
++    int border, radius;
++    return is_plain_container(a, &border, &radius) && (a->props.view.background_color >> 24) == 0U && border == 0;
++}
++
++/**
++ * @brief Whether a node's own paint inside the viewport is the same at every pixel, so moving it is exact.
++ *
++ * True when it paints nothing there, or a solid background whose border band and rounded corners stay
++ * clear of the viewport. Transforms, opacity, shadows and gradients are refused outright.
++ *
++ * @param[in] a              Ancestor of the ScrollView, or the ScrollView itself.
++ * @param[in] vx,vy,vw,vh    The viewport's visible screen rect.
++ *
++ * @return true when moving the viewport's pixels leaves this node's paint unchanged.
++ */
++static bool paints_uniformly_over(const ERNode* a, int vx, int vy, int vw, int vh)
++{
++    int border, radius;
++    if (!is_plain_container(a, &border, &radius))
++        return false;
++    if ((a->props.view.background_color >> 24) == 0U && border == 0)
+         return true; /* paints nothing */
+     const int inset = border + radius;
+     int bx, by, bw, bh;
+@@ -5009,14 +5038,17 @@ static bool scroll_by_copy(ERNode* sv, ERDamageSet* dmg, int rb_x0, int rb_y0, i
+     }
+ 
+     /* Foreign footprints: every node outside the scrolled subtree and its ancestor chain whose last paint
+-     * reaches into the viewport. */
++     * reaches into the viewport. A container that paints nothing has no pixels there to repaint: its box
++     * only bounds its children, which are checked on their own. Counting it would damage, say, a whole
++     * section header whose transparent margin overlaps the viewport's edge, and the damage set would grow
++     * that strip into a repaint of the viewport. */
+     ERRect foreign[ER_SCROLL_FOREIGN_MAX];
+     int foreign_count = 0;
+     long foreign_area = 0;
+     for (uint16_t tag = 0U; tag < (uint16_t)ERUI_MAX_NODES; tag++)
+     {
+         ERNode* n = er_get_node(tag);
+-        if (!n || n->subtree_hidden || !n->has_last_paint || n == sv)
++        if (!n || n->subtree_hidden || !n->has_last_paint || n == sv || paints_nothing(n))
+             continue;
+         bool skip = false;
+         for (int i = 0; i < depth && !skip; i++)
+@@ -5099,7 +5131,7 @@ static bool scroll_by_copy(ERNode* sv, ERDamageSet* dmg, int rb_x0, int rb_y0, i
+     for (uint16_t tag = 0U; tag < (uint16_t)ERUI_MAX_NODES; tag++)
+     {
+         ERNode* n = er_get_node(tag);
+-        if (!n || n->subtree_hidden || !n->has_last_paint || n == sv)
++        if (!n || n->subtree_hidden || !n->has_last_paint || n == sv || paints_nothing(n))
+             continue;
+         int fx = (int)n->last_paint_rect.x, fy = (int)n->last_paint_rect.y, fw = (int)n->last_paint_rect.w,
+             fh = (int)n->last_paint_rect.h;
+diff --git a/engine/tests/scroll/test_scroll_copy.c b/engine/tests/scroll/test_scroll_copy.c
+index e1a44dc..dd9979c 100644
+--- a/engine/tests/scroll/test_scroll_copy.c
++++ b/engine/tests/scroll/test_scroll_copy.c
+@@ -338,6 +338,46 @@ int main(void)
+     }
+     check("copy of a ScrollView that was repainted untracked", true);
+ 
++    /* A container that paints nothing, whose box overlaps the viewport's top rows (a section header with a
++     * margin, say): it has no pixels there, so a copy repaints the exposed strip and not its box. */
++    install(true);
++    er_reset();
++    ERNode* page = view(NULL, FB_W, FB_H, 0xFF102030U);
++    ERProps hp;
++    er_props_default(&hp);
++    hp.position = ER_POS_ABSOLUTE;
++    hp.width = FB_W;
++    hp.height = 40;
++    ERNode* header = er_node_create(ER_NODE_VIEW);
++    er_node_set_props(header, &hp);
++    er_tree_append_child(page, header);
++    view(header, 20, 8, 0xFFFFFFFFU);
++    sp.border_width = 0;
++    ERNode* list = er_node_create(ER_NODE_SCROLL_VIEW);
++    er_node_set_props(list, &sp);
++    er_tree_append_child(page, list);
++    ERNode* items = view(list, 110, ROWS * 12, 0);
++    for (int i = 0; i < ROWS; i++)
++        view(items, 110, 12, 0xFF000000U | (uint32_t)(i * 2246822519U >> 8));
++    er_tree_set_root(page);
++    er_commit();
++    g_ctx.moves = 0;
++    g_ctx.painted_px = 0;
++    er_scroll_view_set_offset(list, 0.0f, 6.0f);
++    er_commit();
++    /* The exposed 6 px strip with its damage margins stays under 110 x 22 pixels; the header's 10
++     * overlapping rows, repainted where they are and where the move carried them, would more than double
++     * that. */
++    if (g_ctx.moves != 1 || g_ctx.painted_px > 110 * 22)
++    {
++        fprintf(stderr,
++                "FAIL paint-free container: expected 1 move and a strip, got %d move(s), %ld pixels\n",
++                g_ctx.moves,
++                g_ctx.painted_px);
++        g_failures++;
++    }
++    check("copy beside a paint-free container", true);
++
+     if (g_failures)
+         return EXIT_FAILURE;
+     printf("scroll copy: all checks passed\n");

@@ -1,0 +1,86 @@
+Embedded React: bake glyph sets for the European alphabets.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, after the patches listed before this
+one there. Changed files: bridges/quickjs/js/assets/bake-font.mjs and
+bridges/quickjs/js/assets/__tests__/assets.unit.test.js. Not yet proposed
+upstream.
+
+Text an app receives at runtime (catalog titles, user names) cannot be scanned
+for extraGlyphs, so a font had to list every accented letter by hand. Three
+named sets join `glyphs`: 'latin-ext' (Latin-1 Supplement, Latin Extended-A,
+Romanian comma-below letters, European quotes and currency signs), 'cyrillic'
+(U+0400-U+045F, Ґ ґ and №) and 'european' (both, plus modern Greek with tonos
+and final sigma). Each also includes the 'common' symbols.
+
+diff --git a/bridges/quickjs/js/assets/__tests__/assets.unit.test.js b/bridges/quickjs/js/assets/__tests__/assets.unit.test.js
+index 22128e8..205451c 100644
+--- a/bridges/quickjs/js/assets/__tests__/assets.unit.test.js
++++ b/bridges/quickjs/js/assets/__tests__/assets.unit.test.js
+@@ -147,6 +147,14 @@ describe('resolveExtras', () => {
+     expect(common.every(c => c < ASCII_FIRST || c > ASCII_LAST)).toBe(true);
+   });
+ 
++  it('covers the European alphabets with the latin-ext, cyrillic and european sets', () => {
++    const has = (set, text) =>
++      [...text].every(ch => resolveExtras(set).includes(ch.codePointAt(0)));
++    expect(has('latin-ext', 'ñáéíóúü¿¡çàâêîôûëïœæßäöÄÖÜãõÃÕŞşİıĞğȘșȚțŁłŻżČšŽ€«»„“')).toBe(true);
++    expect(has('cyrillic', 'ЁёАаЯяЩщЪъЇїЄєІіЎўЂђЉљҐґ№')).toBe(true);
++    expect(has('european', 'ñÇŁЖжΏώςΪ€')).toBe(true);
++  });
++
+   it('takes extraGlyphs as characters or codepoints, on top of the named set', () => {
+     expect(resolveExtras('ascii', '°±')).toEqual([0x00b0, 0x00b1]);
+     expect(resolveExtras('ascii', [0x2318, '≡'])).toEqual([0x2261, 0x2318]);
+diff --git a/bridges/quickjs/js/assets/bake-font.mjs b/bridges/quickjs/js/assets/bake-font.mjs
+index c6e1e14..23eed6c 100644
+--- a/bridges/quickjs/js/assets/bake-font.mjs
++++ b/bridges/quickjs/js/assets/bake-font.mjs
+@@ -48,13 +48,45 @@ const SYMBOLS_COMMON = [
+ const SYMBOLS_GREEK = [];
+ for (let c = 0x0391; c <= 0x03a9; c++) if (c !== 0x03a2) SYMBOLS_GREEK.push(c); // uppercase (skip gap)
+ for (let c = 0x03b1; c <= 0x03c9; c++) SYMBOLS_GREEK.push(c); // lowercase
++const range = (first, last) =>
++  Array.from({length: last - first + 1}, (_, i) => first + i);
++const union = (...sets) => [...new Set(sets.flat())].sort((a, b) => a - b);
++
++// The letters Western, Central and Northern European languages write with, including Spanish,
++// French, German, Portuguese, Indonesian, Polish, Czech, Turkish and Romanian (Ș Ț), plus their
++// quotation marks and currency signs. Vietnamese (Latin Extended Additional) is not included.
++const SYMBOLS_LATIN_EXT = [
++  ...range(0x00a0, 0x00ff),
++  ...range(0x0100, 0x017f),
++  0x0192, 0x0218, 0x0219, 0x021a, 0x021b, 0x02c6, 0x02c7, 0x02d8, 0x02d9,
++  0x02da, 0x02db, 0x02dc, 0x02dd, 0x1e9e, 0x2010, 0x2011, 0x2012, 0x2013,
++  0x2014, 0x2015, 0x2018, 0x2019, 0x201a, 0x201c, 0x201d, 0x201e, 0x2020,
++  0x2021, 0x2022, 0x2026, 0x2030, 0x2032, 0x2033, 0x2039, 0x203a, 0x20ac,
++  0x20b9, 0x20ba, 0x20bd, 0x2116, 0x2122,
++];
++// Russian, Ukrainian, Belarusian, Serbian, Bulgarian and Macedonian, plus Ukrainian Ґ ґ and №.
++const SYMBOLS_CYRILLIC = [...range(0x0400, 0x045f), 0x0490, 0x0491, 0x2116];
++// Modern Greek: the letters with tonos and dialytika, and final sigma.
++const SYMBOLS_GREEK_MODERN = [
++  0x0384, 0x0385, 0x0386, 0x0388, 0x0389, 0x038a, 0x038c,
++  ...range(0x038e, 0x03a1),
++  ...range(0x03a3, 0x03ce),
++];
++
+ const SYMBOL_SETS = {
+   none: [],
+   minimal: SYMBOLS_MINIMAL,
+   common: SYMBOLS_COMMON,
+   greek: SYMBOLS_GREEK,
+-  'common-greek': [...new Set([...SYMBOLS_COMMON, ...SYMBOLS_GREEK])].sort(
+-    (a, b) => a - b,
++  'common-greek': union(SYMBOLS_COMMON, SYMBOLS_GREEK),
++  'latin-ext': union(SYMBOLS_COMMON, SYMBOLS_LATIN_EXT),
++  cyrillic: union(SYMBOLS_COMMON, SYMBOLS_CYRILLIC),
++  // Every European language written in Latin, Greek or Cyrillic: about 470 glyphs over ASCII.
++  european: union(
++    SYMBOLS_COMMON,
++    SYMBOLS_LATIN_EXT,
++    SYMBOLS_CYRILLIC,
++    SYMBOLS_GREEK_MODERN,
+   ),
+ };
+ 

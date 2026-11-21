@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PS5 React app",
+  "type": "object",
+  "required": [
+    "titleId",
+    "contentId",
+    "name",
+    "version",
+    "timeoutSeconds"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "titleId": {
+      "type": "string",
+      "pattern": "^PPSA[0-9]{5}$",
+      "description": "Unique homebrew title ID; do not reuse an installed application ID."
+    },
+    "contentId": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}[0-9]{4}-PPSA[0-9]{5}_00-[A-Z0-9]{16}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]{2}\\.[0-9]{3}\\.[0-9]{3}$"
+    },
+    "timeoutSeconds": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3600,
+      "description": "Seconds after first frame until closure; 0 disables the timeout."
+    },
+    "render": {
+      "type": "object",
+      "required": [
+        "width",
+        "height"
+      ],
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3840
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3840
+        }
+      },
+      "additionalProperties": false
+    },
+    "surface": {
+      "type": "object",
+      "required": [
+        "width",
+        "height"
+      ],
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3840
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3840
+        }
+      },
+      "additionalProperties": false
+    },
+    "refreshRate": {
+      "enum": [
+        60,
+        120
+      ],
+      "default": 60,
+      "description": "Display refresh in Hz. 120 needs a display with 120 Hz input; others stay at 60."
+    },
+    "refreshRates": {
+      "type": "array",
+      "items": {
+        "enum": [
+          60,
+          120
+        ]
+      },
+      "uniqueItems": true,
+      "minItems": 1,
+      "description": "Rates Display.setRefreshRate may switch to while the app runs; must include refreshRate. Defaults to refreshRate alone."
+    },
+    "resolution": {
+      "const": "auto",
+      "description": "Instead of render and surface: build 1920x1080 and 3840x2160 layouts and pick the one matching the console's output at launch (1440p uses 3840x2160)."
+    },
+    "filesystemAccess": {
+      "type": "string",
+      "enum": [
+        "sandbox",
+        "console"
+      ],
+      "default": "sandbox",
+      "description": "console packages the pinned Lapy helper and requests filesystem access at startup; requires local elfldr on port 9021 or resident Lapy."
+    },
+    "networking": {
+      "type": "boolean",
+      "default": false,
+      "description": "Enable native HTTP and large-file downloads; PS5 requires filesystemAccess: console. Desktop networking is available independently."
+    },
+    "resources": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Relative files or directories copied read-only into the application folder. No symlinks, traversal or package-infrastructure paths."
+    },
+    "textFonts": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "chinese",
+          "chinese-traditional",
+          "japanese",
+          "devanagari",
+          "bengali",
+          "arabic"
+        ]
+      },
+      "description": "Scripts whose subset Noto font is packaged in fonts/ and shaped and rasterized at runtime when text needs it: chinese (GB 2312), chinese-traditional (Big5 level 1), japanese (JIS X 0208), devanagari (Hindi), bengali, arabic (Arabic and Urdu). See docs/TEXT.md."
+    },
+    "video": {
+      "type": "boolean",
+      "default": false,
+      "description": "Plays video with <Video> (FFmpeg demuxing and decoding). Adds about 16 MB to the PS5 build; streams over http(s) also need networking."
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "networking"
+        ],
+        "properties": {
+          "networking": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "filesystemAccess"
+        ],
+        "properties": {
+          "filesystemAccess": {
+            "const": "console"
+          }
+        }
+      }
+    },
+    {
+      "oneOf": [
+        {
+          "required": [
+            "render",
+            "surface"
+          ],
+          "not": {
+            "required": [
+              "resolution"
+            ]
+          }
+        },
+        {
+          "required": [
+            "resolution"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "render"
+                ]
+              },
+              {
+                "required": [
+                  "surface"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

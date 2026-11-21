@@ -1,0 +1,82 @@
+diff -ru unrar-orig/unrar/dll.hpp unrar/dll.hpp
+--- a/dll.hpp	2025-10-28 06:50:05
++++ b/dll.hpp	2026-10-10 10:26:43
+@@ -166,6 +166,10 @@
+   UCM_NEEDPASSWORDW,UCM_LARGEDICT
+ };
+ 
++// Asks the host for the exact next volume name (P1: wchar_t buffer, P2: its size in characters).
++// The host returns 1 with the name written, 0 to use the numbered name, -1 to stop.
++#define UCM_NEXTVOLUMEW 100
++
+ typedef int (PASCAL *CHANGEVOLPROC)(char *ArcName,int Mode);
+ typedef int (PASCAL *PROCESSDATAPROC)(unsigned char *Addr,int Size);
+ 
+diff -ru unrar-orig/unrar/threadmisc.cpp unrar/threadmisc.cpp
+--- a/threadmisc.cpp	2025-10-28 06:50:07
++++ b/threadmisc.cpp	2026-10-10 10:26:43
+@@ -47,8 +47,16 @@
+   pthread_attr_init(&attr);
+   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+ */
++  // An explicit stack, since the default differs between systems and is small on some consoles.
++  pthread_attr_t attr;
+   pthread_t pt;
+-  int Code=pthread_create(&pt,NULL/*&attr*/,Proc,Data);
++  int Code=pthread_attr_init(&attr);
++  if (Code==0)
++  {
++    pthread_attr_setstacksize(&attr,0x100000);
++    Code=pthread_create(&pt,&attr,Proc,Data);
++    pthread_attr_destroy(&attr);
++  }
+   if (Code!=0)
+   {
+     wchar Msg[100];
+diff -ru unrar-orig/unrar/unicode.cpp unrar/unicode.cpp
+--- a/unicode.cpp	2025-10-28 06:50:08
++++ b/unicode.cpp	2026-10-10 10:26:43
+@@ -27,7 +27,7 @@
+     RetCode=false;
+ 
+ // wcstombs is broken in Android NDK r9.
+-#elif defined(_APPLE)
++#elif defined(_APPLE) || defined(UNRAR_UTF8_NAMES)
+   WideToUtf(Src,Dest,DestSize);
+ 
+ #elif defined(MBFUNCTIONS)
+@@ -92,7 +92,7 @@
+     RetCode=false;
+ 
+ // mbstowcs is broken in Android NDK r9.
+-#elif defined(_APPLE)
++#elif defined(_APPLE) || defined(UNRAR_UTF8_NAMES)
+   UtfToWide(Src,Dest,DestSize);
+ 
+ #elif defined(MBFUNCTIONS)
+diff -ru unrar-orig/unrar/volume.cpp unrar/volume.cpp
+--- a/volume.cpp	2025-10-28 06:50:08
++++ b/volume.cpp	2026-10-10 10:26:43
+@@ -44,6 +44,22 @@
+   bool OldSchemeTested=false;
+ 
+   bool FailedOpen=false; // No more next volume open attempts if true.
++#ifdef RARDLL
++  if (Cmd->Callback!=NULL)
++  {
++    std::vector<wchar> NameBuf(MAXPATHSIZE);
++    int Code=Cmd->Callback(UCM_NEXTVOLUMEW,Cmd->UserData,(LPARAM)NameBuf.data(),(LPARAM)NameBuf.size());
++    if (Code==-1)
++      FailedOpen=true;
++    else
++      if (Code==1)
++      {
++        NameBuf.back()=0;
++        NextName=NameBuf.data();
++        OldSchemeTested=true; // Never substitute another name for the host's.
++      }
++  }
++#endif
+ #if !defined(SILENT)
+   // In -vp mode we force the pause before next volume even if it is present
+   // and even if we are on the hard disk. It is important when user does not

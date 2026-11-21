@@ -1,0 +1,1046 @@
+Embedded React: keep transform sources across frames.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, in the patch order listed there.
+Changed files: engine/CMakeLists.txt, engine/animation/animation.c,
+engine/core/er_limits.h, engine/rendering/image_scaler.c,
+engine/rendering/image_scaler.h, engine/rendering/transform.c,
+engine/rendering/transform.h, engine/scene/compositor.c,
+engine/scene/er_node_internal.h and engine/tests/rendering/CMakeLists.txt;
+adds engine/tests/rendering/test_transform_cache.c.
+Not proposed upstream: PS5 React maintains this change here.
+
+A scaled or rotated node is painted by rendering its subtree into a transform
+source and mapping that out. The capture ran on every frame of a scale
+animation although only the matrix changed, and once in every parallel slice
+the node straddled. On PS5, a focus scale on a 4K row card made each frame of
+the move re-render the card in up to four slices: 30-43 ms of render per frame,
+against 3 ms for the same move without the scale.
+
+ERUI_XFORM_CACHE_SLOTS (default 0, compiled out) keeps that many 2D sources,
+shared by every render worker. A source is keyed by the node, its size, the
+image registry's generation and a new per-node content_stamp, which every
+change to what the subtree paints advances along the ancestor chain. An
+animated change to a node's own translate, scale or rotation leaves that
+node's stamp alone. A hit walks the subtree for its paint bookkeeping only and
+emits the kept pixels through the current matrix. A source is stored once the
+same content has been captured twice, and only when it was captured whole.
+Lookups and claims take the serial lock, and a slot used in the current commit
+is never evicted while another worker may be reading it.
+
+test_transform_cache records a scale animation with changing content twice,
+with kept sources and with a fresh capture forced on every frame, and requires
+every frame to match. It also checks that a kept source is really reused and
+that re-registering an image invalidates it.
+
+diff --git a/engine/CMakeLists.txt b/engine/CMakeLists.txt
+index 938107f..d71c0a1 100644
+--- a/engine/CMakeLists.txt
++++ b/engine/CMakeLists.txt
+@@ -108,6 +108,7 @@ set(ERUI_SCRATCH_H "240" CACHE STRING "Transform-source scratch height in pixels
+ set(ERUI_SCRATCH_BAND_H "${ERUI_SCRATCH_H}" CACHE STRING "Opacity-composite strip height; smaller = less RAM, taller fades render in multiple band passes")
+ set(ERUI_XFORM_W "${ERUI_SCRATCH_W}" CACHE STRING "Transform-source width (max rotatable/scalable node width); decouple from ERUI_SCRATCH_W when strips are screen-wide")
+ set(ERUI_XFORM_H "${ERUI_SCRATCH_H}" CACHE STRING "Transform-source height (max rotatable/scalable node height)")
++set(ERUI_XFORM_CACHE_SLOTS "0" CACHE STRING "Transform sources kept across frames for scale/rotate animations, shared by all workers (each ERUI_XFORM_W x ERUI_XFORM_H pixels); 0 disables")
+ set(ERUI_FADE_CACHE_W "0" CACHE STRING "Fade-cache width: composited-subtree cache reused across frames of an opacity animation; 0 disables")
+ set(ERUI_FADE_CACHE_H "0" CACHE STRING "Fade-cache height; 0 disables")
+ set(ERUI_FONT_POOL_BYTES "0" CACHE STRING "Static pool for runtime-loaded fonts (bytes); 0 disables er_font_load")
+@@ -181,6 +182,7 @@ target_compile_definitions(embedded-react PUBLIC
+         ERUI_SCRATCH_BAND_H=${ERUI_SCRATCH_BAND_H}
+         ERUI_XFORM_W=${ERUI_XFORM_W}
+         ERUI_XFORM_H=${ERUI_XFORM_H}
++        ERUI_XFORM_CACHE_SLOTS=${ERUI_XFORM_CACHE_SLOTS}
+         ERUI_FADE_CACHE_W=${ERUI_FADE_CACHE_W}
+         ERUI_FADE_CACHE_H=${ERUI_FADE_CACHE_H}
+         ERUI_IMAGE_REGISTRY_MAX=${ERUI_IMAGE_REGISTRY_MAX}
+diff --git a/engine/animation/animation.c b/engine/animation/animation.c
+index 39542cc..0f31ee6 100644
+--- a/engine/animation/animation.c
++++ b/engine/animation/animation.c
+@@ -375,6 +375,14 @@ static void update_has_transform(ERNode* node)
+         er_request_subtree_bounds_pass();
+ }
+ 
++/** @brief Whether @p prop is part of the node's own transform, which a capture of its subtree excludes. */
++static bool is_transform_prop(ERAnimProp prop)
++{
++    return prop == ER_PROP_TRANSLATE_X || prop == ER_PROP_TRANSLATE_Y || prop == ER_PROP_SCALE_X
++           || prop == ER_PROP_SCALE_Y || prop == ER_PROP_ROTATE_Z || prop == ER_PROP_ROTATE_X
++           || prop == ER_PROP_ROTATE_Y;
++}
++
+ /**
+  * @brief Applies a numeric value to a node property.
+  *
+@@ -905,6 +913,8 @@ static void push_to_value_bindings(ERAnimValue* val)
+                 n->sweep_moved = false; /* anything else changed too: the whole box repaints */
+             if (bind->prop == ER_PROP_OPACITY)
+                 er_mark_dirty_upward_visual(n);
++            else if (is_transform_prop(bind->prop))
++                er_mark_dirty_upward_transform(n);
+             else
+                 er_mark_dirty_upward(n);
+         }
+@@ -1921,6 +1931,8 @@ void er_anim_tick(uint32_t delta_ms)
+         /* Opacity-only animation frames keep the fade cache valid (see push_to_value_bindings). */
+         if (anim->prop == ER_PROP_OPACITY)
+             er_mark_dirty_upward_visual(node);
++        else if (is_transform_prop(anim->prop))
++            er_mark_dirty_upward_transform(node);
+         else
+             er_mark_dirty_upward(node);
+ 
+diff --git a/engine/core/er_limits.h b/engine/core/er_limits.h
+index f9d14ed..1e932b7 100644
+--- a/engine/core/er_limits.h
++++ b/engine/core/er_limits.h
+@@ -72,6 +72,13 @@
+ #define ERUI_XFORM_H ERUI_SCRATCH_H
+ #endif
+ 
++/* Transform sources kept across frames, shared by all render workers, each ERUI_XFORM_W x ERUI_XFORM_H
++ * pixels. A scale or rotate animation re-captures an unchanged subtree every frame, and in every parallel
++ * slice it straddles; a kept source turns each of those captures into a lookup. 0 compiles the cache out. */
++#ifndef ERUI_XFORM_CACHE_SLOTS
++#define ERUI_XFORM_CACHE_SLOTS 0
++#endif
++
+ /**
+  * @brief Static row-buffer width for the per-row rasterizers.
+  *
+diff --git a/engine/rendering/image_scaler.c b/engine/rendering/image_scaler.c
+index 51257fd..41ceb35 100644
+--- a/engine/rendering/image_scaler.c
++++ b/engine/rendering/image_scaler.c
+@@ -440,23 +440,34 @@ static void render_region(const ImageEntry* img,
+  - Functions: Public
+  ---------------------------------------------------------------------------------------------------------------------*/
+ 
++static uint32_t s_image_generation = 1U;
++
++uint32_t er_image_generation(void)
++{
++    return s_image_generation;
++}
++
+ void er_image_load(const char* name, const void* argb_buf, int w, int h)
+ {
++    s_image_generation++;
+     image_registry_store(name, argb_buf, w, h, ER_IMG_ARGB8888);
+ }
+ 
+ void er_image_load_rgb565(const char* name, const void* rgb565_buf, int w, int h)
+ {
++    s_image_generation++;
+     image_registry_store(name, rgb565_buf, w, h, ER_IMG_RGB565);
+ }
+ 
+ bool er_image_load_argb(const char* name, const void* argb_buf, int w, int h, bool opaque)
+ {
++    s_image_generation++;
+     return image_registry_store_argb(name, argb_buf, w, h, opaque);
+ }
+ 
+ void er_image_unload(const char* name)
+ {
++    s_image_generation++;
+     image_registry_remove(name);
+ }
+ 
+diff --git a/engine/rendering/image_scaler.h b/engine/rendering/image_scaler.h
+index 31546c2..be49193 100644
+--- a/engine/rendering/image_scaler.h
++++ b/engine/rendering/image_scaler.h
+@@ -37,4 +37,10 @@
+  */
+ void er_image_render(const ERImageProps* props, int x, int y, int w, int h);
+ 
++/**
++ * @brief Advanced whenever an image is loaded or unloaded, so a cache of drawn pixels can tell that
++ *        an image it captured may since have changed under the same name.
++ */
++uint32_t er_image_generation(void);
++
+ #endif
+diff --git a/engine/rendering/transform.c b/engine/rendering/transform.c
+index c1bea32..8d4c7b2 100644
+--- a/engine/rendering/transform.c
++++ b/engine/rendering/transform.c
+@@ -41,6 +41,10 @@ static uint32_t s_xform_src_pool[ERUI_RENDER_WORKERS][ERUI_XFORM_H * ERUI_XFORM_
+  * (≤ ERUI_XFORM_W pixels), so the destination AABB is not size-limited — only the
+  * SOURCE subtree must fit the scratch. */
+ static uint32_t s_xform_row_pool[ERUI_RENDER_WORKERS][ERUI_XFORM_W];
++#if ERUI_XFORM_CACHE_SLOTS > 0
++/* Kept transform sources (see er_transform_cache_store); the compositor owns which subtree each holds. */
++static uint32_t s_xform_cache_px[ERUI_XFORM_CACHE_SLOTS][ERUI_XFORM_H * ERUI_XFORM_W];
++#endif
+ 
+ /**
+  * @brief Per-worker transform-capture state (see er_render_worker_id).
+@@ -168,10 +172,12 @@ static bool xform_emit_bounds(int dst_x, int dst_y, int dst_w, int dst_h, int* e
+ /**
+  * @brief Inverse-maps the source scratch through a 2D affine transform and blends it out.
+  *
+- * Shared by the end-of-capture blit and the banded replay blit. Streams one row segment at a
+- * time through xrowbuf(); the emit region is bounded to the active scissor.
++ * Shared by the end-of-capture blit, the banded replay blit and the kept-source blit, which pass the
++ * source buffer (row stride ERUI_XFORM_W). Streams one row segment at a time through xrowbuf(); the emit
++ * region is bounded to the active scissor.
+  */
+-static void xform_emit_2d(int src_x,
++static void xform_emit_2d(const uint32_t* const src,
++                          int src_x,
+                           int src_y,
+                           int src_w,
+                           int src_h,
+@@ -190,8 +196,7 @@ static void xform_emit_2d(int src_x,
+     if (!xform_emit_bounds(dst_x, dst_y, dst_w, dst_h, &ex0, &ey0, &ex1, &ey1))
+         return;
+ 
+-    /* The worker's buffers, looked up once: every lookup is a call into the host. */
+-    const uint32_t* const src = xsrc();
++    /* The worker's buffer, looked up once: every lookup is a call into the host. */
+     uint32_t* const rowbuf = xrowbuf();
+ 
+     /* Scale-only fast path: with no rotation/shear (ib == ic == 0) the inverse map is separable —
+@@ -892,7 +897,7 @@ void er_transform_source_replay_blit(int src_x,
+ #if ERUI_TRANSFORMS_FULL
+     if (xc()->active || dst_w <= 0 || dst_h <= 0)
+         return;
+-    xform_emit_2d(src_x, src_y, src_w, src_h, ia, ib, ic, id, itx, ity, dst_x, dst_y, dst_w, dst_h);
++    xform_emit_2d(xsrc(), src_x, src_y, src_w, src_h, ia, ib, ic, id, itx, ity, dst_x, dst_y, dst_w, dst_h);
+ #else
+     (void)src_x;
+     (void)src_y;
+@@ -939,8 +944,65 @@ void er_transform_source_end_blit(int src_x,
+     if (dst_w <= 0 || dst_h <= 0)
+         return;
+ 
+-    xform_emit_2d(src_x, src_y, src_w, src_h, ia, ib, ic, id, itx, ity, dst_x, dst_y, dst_w, dst_h);
++    xform_emit_2d(xsrc(), src_x, src_y, src_w, src_h, ia, ib, ic, id, itx, ity, dst_x, dst_y, dst_w, dst_h);
++#else
++    (void)src_x;
++    (void)src_y;
++    (void)src_w;
++    (void)src_h;
++    (void)ia;
++    (void)ib;
++    (void)ic;
++    (void)id;
++    (void)itx;
++    (void)ity;
++    (void)dst_x;
++    (void)dst_y;
++    (void)dst_w;
++    (void)dst_h;
++#endif
++}
++
++void er_transform_cache_store(int slot, int w, int h)
++{
++#if ERUI_TRANSFORMS_FULL && ERUI_XFORM_CACHE_SLOTS > 0
++    if (xc()->active || slot < 0 || slot >= ERUI_XFORM_CACHE_SLOTS || !er_transform_source_fits(w, h))
++        return;
++    const uint32_t* const src = xsrc();
++    for (int row = 0; row < h; row++)
++        memcpy(s_xform_cache_px[slot] + (size_t)row * ERUI_XFORM_W,
++               src + (size_t)row * ERUI_XFORM_W,
++               (size_t)w * sizeof(uint32_t));
++#else
++    (void)slot;
++    (void)w;
++    (void)h;
++#endif
++}
++
++void er_transform_cache_blit(int slot,
++                             int src_x,
++                             int src_y,
++                             int src_w,
++                             int src_h,
++                             float ia,
++                             float ib,
++                             float ic,
++                             float id,
++                             float itx,
++                             float ity,
++                             int dst_x,
++                             int dst_y,
++                             int dst_w,
++                             int dst_h)
++{
++#if ERUI_TRANSFORMS_FULL && ERUI_XFORM_CACHE_SLOTS > 0
++    if (slot < 0 || slot >= ERUI_XFORM_CACHE_SLOTS || dst_w <= 0 || dst_h <= 0)
++        return;
++    xform_emit_2d(
++        s_xform_cache_px[slot], src_x, src_y, src_w, src_h, ia, ib, ic, id, itx, ity, dst_x, dst_y, dst_w, dst_h);
+ #else
++    (void)slot;
+     (void)src_x;
+     (void)src_y;
+     (void)src_w;
+diff --git a/engine/rendering/transform.h b/engine/rendering/transform.h
+index c5a011c..cde2250 100644
+--- a/engine/rendering/transform.h
++++ b/engine/rendering/transform.h
+@@ -402,6 +402,40 @@ void er_transform_source_end_blit(int src_x,
+                                   int dst_w,
+                                   int dst_h);
+ 
++/**
++ * @brief Copies the calling worker's last 2D transform source into a kept slot.
++ *
++ * Call after er_transform_source_end_blit(), which leaves the source buffer intact. The slot is shared by
++ * every render worker: the compositor decides which subtree a slot holds and serializes the claims.
++ *
++ * @param[in] slot  Slot index, below ERUI_XFORM_CACHE_SLOTS.
++ * @param[in] w     Captured width, as passed to er_transform_source_begin().
++ * @param[in] h     Captured height.
++ */
++void er_transform_cache_store(int slot, int w, int h);
++
++/**
++ * @brief Emits a kept transform source through a 2D affine transform, like er_transform_source_end_blit().
++ *
++ * Blends at the current draw alpha and is bounded to the active scissor. Reads the slot only, so any
++ * number of workers may emit the same slot at once.
++ */
++void er_transform_cache_blit(int slot,
++                             int src_x,
++                             int src_y,
++                             int src_w,
++                             int src_h,
++                             float ia,
++                             float ib,
++                             float ic,
++                             float id,
++                             float itx,
++                             float ity,
++                             int dst_x,
++                             int dst_y,
++                             int dst_w,
++                             int dst_h);
++
+ /*----------------------------------------------------------------------------------------------------------------------
+  - The capture-eligibility rule, in one place
+  *
+diff --git a/engine/scene/compositor.c b/engine/scene/compositor.c
+index 53b2b1b..a8c10e3 100644
+--- a/engine/scene/compositor.c
++++ b/engine/scene/compositor.c
+@@ -553,6 +553,17 @@ void er_display_present(void)
+  * cached subtree — which keeps the check O(1) and always correct. */
+ static uint32_t s_content_gen = 1U;
+ 
++/* Source of content_stamp values; starts above the 0 a fresh node holds. */
++static uint32_t s_content_stamp = 1U;
++
++/** @brief Gives @p node and every ancestor a new content_stamp. */
++static void stamp_content_upward(ERNode* node)
++{
++    const uint32_t stamp = ++s_content_stamp;
++    for (; node; node = er_get_node(node->parent_tag))
++        node->content_stamp = stamp;
++}
++
+ void er_mark_dirty_upward_visual(ERNode* node)
+ {
+     /* A node inside a display:none subtree cannot paint, so changing it changes no pixels. Marking
+@@ -563,6 +574,7 @@ void er_mark_dirty_upward_visual(ERNode* node)
+      * shown, which is when the change becomes visible. */
+     if (node && node->subtree_hidden)
+         return;
++    stamp_content_upward(node);
+ 
+     /* Mark only the initiating node as source_dirty so the dirty-rect
+      * accumulator can track which pixels actually changed, not which
+@@ -583,6 +595,15 @@ void er_mark_dirty_upward(ERNode* node)
+     er_mark_dirty_upward_visual(node);
+ }
+ 
++void er_mark_dirty_upward_transform(ERNode* node)
++{
++    if (!node)
++        return;
++    const uint32_t own = node->content_stamp;
++    er_mark_dirty_upward(node);
++    node->content_stamp = own;
++}
++
+ /**
+  * @brief Marks the chain for repaint WITHOUT claiming any damage for the node itself.
+  *
+@@ -598,6 +619,7 @@ static void mark_reflow_upward(ERNode* node)
+     s_content_gen++; /* a reflow does change rendered content, so the fade cache must drop */
+     if (node && node->subtree_hidden)
+         return; /* same reasoning as er_mark_dirty_upward_visual: a hidden node can never clear it */
++    stamp_content_upward(node);
+     while (node)
+     {
+         node->dirty = true;
+@@ -1031,6 +1053,7 @@ static void propagate_hidden(ERNode* n, bool ancestor_hidden)
+         {
+             n->dirty = true;
+             n->source_dirty = true;
++            stamp_content_upward(n);
+         }
+     }
+ 
+@@ -1770,6 +1793,137 @@ static void fade_cache_invalidate(void)
+ #endif
+ }
+ 
++/* Kept transform sources (pixels in transform.c). A 2D capture is reused while its node keeps the same
++ * content_stamp, the image registry the same generation, and the node the same size. The node's own
++ * transform is not in the key, which is the point: every frame of a scale animation would otherwise
++ * re-render the same subtree, once in each parallel slice it straddles.
++ *
++ * The slots are shared by all render workers. Claims and lookups take the serial lock, and a slot looked
++ * up or claimed this commit is never evicted, since another worker may still be reading it. */
++#define ER_XF_CACHE_ENABLED (ERUI_TRANSFORMS_FULL && ERUI_XFORM_CACHE_SLOTS > 0)
++#if ER_XF_CACHE_ENABLED
++typedef struct
++{
++    uint16_t tag;
++    uint32_t serial;
++    uint32_t stamp;
++    uint32_t image_gen;
++    int w;
++    int h;
++    uint32_t used; /* s_commit_seq of the last lookup or claim */
++    bool ready;    /* false while empty, and while a claim is still copying its pixels */
++} XfCacheSlot;
++
++static XfCacheSlot s_xf_cache[ERUI_XFORM_CACHE_SLOTS];
++
++/** @brief Whether the slots can be shared right now: always outside a fork-join, inside one only with the lock. */
++static bool xf_cache_usable(void)
++{
++    return !s_parallel_render || er_render_serial_supported();
++}
++
++static bool xf_cache_key_matches(const XfCacheSlot* slot, const ERNode* n, int w, int h, uint32_t image_gen)
++{
++    return slot->tag == n->tag && slot->serial == n->serial && slot->stamp == n->content_stamp
++           && slot->image_gen == image_gen && slot->w == w && slot->h == h;
++}
++
++/**
++ * @brief The slot holding @p n's current w×h source, or -1.
++ *
++ * @return Slot index, marked used by this commit.
++ */
++static int xf_cache_find(const ERNode* n, int w, int h)
++{
++    if (!xf_cache_usable())
++        return -1;
++    const uint32_t image_gen = er_image_generation();
++    int found = -1;
++    er_render_serial_begin();
++    for (int i = 0; i < ERUI_XFORM_CACHE_SLOTS; i++)
++    {
++        XfCacheSlot* slot = &s_xf_cache[i];
++        if (slot->ready && xf_cache_key_matches(slot, n, w, h, image_gen))
++        {
++            slot->used = s_commit_seq;
++            found = i;
++            break;
++        }
++    }
++    er_render_serial_end();
++    return found;
++}
++
++/**
++ * @brief Keeps the source the calling worker just captured for @p n, once its content repeats.
++ *
++ * Only the second capture of the same content is kept: a subtree whose content changes every frame would
++ * otherwise copy itself out on every frame and evict sources that do repeat. A source is kept only when
++ * it was captured whole: inside the root, where the occlusion cull reads no screen edge, and outside a
++ * banded pass, whose strip pruning can leave rows out of it.
++ */
++static void xf_cache_store(ERNode* n, int px, int py, int w, int h)
++{
++    if (!xf_cache_usable() || er_band_active(NULL, NULL))
++        return;
++    const ERNode* root = er_get_root_node();
++    if (!root || px < root->computed.x || py < root->computed.y || px + w > root->computed.x + root->computed.w
++        || py + h > root->computed.y + root->computed.h)
++        return;
++    const uint32_t image_gen = er_image_generation();
++    int victim = -1;
++    int victim_rank = 0;
++    er_render_serial_begin();
++    const bool repeated = n->xf_capture_stamp == n->content_stamp;
++    n->xf_capture_stamp = n->content_stamp;
++    for (int i = 0; repeated && i < ERUI_XFORM_CACHE_SLOTS; i++)
++    {
++        const XfCacheSlot* slot = &s_xf_cache[i];
++        if (xf_cache_key_matches(slot, n, w, h, image_gen))
++        {
++            victim = -1; /* kept already, or being kept by another slice */
++            break;
++        }
++        if (slot->used == s_commit_seq)
++            continue;
++        int rank = 1; /* least recently used */
++        if (!slot->ready)
++            rank = 3;
++        else
++        {
++            const ERNode* owner = er_get_node(slot->tag);
++            if (!owner || owner->serial != slot->serial || owner->content_stamp != slot->stamp
++                || slot->image_gen != image_gen)
++                rank = 2;
++        }
++        if (rank > victim_rank || (rank == victim_rank && slot->used < s_xf_cache[victim].used))
++        {
++            victim = i;
++            victim_rank = rank;
++        }
++    }
++    if (victim >= 0)
++    {
++        XfCacheSlot* slot = &s_xf_cache[victim];
++        slot->tag = n->tag;
++        slot->serial = n->serial;
++        slot->stamp = n->content_stamp;
++        slot->image_gen = image_gen;
++        slot->w = w;
++        slot->h = h;
++        slot->used = s_commit_seq;
++        slot->ready = false;
++    }
++    er_render_serial_end();
++    if (victim < 0)
++        return;
++    er_transform_cache_store(victim, w, h);
++    er_render_serial_begin();
++    s_xf_cache[victim].ready = true;
++    er_render_serial_end();
++}
++#endif
++
+ #if ER_PROF
+ /* TEMP on-device profiling: phase accumulators printed every ER_PROF_INTERVAL commits (host provides
+  * the clock). The interval is named because the line it prints states it — a literal in both the
+@@ -2362,6 +2516,9 @@ static void render_tree(ERNode* n, bool parent_dirty, bool occluded, int transla
+     /* --- 2D/3D transform application --- */
+     bool doing_affine = false;
+     bool doing_replay = false;
++#if ER_XF_CACHE_ENABLED
++    int xf_slot = -1; /* a kept source stands in for the capture (see xf_cache_find) */
++#endif
+     int dst_x = 0, dst_y = 0, dst_w = 0, dst_h = 0;
+     float xf_ia = 1.0f, xf_ib = 0.0f, xf_ic = 0.0f, xf_id = 1.0f, xf_itx = 0.0f, xf_ity = 0.0f;
+ #if ERUI_3D_TRANSFORMS && ERUI_TRANSFORMS_FULL
+@@ -2428,6 +2585,15 @@ static void render_tree(ERNode* n, bool parent_dirty, bool occluded, int transla
+                 {
+                     doing_replay = true;
+                 }
++#if ER_XF_CACHE_ENABLED
++                /* Inside an outer capture this node would paint untransformed (only one capture runs at a
++                 * time), so a kept source, which emits transformed, is no substitute there. */
++                else if (needs_paint && !cc()->xf_capturing && er_transform_source_fits(w, h)
++                         && (xf_slot = xf_cache_find(n, w, h)) >= 0)
++                {
++                    doing_affine = true;
++                }
++#endif
+                 else if (er_transform_source_begin(px, py, w, h))
+                 {
+                     doing_affine = true;
+@@ -2639,7 +2805,18 @@ static void render_tree(ERNode* n, bool parent_dirty, bool occluded, int transla
+         node_opacity = n->props.text_input.opacity;
+ 
+     bool composited = false;
+-    if (node_opacity < 255U && should_render)
++#if ER_XF_CACHE_ENABLED
++    if (xf_slot >= 0)
++    {
++        /* The kept source already holds these pixels: walk the subtree for its bookkeeping only, as the
++         * capture would have with no clip (an occluded walk records the same paint rects). */
++        er_push_clip_reset();
++        render_node_content(n, needs_paint, true, px, py, w, h, translate_x, translate_y);
++        er_pop_clip_rect();
++        composited = true;
++    }
++#endif
++    if (node_opacity < 255U && should_render && !composited)
+     {
+         composited = composite_from_cache(n, node_opacity, px, py, w, h, translate_x, translate_y);
+         if (!composited)
+@@ -2667,8 +2844,21 @@ static void render_tree(ERNode* n, bool parent_dirty, bool occluded, int transla
+             er_transform_source_end_blit_3d(px, py, w, h, xf_inv_H, dst_x, dst_y, dst_w, dst_h);
+         else
+ #endif
++#if ER_XF_CACHE_ENABLED
++            if (xf_slot >= 0)
++            er_transform_cache_blit(
++                xf_slot, px, py, w, h, xf_ia, xf_ib, xf_ic, xf_id, xf_itx, xf_ity, dst_x, dst_y, dst_w, dst_h);
++        else
++        {
+             er_transform_source_end_blit(
+                 px, py, w, h, xf_ia, xf_ib, xf_ic, xf_id, xf_itx, xf_ity, dst_x, dst_y, dst_w, dst_h);
++            if (needs_paint)
++                xf_cache_store(n, px, py, w, h);
++        }
++#else
++            er_transform_source_end_blit(
++                px, py, w, h, xf_ia, xf_ib, xf_ic, xf_id, xf_itx, xf_ity, dst_x, dst_y, dst_w, dst_h);
++#endif
+         cc()->tile_active = xf_saved_tile_active;
+         cc()->xf_capturing = xf_outer_capturing;
+         cc()->xf_capture_dst = xf_outer_dst;
+diff --git a/engine/scene/er_node_internal.h b/engine/scene/er_node_internal.h
+index 6b18d22..4b9ba0e 100644
+--- a/engine/scene/er_node_internal.h
++++ b/engine/scene/er_node_internal.h
+@@ -399,6 +399,11 @@ struct ERNode
+     uint16_t first_child_tag;
+     uint16_t next_sibling_tag;
+     uint32_t serial; /**< Creation count when made: tells this node from a later one in its slot (see ERNodeRef). */
++    uint32_t content_stamp; /**< Advanced when anything this node paints changes, its own transform excepted:
++                               set on the whole chain above a change, so a transform capture of this subtree
++                               stays valid for as long as it holds the same value (see xf_cache_find). */
++    uint32_t xf_capture_stamp; /**< content_stamp at this node's last transform capture: a kept source is
++                                    stored only once the same content is captured again. */
+     ERNodeType type;
+     bool in_use;
+     bool dirty;
+@@ -620,6 +625,14 @@ void er_mark_dirty_upward(ERNode* node);
+  */
+ void er_mark_dirty_upward_visual(ERNode* node);
+ 
++/**
++ * @brief er_mark_dirty_upward() for a change to the node's own transform (translate, scale, rotate).
++ *
++ * The node's untransformed content is unchanged, so its content_stamp is not advanced and a cached
++ * capture of its subtree stays valid; every ancestor's is, since the pixels they contain moved.
++ */
++void er_mark_dirty_upward_transform(ERNode* node);
++
+ /**
+  * @brief Requests a layout pass on the next er_commit() (the compositor's private layout-dirty flag).
+  *
+diff --git a/engine/tests/rendering/CMakeLists.txt b/engine/tests/rendering/CMakeLists.txt
+index d22a936..ae3e22b 100644
+--- a/engine/tests/rendering/CMakeLists.txt
++++ b/engine/tests/rendering/CMakeLists.txt
+@@ -211,3 +211,9 @@ add_executable(test_border_sweep test_border_sweep.c)
+ target_link_libraries(test_border_sweep PRIVATE embedded-react)
+ target_include_directories(test_border_sweep PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../core)
+ add_test(NAME rendering_border_sweep COMMAND test_border_sweep)
++
++add_executable(test_transform_cache test_transform_cache.c)
++target_link_libraries(test_transform_cache PRIVATE embedded-react Threads::Threads)
++# test_transform_cache needs engine/core for renderer_internal.h (er_render_worker_exec and the worker build cap).
++target_include_directories(test_transform_cache PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../core)
++add_test(NAME rendering_transform_cache COMMAND test_transform_cache)
+diff --git a/engine/tests/rendering/test_transform_cache.c b/engine/tests/rendering/test_transform_cache.c
+new file mode 100644
+index 0000000..de14abd
+--- /dev/null
++++ b/engine/tests/rendering/test_transform_cache.c
+@@ -0,0 +1,401 @@
++/*
++ * Copyright 2026 Cory Lamming
++ * Copyright 2026 PS5 React contributors
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++/*
++ * Kept transform sources (ERUI_XFORM_CACHE_SLOTS) must paint exactly what a fresh capture paints.
++ *
++ * A card scales on the native driver while its content changes underneath: a prop change on a child,
++ * then a translate animation on that child. The run is recorded twice, once letting the cache work and
++ * once re-registering an image before every frame, which advances the image generation and so forces a
++ * fresh capture each time. Every frame of the two runs must match.
++ *
++ * A probe then shows the kept source is really used: an image's pixels changed behind the registry's
++ * back stay unseen while the card keeps scaling, and appear once er_image_load() announces them.
++ *
++ * Multi-worker builds run it all across pthread workers with the serial lock installed, so the slices
++ * the card straddles share the slots.
++ */
++
++#include "er_scene.h"
++#include "native_renderer.h"
++#include "renderer_internal.h"
++#include <pthread.h>
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++#define FB_W 320
++#define FB_H 240
++#define FRAME_MS 16
++#define FRAMES 34
++#define SCALE_MS 480
++#define NW ERUI_RENDER_WORKERS
++
++#define PROBE_A 0xFF20C040U
++#define PROBE_B 0xFFC02040U
++
++typedef struct
++{
++    uint32_t* fb;
++} TestCtx;
++
++static uint32_t s_probe[16 * 16];
++
++static uint32_t div255(uint32_t v)
++{
++    return (v + 127U) / 255U;
++}
++
++static uint32_t over(uint32_t d, uint32_t sr, uint32_t sg, uint32_t sb, uint32_t sa)
++{
++    const uint32_t inv = 255U - sa;
++    return 0xFF000000U | ((sr + div255(((d >> 16) & 0xFFU) * inv)) << 16)
++           | ((sg + div255(((d >> 8) & 0xFFU) * inv)) << 8) | (sb + div255((d & 0xFFU) * inv));
++}
++
++static void fill_cb(uint32_t argb, int x, int y, int w, int h, void* ctx)
++{
++    TestCtx* t = ctx;
++    const uint32_t a = (argb >> 24) & 0xFFU;
++    for (int row = y; a && row < y + h; row++)
++        for (int col = x; col < x + w; col++)
++            if (row >= 0 && row < FB_H && col >= 0 && col < FB_W)
++            {
++                uint32_t* d = &t->fb[row * FB_W + col];
++                *d = over(*d,
++                          div255(((argb >> 16) & 0xFFU) * a),
++                          div255(((argb >> 8) & 0xFFU) * a),
++                          div255((argb & 0xFFU) * a),
++                          a);
++            }
++}
++
++static void blend_cb(const void* src, int stride, uint8_t alpha, int x, int y, int w, int h, void* ctx)
++{
++    TestCtx* t = ctx;
++    for (int row = 0; row < h; row++)
++    {
++        const uint32_t* s = (const uint32_t*)((const uint8_t*)src + (size_t)row * (size_t)stride);
++        for (int col = 0; col < w; col++)
++        {
++            const int dx = x + col, dy = y + row;
++            const uint32_t sp = s[col];
++            const uint32_t sa = div255(((sp >> 24) & 0xFFU) * alpha);
++            if (dx < 0 || dx >= FB_W || dy < 0 || dy >= FB_H || sa == 0U)
++                continue;
++            uint32_t* d = &t->fb[dy * FB_W + dx];
++            *d = over(*d,
++                      div255(((sp >> 16) & 0xFFU) * alpha),
++                      div255(((sp >> 8) & 0xFFU) * alpha),
++                      div255((sp & 0xFFU) * alpha),
++                      sa);
++        }
++    }
++}
++
++static void copy_cb(const void* src, int stride, int x, int y, int w, int h, void* ctx)
++{
++    blend_cb(src, stride, 255U, x, y, w, h, ctx);
++}
++
++static int fail(const char* msg)
++{
++    fprintf(stderr, "FAIL: %s\n", msg);
++    return EXIT_FAILURE;
++}
++
++static ERProps props_default(void)
++{
++    ERProps p = {0};
++    p.left = p.top = p.right = p.bottom = ER_LAYOUT_AUTO;
++    p.width = p.height = ER_LAYOUT_AUTO;
++    p.min_width = p.max_width = ER_LAYOUT_AUTO;
++    p.min_height = p.max_height = ER_LAYOUT_AUTO;
++    p.padding = p.padding_left = p.padding_top = ER_LAYOUT_AUTO;
++    p.padding_right = p.padding_bottom = ER_LAYOUT_AUTO;
++    p.margin = p.margin_left = p.margin_top = ER_LAYOUT_AUTO;
++    p.margin_right = p.margin_bottom = ER_LAYOUT_AUTO;
++    p.gap = p.row_gap = p.column_gap = ER_LAYOUT_AUTO;
++    p.flex_basis = ER_LAYOUT_AUTO;
++    p.opacity = 255U;
++    return p;
++}
++
++static ERProps box(int left, int top, int w, int h, uint32_t bg)
++{
++    ERProps p = props_default();
++    p.position = ER_POS_ABSOLUTE;
++    p.left = (int16_t)left;
++    p.top = (int16_t)top;
++    p.width = (int16_t)w;
++    p.height = (int16_t)h;
++    p.background_color = bg;
++    return p;
++}
++
++static void fill_probe(uint32_t argb)
++{
++    for (int i = 0; i < 16 * 16; i++)
++        s_probe[i] = argb;
++}
++
++typedef struct
++{
++    ERNode* card;
++    ERNode* inner;
++    ERAnimValueHandle scale;
++} Scene;
++
++/**
++ * @brief A 120x100 card scaled about its centre, holding a child box and a 40x40 image whose centre is the
++ *        card's, so the pixel at (120, 100) shows the image at every scale.
++ */
++static Scene build_scene(TestCtx* t)
++{
++    er_reset();
++    memset(t->fb, 0, sizeof(uint32_t) * FB_W * FB_H);
++    fill_probe(PROBE_A);
++    er_image_load("probe", s_probe, 16, 16);
++
++    ERNode* root = er_node_create(ER_NODE_VIEW);
++    ERProps rp = box(0, 0, FB_W, FB_H, 0xFF101010U);
++    rp.position = ER_POS_RELATIVE;
++    er_node_set_props(root, &rp);
++
++    Scene s;
++    s.card = er_node_create(ER_NODE_VIEW);
++    ERProps cp = box(60, 50, 120, 100, 0xFF2050A0U);
++    cp.border_radius = 12;
++    cp.transform_origin_x = 0.5f;
++    cp.transform_origin_y = 0.5f;
++    er_node_set_props(s.card, &cp);
++
++    s.inner = er_node_create(ER_NODE_VIEW);
++    ERProps ip = box(8, 8, 30, 20, 0xFFE0C020U);
++    er_node_set_props(s.inner, &ip);
++
++    ERNode* img = er_node_create(ER_NODE_IMAGE);
++    ERProps gp = box(40, 30, 40, 40, 0);
++    strncpy(gp.image_name, "probe", ER_IMAGE_NAME_MAX);
++    gp.resize_mode = ER_RESIZE_STRETCH;
++    er_node_set_props(img, &gp);
++
++    er_tree_append_child(s.card, s.inner);
++    er_tree_append_child(s.card, img);
++    er_tree_append_child(root, s.card);
++    er_tree_set_root(root);
++    er_force_full_repaint();
++    er_commit();
++
++    ERAnimConfig cfg = {0};
++    cfg.type = ER_ANIM_TIMING;
++    cfg.duration_ms = SCALE_MS;
++    cfg.easing = ER_EASE_LINEAR;
++    s.scale = er_anim_value_create(1.0f);
++    er_anim_value_bind(s.scale, s.card, ER_PROP_SCALE_X);
++    er_anim_value_bind(s.scale, s.card, ER_PROP_SCALE_Y);
++    er_anim_value_animate(s.scale, 1.25f, &cfg);
++    return s;
++}
++
++/**
++ * @brief Records the scale run into @p frames; @p fresh re-registers the image before every frame.
++ */
++static void record(TestCtx* t, bool fresh, uint32_t (*frames)[FB_W * FB_H])
++{
++    Scene s = build_scene(t);
++    ERAnimValueHandle slide = er_anim_value_create(0.0f);
++    for (int f = 0; f < FRAMES; f++)
++    {
++        if (f == 10)
++        {
++            ERProps ip = box(8, 8, 30, 20, 0xFF30D0D0U);
++            er_node_set_props(s.inner, &ip);
++        }
++        if (f == 16)
++        {
++            ERAnimConfig cfg = {0};
++            cfg.type = ER_ANIM_TIMING;
++            cfg.duration_ms = 160;
++            cfg.easing = ER_EASE_LINEAR;
++            er_anim_value_bind(slide, s.inner, ER_PROP_TRANSLATE_X);
++            er_anim_value_animate(slide, 24.0f, &cfg);
++        }
++        if (fresh)
++            er_image_load("probe", s_probe, 16, 16);
++        embedded_renderer_tick(FRAME_MS);
++        er_commit();
++        memcpy(frames[f], t->fb, sizeof(frames[f]));
++    }
++}
++
++static int run_equivalence(TestCtx* t)
++{
++    static uint32_t kept[FRAMES][FB_W * FB_H];
++    static uint32_t fresh[FRAMES][FB_W * FB_H];
++    record(t, false, kept);
++    record(t, true, fresh);
++    if (memcmp(kept[2], kept[FRAMES - 1], sizeof(kept[0])) == 0)
++        return fail("the scale animation did not change the frame");
++    for (int f = 0; f < FRAMES; f++)
++    {
++        if (memcmp(kept[f], fresh[f], sizeof(kept[f])) != 0)
++        {
++            char msg[128];
++            snprintf(msg, sizeof(msg), "frame %d differs between kept and fresh transform sources", f);
++            return fail(msg);
++        }
++    }
++    return EXIT_SUCCESS;
++}
++
++static int run_probe(TestCtx* t)
++{
++    build_scene(t);
++    for (int f = 0; f < 4; f++)
++    {
++        embedded_renderer_tick(FRAME_MS);
++        er_commit();
++    }
++    const uint32_t* centre = &t->fb[100 * FB_W + 120];
++    if (*centre != PROBE_A)
++        return fail("the probe image is not at the card's centre");
++
++    fill_probe(PROBE_B); /* behind the registry's back: the kept source still holds A */
++    embedded_renderer_tick(FRAME_MS);
++    er_commit();
++#if ERUI_XFORM_CACHE_SLOTS > 0
++    if (*centre != PROBE_A)
++        return fail("a scale-only frame re-captured the card instead of reusing its kept source");
++#endif
++    er_image_load("probe", s_probe, 16, 16);
++    embedded_renderer_tick(FRAME_MS);
++    er_commit();
++    if (*centre != PROBE_B)
++        return fail("a re-registered image did not invalidate the kept source");
++    return EXIT_SUCCESS;
++}
++
++#if NW > 1
++typedef struct
++{
++    pthread_t thread;
++    pthread_mutex_t mtx;
++    pthread_cond_t cond;
++    int go;
++} Worker;
++
++static Worker s_workers[NW];
++static pthread_mutex_t s_done_mtx = PTHREAD_MUTEX_INITIALIZER;
++static pthread_cond_t s_done_cond = PTHREAD_COND_INITIALIZER;
++static pthread_mutex_t s_serial_mtx = PTHREAD_MUTEX_INITIALIZER;
++static int s_done = 0;
++static int s_dispatched = 0;
++
++static void* worker_main(void* arg)
++{
++    Worker* w = arg;
++    for (;;)
++    {
++        pthread_mutex_lock(&w->mtx);
++        while (!w->go)
++            pthread_cond_wait(&w->cond, &w->mtx);
++        w->go = 0;
++        pthread_mutex_unlock(&w->mtx);
++        er_render_worker_exec((int)(w - s_workers));
++        pthread_mutex_lock(&s_done_mtx);
++        s_done++;
++        pthread_cond_signal(&s_done_cond);
++        pthread_mutex_unlock(&s_done_mtx);
++    }
++    return NULL;
++}
++
++static void host_dispatch(int worker, void* ctx)
++{
++    (void)ctx;
++    Worker* w = &s_workers[worker];
++    pthread_mutex_lock(&w->mtx);
++    w->go = 1;
++    s_dispatched++;
++    pthread_cond_signal(&w->cond);
++    pthread_mutex_unlock(&w->mtx);
++}
++
++static void host_sync(void* ctx)
++{
++    (void)ctx;
++    pthread_mutex_lock(&s_done_mtx);
++    while (s_done < s_dispatched)
++        pthread_cond_wait(&s_done_cond, &s_done_mtx);
++    s_done = s_dispatched = 0;
++    pthread_mutex_unlock(&s_done_mtx);
++}
++
++static int host_worker_id(void)
++{
++    for (int k = 1; k < NW; k++)
++        if (pthread_equal(pthread_self(), s_workers[k].thread))
++            return k;
++    return 0;
++}
++
++static void host_lock(void* ctx)
++{
++    (void)ctx;
++    pthread_mutex_lock(&s_serial_mtx);
++}
++
++static void host_unlock(void* ctx)
++{
++    (void)ctx;
++    pthread_mutex_unlock(&s_serial_mtx);
++}
++
++static void install_workers(void)
++{
++    for (int k = 1; k < NW; k++)
++    {
++        pthread_mutex_init(&s_workers[k].mtx, NULL);
++        pthread_cond_init(&s_workers[k].cond, NULL);
++        pthread_create(&s_workers[k].thread, NULL, worker_main, &s_workers[k]);
++    }
++    static const EmbeddedRenderWorkers workers = {
++        NW, host_dispatch, host_sync, host_worker_id, NULL, host_lock, host_unlock};
++    embedded_renderer_set_workers(&workers);
++}
++#endif
++
++int main(void)
++{
++    static uint32_t fb[FB_W * FB_H];
++    TestCtx tc = {fb};
++    EmbeddedRenderBackend be = {fill_cb, copy_cb, blend_cb, NULL, NULL, &tc};
++    embedded_renderer_set_backend(&be);
++#if NW > 1
++    install_workers();
++#endif
++    if (run_equivalence(&tc) != EXIT_SUCCESS || run_probe(&tc) != EXIT_SUCCESS)
++        return EXIT_FAILURE;
++#if NW > 1
++    if (er_parallel_frames() == 0)
++        return fail("no frame rendered across the workers, so the shared slots went untested");
++#endif
++    printf("PASS: kept transform sources match fresh captures (%d workers, %d slots)\n", NW, ERUI_XFORM_CACHE_SLOTS);
++    return EXIT_SUCCESS;
++}

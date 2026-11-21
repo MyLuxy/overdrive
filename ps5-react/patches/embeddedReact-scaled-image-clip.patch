@@ -1,0 +1,363 @@
+Embedded React: scale and convert only the clipped part of an image.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json. Changed files: engine/rendering/
+image_scaler.c and engine/tests/rendering/test_image.c. Proposed upstream,
+without the integer bilinear weights, as pull request #285.
+
+render_region() produced every row of a scaled, tinted or CPU-converted RGB565
+image on each repaint, then let the row blits discard what fell outside the
+clip. A repaint touching a corner of a large image therefore paid for all of
+it: about 30 ms per repaint for a 1280x600 image drawn at 1880x880 on an
+Apple M4. Both paths now produce only the destination inside the active clip.
+Bilinear sampling also computes the column taps once per call and blends with
+8-bit integer weights, two channels per multiply, instead of per-pixel float
+coordinates and weights; results differ from the float version by at most two
+levels per channel, and opaque images stay exactly opaque. The new test checks
+that a damage-clipped repaint over an upscaled and over an unscaled RGB565
+image matches the full repaint and writes nothing outside the damage.
+
+diff --git a/engine/rendering/image_scaler.c b/engine/rendering/image_scaler.c
+index 1fd81ea..c431840 100644
+--- a/engine/rendering/image_scaler.c
++++ b/engine/rendering/image_scaler.c
+@@ -57,6 +57,7 @@ static inline uint32_t rgb565_to_argb(uint16_t p)
+     return 0xFF000000u | (r << 16) | (g << 8) | b;
+ }
+ 
++#if !ERUI_BILINEAR_SCALE
+ /**
+  * @brief Reads one source pixel as premultiplied ARGB8888, whatever the image's storage format.
+  */
+@@ -67,6 +68,7 @@ static inline uint32_t fetch_px(const ImageEntry* img, int x, int y)
+         return rgb565_to_argb(((const uint16_t*)img->buf)[idx]);
+     return ((const uint32_t*)img->buf)[idx];
+ }
++#endif
+ 
+ /**
+  * @brief Applies a tint to a premultiplied ARGB8888 pixel.
+@@ -93,70 +95,104 @@ static uint32_t apply_tint(uint32_t pixel, uint8_t tr, uint8_t tg, uint8_t tb)
+ 
+ #if ERUI_BILINEAR_SCALE
+ 
++/** @brief One axis of a bilinear sample: the two source indexes and the weight of the second (0..256). */
++typedef struct
++{
++    int i0, i1;
++    uint32_t f;
++} Tap;
++
++/* Column taps of the row being scaled, one table per render worker like the row buffer. */
++static Tap s_col_pool[ERUI_RENDER_WORKERS][ERUI_MAX_IMG_ROW_PIXELS];
++
+ /**
+- * @brief Samples a premultiplied ARGB8888 source image at fractional pixel coordinates.
+- *
+- * Clamps to the source crop rectangle [src_x, src_x+src_w) × [src_y, src_y+src_h) before
+- * computing the four-tap bilinear weights. Bilinear interpolation on premultiplied values is
+- * mathematically exact (no alpha halo artefacts).
+- *
+- * @param[in] img    Source image entry (any storage format; taps are fetched as ARGB8888).
+- * @param[in] src_x  Left edge of the valid crop region.
+- * @param[in] src_y  Top edge of the valid crop region.
+- * @param[in] src_w  Width of the valid crop region.
+- * @param[in] src_h  Height of the valid crop region.
+- * @param[in] sx_f   Fractional source X coordinate.
+- * @param[in] sy_f   Fractional source Y coordinate.
++ * @brief Maps destination index d of dst_len onto the source span [start, start + len), with
++ * half-pixel alignment for correct up-sampling, clamped to the span.
++ */
++static Tap bilinear_tap(int start, int len, int dst_len, int d)
++{
++    float s = (float)start + ((float)d + 0.5f) * (float)len / (float)dst_len - 0.5f;
++    const float last = (float)(start + len - 1);
++    if (s < (float)start)
++        s = (float)start;
++    if (s > last)
++        s = last;
++    Tap t;
++    t.i0 = (int)s;
++    t.i1 = t.i0 + 1 < start + len ? t.i0 + 1 : t.i0;
++    t.f = (uint32_t)((s - (float)t.i0) * 256.0f + 0.5f);
++    return t;
++}
++
++/** @brief Blends two premultiplied ARGB8888 pixels, two channels per multiply: a + (b - a) * f / 256. */
++static inline uint32_t lerp_px(uint32_t a, uint32_t b, uint32_t f)
++{
++    const uint32_t g = 256u - f;
++    const uint32_t rb = (((a & 0x00FF00FFu) * g + (b & 0x00FF00FFu) * f) >> 8) & 0x00FF00FFu;
++    const uint32_t ag = (((a >> 8) & 0x00FF00FFu) * g + ((b >> 8) & 0x00FF00FFu) * f) & 0xFF00FF00u;
++    return ag | rb;
++}
++
++/**
++ * @brief Samples one destination row from the source rows of `row`, at the precomputed column taps.
+  *
+- * @return Bilinearly sampled premultiplied ARGB8888 pixel.
++ * Integer weights keep every opaque pixel exactly opaque and cost a few multiplies per pixel,
++ * where per-pixel float coordinates and weights dominated the frame on large images.
+  */
+-static uint32_t
+-bilinear_sample(const ImageEntry* img, int src_x, int src_y, int src_w, int src_h, float sx_f, float sy_f)
++static void bilinear_row(const ImageEntry* img, const Tap* cols, int n, Tap row, uint32_t* out)
+ {
+-    /* Clamp to crop bounds. */
+-    const float x_min = (float)src_x, x_max = (float)(src_x + src_w - 1);
+-    const float y_min = (float)src_y, y_max = (float)(src_y + src_h - 1);
+-    if (sx_f < x_min)
+-        sx_f = x_min;
+-    if (sx_f > x_max)
+-        sx_f = x_max;
+-    if (sy_f < y_min)
+-        sy_f = y_min;
+-    if (sy_f > y_max)
+-        sy_f = y_max;
+-
+-    const int x0 = (int)sx_f, y0 = (int)sy_f;
+-    int x1 = x0 + 1, y1 = y0 + 1;
+-    if (x1 > src_x + src_w - 1)
+-        x1 = src_x + src_w - 1;
+-    if (y1 > src_y + src_h - 1)
+-        y1 = src_y + src_h - 1;
+-
+-    const float tx = sx_f - (float)x0;
+-    const float ty = sy_f - (float)y0;
+-    const float w00 = (1.0f - tx) * (1.0f - ty);
+-    const float w10 = tx * (1.0f - ty);
+-    const float w01 = (1.0f - tx) * ty;
+-    const float w11 = tx * ty;
+-
+-    const uint32_t p00 = fetch_px(img, x0, y0);
+-    const uint32_t p10 = fetch_px(img, x1, y0);
+-    const uint32_t p01 = fetch_px(img, x0, y1);
+-    const uint32_t p11 = fetch_px(img, x1, y1);
+-
+-    const uint32_t a = (uint32_t)(((p00 >> 24) & 0xFFu) * w00 + ((p10 >> 24) & 0xFFu) * w10
+-                                  + ((p01 >> 24) & 0xFFu) * w01 + ((p11 >> 24) & 0xFFu) * w11);
+-    const uint32_t r = (uint32_t)(((p00 >> 16) & 0xFFu) * w00 + ((p10 >> 16) & 0xFFu) * w10
+-                                  + ((p01 >> 16) & 0xFFu) * w01 + ((p11 >> 16) & 0xFFu) * w11);
+-    const uint32_t g = (uint32_t)(((p00 >> 8) & 0xFFu) * w00 + ((p10 >> 8) & 0xFFu) * w10 + ((p01 >> 8) & 0xFFu) * w01
+-                                  + ((p11 >> 8) & 0xFFu) * w11);
+-    const uint32_t b =
+-        (uint32_t)((p00 & 0xFFu) * w00 + (p10 & 0xFFu) * w10 + (p01 & 0xFFu) * w01 + (p11 & 0xFFu) * w11);
+-    return (a << 24) | (r << 16) | (g << 8) | b;
++    if (img->format == ER_IMG_RGB565)
++    {
++        const uint16_t* r0 = (const uint16_t*)img->buf + (size_t)row.i0 * (size_t)img->w;
++        const uint16_t* r1 = (const uint16_t*)img->buf + (size_t)row.i1 * (size_t)img->w;
++        for (int i = 0; i < n; i++)
++        {
++            const Tap c = cols[i];
++            out[i] = lerp_px(lerp_px(rgb565_to_argb(r0[c.i0]), rgb565_to_argb(r0[c.i1]), c.f),
++                             lerp_px(rgb565_to_argb(r1[c.i0]), rgb565_to_argb(r1[c.i1]), c.f), row.f);
++        }
++        return;
++    }
++    const uint32_t* r0 = (const uint32_t*)img->buf + (size_t)row.i0 * (size_t)img->w;
++    const uint32_t* r1 = (const uint32_t*)img->buf + (size_t)row.i1 * (size_t)img->w;
++    for (int i = 0; i < n; i++)
++    {
++        const Tap c = cols[i];
++        out[i] = lerp_px(lerp_px(r0[c.i0], r0[c.i1], c.f), lerp_px(r1[c.i0], r1[c.i1], c.f), row.f);
++    }
+ }
+ 
+ #endif /* ERUI_BILINEAR_SCALE */
+ 
++/**
++ * @brief Narrows destination [0, w) x [0, h) at (x, y) to the part inside the active clip.
++ *
++ * Every blit is clipped to it anyway; sampling only this part keeps a repaint that touches a corner
++ * of a large image from converting or re-scaling all of it.
++ *
++ * @return false when nothing of the destination is visible.
++ */
++static bool visible_part(int x, int y, int w, int h, int* x0, int* y0, int* x1, int* y1)
++{
++    *x0 = 0;
++    *y0 = 0;
++    *x1 = w;
++    *y1 = h;
++    int cx, cy, cw, ch;
++    if (er_get_clip_rect(&cx, &cy, &cw, &ch))
++    {
++        if (cx - x > *x0)
++            *x0 = cx - x;
++        if (cy - y > *y0)
++            *y0 = cy - y;
++        if (cx + cw - x < *x1)
++            *x1 = cx + cw - x;
++        if (cy + ch - y < *y1)
++            *y1 = cy + ch - y;
++    }
++    return *x0 < *x1 && *y0 < *y1;
++}
++
+ /**
+  * @brief Renders a source crop of an image to a destination rectangle.
+  *
+@@ -231,12 +267,15 @@ static void render_region(const ImageEntry* img,
+          * row into the scratch buffer (internal RAM — reads from the 2 B/px source are the only
+          * external-memory source traffic), then emit it. Chunked horizontally so widths beyond the
+          * scratch capacity still render fully. */
+-        for (int dy = 0; dy < dst_h; dy++)
++        int vx0, vy0, vx1, vy1;
++        if (!visible_part(dst_x, dst_y, dst_w, dst_h, &vx0, &vy0, &vx1, &vy1))
++            return;
++        for (int dy = vy0; dy < vy1; dy++)
+         {
+             const uint16_t* srow = rows565 + (size_t)dy * (size_t)img->w;
+-            for (int cx = 0; cx < dst_w; cx += ERUI_MAX_IMG_ROW_PIXELS)
++            for (int cx = vx0; cx < vx1; cx += ERUI_MAX_IMG_ROW_PIXELS)
+             {
+-                const int cw = (dst_w - cx) < ERUI_MAX_IMG_ROW_PIXELS ? (dst_w - cx) : ERUI_MAX_IMG_ROW_PIXELS;
++                const int cw = (vx1 - cx) < ERUI_MAX_IMG_ROW_PIXELS ? (vx1 - cx) : ERUI_MAX_IMG_ROW_PIXELS;
+                 for (int dx = 0; dx < cw; dx++)
+                     irow()[dx] = rgb565_to_argb(srow[cx + dx]);
+                 er_blit_copy(irow(), cw * (int)sizeof(uint32_t), dst_x + cx, dst_y + dy, cw, 1);
+@@ -245,33 +284,35 @@ static void render_region(const ImageEntry* img,
+         return;
+     }
+ 
+-    /* General path: scale and/or tint via a one-row scratch buffer. */
++    /* General path: scale and/or tint via a one-row scratch buffer, over the visible part only. */
+     const int capped_w = (dst_w <= ERUI_MAX_IMG_ROW_PIXELS) ? dst_w : ERUI_MAX_IMG_ROW_PIXELS;
+-    for (int dy = 0; dy < dst_h; dy++)
++    int vx0, vy0, vx1, vy1;
++    if (!visible_part(dst_x, dst_y, capped_w, dst_h, &vx0, &vy0, &vx1, &vy1))
++        return;
++    const int vis_w = vx1 - vx0;
++    uint32_t* const row = irow();
++#if ERUI_BILINEAR_SCALE
++    Tap* const cols = s_col_pool[er_render_worker_id()];
++    for (int dx = vx0; dx < vx1; dx++)
++        cols[dx - vx0] = bilinear_tap(src_x, src_w, dst_w, dx);
++#endif
++    for (int dy = vy0; dy < vy1; dy++)
+     {
+-        for (int dx = 0; dx < capped_w; dx++)
+-        {
+ #if ERUI_BILINEAR_SCALE
+-            /* Fractional source coords with half-pixel alignment for correct up-sampling. */
+-            const float sx_f = (float)src_x + ((float)dx + 0.5f) * (float)src_w / (float)dst_w - 0.5f;
+-            const float sy_f = (float)src_y + ((float)dy + 0.5f) * (float)src_h / (float)dst_h - 0.5f;
+-            uint32_t p = bilinear_sample(img, src_x, src_y, src_w, src_h, sx_f, sy_f);
++        bilinear_row(img, cols, vis_w, bilinear_tap(src_y, src_h, dst_h, dy), row);
+ #else
+-            const int sy = src_y + (dy * src_h) / dst_h;
+-            const int sx = src_x + (dx * src_w) / dst_w;
+-            uint32_t p = fetch_px(img, sx, sy);
++        const int sy = src_y + (dy * src_h) / dst_h;
++        for (int dx = vx0; dx < vx1; dx++)
++            row[dx - vx0] = fetch_px(img, src_x + (dx * src_w) / dst_w, sy);
+ #endif
+-            if (img->opaque)
+-                p |= 0xFF000000u; /* squash bilinear float dust so the row stays exactly opaque */
+-            if (has_tint)
+-                p = apply_tint(p, tr, tg, tb);
+-            irow()[dx] = p;
+-        }
+-        /* Tint preserves alpha, so an opaque image stays opaque through every branch above. */
++        if (has_tint)
++            for (int i = 0; i < vis_w; i++)
++                row[i] = apply_tint(row[i], tr, tg, tb);
++        /* Tint preserves alpha, and integer weights keep opaque samples exactly opaque. */
+         if (img->opaque)
+-            er_blit_copy(irow(), capped_w * (int)sizeof(uint32_t), dst_x, dst_y + dy, capped_w, 1);
++            er_blit_copy(row, vis_w * (int)sizeof(uint32_t), dst_x + vx0, dst_y + dy, vis_w, 1);
+         else
+-            er_blit_blend(irow(), capped_w * (int)sizeof(uint32_t), 255, dst_x, dst_y + dy, capped_w, 1);
++            er_blit_blend(row, vis_w * (int)sizeof(uint32_t), 255, dst_x + vx0, dst_y + dy, vis_w, 1);
+     }
+ }
+ 
+diff --git a/engine/tests/rendering/test_image.c b/engine/tests/rendering/test_image.c
+index 8accf23..70e0790 100644
+--- a/engine/tests/rendering/test_image.c
++++ b/engine/tests/rendering/test_image.c
+@@ -904,5 +904,83 @@ int main(void)
+         er_node_destroy(root);
+     }
+ 
++    /* -----------------------------------------------------------------------
++     * Damage-clipped repaints over an image sample only the clipped part, and
++     * produce the same pixels as the full repaint: an upscaled ARGB image and
++     * an unscaled RGB565 image, each larger than the repainted rect.
++     * ---------------------------------------------------------------------- */
++    {
++        /* Setting the backend resets the image registry, so the images load after it. */
++        embedded_renderer_set_backend(&be);
++        er_image_load("test2x2", img2x2, 2, 2);
++        static uint16_t img565[32 * 32];
++        for (int i = 0; i < 32 * 32; i++)
++            img565[i] = (uint16_t)(i * 2654435761u >> 16);
++        er_image_load_rgb565("clip565", img565, 32, 32);
++
++        const char* names[] = {"test2x2", "clip565"};
++        for (int k = 0; k < 2; k++)
++        {
++            reset(&tc);
++            er_reset();
++
++            ERNode* root = er_node_create(ER_NODE_VIEW);
++            ERProps rp = props_default();
++            rp.width = FB_W;
++            rp.height = FB_H;
++            er_node_set_props(root, &rp);
++
++            ERNode* img_node = er_node_create(ER_NODE_IMAGE);
++            ERProps ip = props_default();
++            ip.width = 32;
++            ip.height = 32;
++            ip.margin_left = 4;
++            ip.margin_top = 4;
++            strncpy(ip.image_name, names[k], ER_IMAGE_NAME_MAX);
++            ip.resize_mode = ER_RESIZE_STRETCH;
++            er_node_set_props(img_node, &ip);
++
++            ERNode* overlay = er_node_create(ER_NODE_VIEW);
++            ERProps op = props_default();
++            op.position = ER_POS_ABSOLUTE;
++            op.left = 13;
++            op.top = 17;
++            op.width = 6;
++            op.height = 5;
++            op.background_color = 0x01000000u;
++            er_node_set_props(overlay, &op);
++
++            er_tree_append_child(root, img_node);
++            er_tree_append_child(root, overlay);
++            er_tree_set_root(root);
++            er_commit();
++
++            static uint32_t full[FB_W * FB_H];
++            memcpy(full, fb, sizeof(full));
++            /* The stub fill_rect draws nothing, so the repaint shows only what the image emits. */
++            for (int y = 17; y < 22; y++)
++                for (int x = 13; x < 19; x++)
++                    fb[y * FB_W + x] = 0xDEADBEEFu;
++            fb[0] = 0xDEADBEEFu; /* outside the damage: must survive */
++
++            op.background_color = 0x02000000u;
++            er_node_set_props(overlay, &op);
++            er_commit();
++
++            if (fb[0] != 0xDEADBEEFu)
++                return fail("clipped image repaint: wrote outside the damaged rect");
++            fb[0] = full[0];
++            if (memcmp(fb, full, sizeof(full)) != 0)
++                return fail(k ? "clipped image repaint: unscaled rgb565 pixels differ from the full repaint"
++                              : "clipped image repaint: scaled pixels differ from the full repaint");
++
++            er_tree_remove_child(root, overlay);
++            er_tree_remove_child(root, img_node);
++            er_node_destroy(overlay);
++            er_node_destroy(img_node);
++            er_node_destroy(root);
++        }
++    }
++
+     return EXIT_SUCCESS;
+ }

@@ -1,0 +1,37 @@
+Embedded React: read a ScrollView's offset and scroll range.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json. Changed file: engine/scene/
+compositor.c. Proposed upstream as pull request #289.
+
+Adds er_scroll_view_get_offset(node, &x, &y, &max_x, &max_y): the current
+offset and the largest offset er_scroll_view_set_offset() accepts on each axis
+(content size minus viewport size from the last layout pass, floored at 0). It
+returns false for nodes that are not ScrollViews. embeddedReact-scroll-to.patch
+declares and calls it from the QuickJS bridge.
+
+diff --git a/engine/scene/compositor.c b/engine/scene/compositor.c
+index 95c56fc..b9fe937 100644
+--- a/engine/scene/compositor.c
++++ b/engine/scene/compositor.c
+@@ -5764,6 +5764,20 @@ void er_tick(uint32_t delta_ms)
+     s_now_ms += delta_ms;
+ }
+ 
++bool er_scroll_view_get_offset(const ERNode* node, float* x, float* y, float* max_x, float* max_y)
++{
++    if (!node || (node->type != ER_NODE_SCROLL_VIEW && node->type != ER_NODE_FLAT_LIST))
++        return false;
++
++    const float mx = (float)(node->scroll_content_w - node->computed.w);
++    const float my = (float)(node->scroll_content_h - node->computed.h);
++    *x = node->scroll_offset_x;
++    *y = node->scroll_offset_y;
++    *max_x = mx > 0.0f ? mx : 0.0f;
++    *max_y = my > 0.0f ? my : 0.0f;
++    return true;
++}
++
+ void er_scroll_view_set_offset(ERNode* node, float x, float y)
+ {
+     if (!node || (node->type != ER_NODE_SCROLL_VIEW && node->type != ER_NODE_FLAT_LIST))

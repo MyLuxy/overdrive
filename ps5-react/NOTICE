@@ -1,0 +1,27 @@
+PS5 React
+Copyright (C) 2026 half144 and PS5 React contributors
+
+PS5 React — created by half144 and PS5 React contributors.
+https://github.com/half144/ps5-react
+
+Framework-owned code: GPL-3.0-or-later with the attribution-preservation term
+in LICENSE-ATTRIBUTION (GPLv3 section 7(b)).
+
+Built on Embedded React, ps5-homebrew-ui, ps5-opengl, PS5 Payload SDK,
+QuickJS-ng, React, and Inter. These dependencies retain their original authors,
+licenses, and notices. See docs/DEPENDENCIES.md and licenses/.
+
+tools/tailwind/colors.mjs and the default scales in tools/tailwind/theme.mjs are
+derived from Tailwind CSS v3.4.17, Copyright (c) Tailwind Labs, Inc., under the
+MIT License (licenses/tailwindcss-LICENSE).
+
+The interface sounds in apps/starter/assets/sounds/ are derived from Google's
+Material Design sound resources, (c) Google, under CC BY 4.0
+(licenses/material-sounds-NOTICE.txt lists the sources and changes).
+
+Browser capture includes adaptations of Orbit Store 1.0.1 by saawant12,
+GPL-3.0-or-later. See native/ps5/payloads/browser/README.md for provenance.
+
+The IEC 61937 packer for HDMI audio passthrough (native/shared/iec61937.hpp) is
+ported from SlopFin by Brett, GPL-3.0-or-later; the bitstream output follows
+SlopFin's console findings. See licenses/audio-passthrough-NOTICE.txt.

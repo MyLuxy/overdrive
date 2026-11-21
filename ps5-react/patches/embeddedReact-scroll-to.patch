@@ -1,0 +1,92 @@
+Embedded React: NativeUI.scrollTo, and a warning when the node pool is full.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json. Changed file: bridges/quickjs/
+native_ui_bridge.c. Needs embeddedReact-scroll-offset.patch. Proposed upstream
+as pull requests #289 (scrollTo) and #291 (the warning).
+
+The engine could set a ScrollView's offset (er_scroll_view_set_offset) but the
+bridge exposed no way to call it, so JavaScript could not scroll focus into
+view. NativeUI.scrollTo(handle, x, y) sets the offset (NaN keeps an axis, so
+NaN, NaN only reads) and returns [x, y, maxX, maxY] after the engine clamps it.
+
+er_node_create failing (ERUI_MAX_NODES reached) used to return handle 0
+silently, which detaches the whole subtree being created; the bridge now says
+so once on stderr.
+
+diff --git a/bridges/quickjs/native_ui_bridge.c b/bridges/quickjs/native_ui_bridge.c
+index 1ed6cf9..a4e8b3a 100644
+--- a/bridges/quickjs/native_ui_bridge.c
++++ b/bridges/quickjs/native_ui_bridge.c
+@@ -3033,6 +3033,14 @@ ER_BRIDGE_MARSHAL_FN(js_create_node)
+ 
+     if (!node)
+     {
++        /* Children are created before their parents, so a failed create detaches a whole subtree. */
++        static bool warned = false;
++        if (!warned)
++        {
++            fprintf(stderr, "embedded-react: node pool exhausted (ERUI_MAX_NODES=%d); further nodes are dropped\n",
++                    (int)ERUI_MAX_NODES);
++            warned = true;
++        }
+         return JS_NewInt32(ctx, ER_BRIDGE_HANDLE_INVALID);
+     }
+     const int32_t handle = handle_alloc(node);
+@@ -3939,6 +3947,48 @@ static JSValue js_now(JSContext* ctx, JSValueConst this_val, int argc, JSValueCo
+  *
+  * @return JS_UNDEFINED.
+  */
++/* Added to the engine by embeddedReact-scroll-offset.patch; declared here so er_scene.h stays as pinned. */
++bool er_scroll_view_get_offset(const ERNode* node, float* x, float* y, float* max_x, float* max_y);
++
++/**
++ * @brief NativeUI.scrollTo(handle, x, y) — sets a ScrollView's scroll offset and reports where it landed.
++ *
++ * The engine clamps the offset to the scrollable range and fires the node's onScroll when it changes.
++ * A NaN coordinate leaves that axis alone, so scrollTo(handle, NaN, NaN) only reads.
++ *
++ * @return [x, y, maxX, maxY] in pixels after the call, or undefined when the handle is not a ScrollView.
++ */
++ER_BRIDGE_MARSHAL_FN(js_scroll_to)
++{
++    (void)this_val;
++    if (argc < 3)
++    {
++        return JS_UNDEFINED;
++    }
++    int32_t handle = 0;
++    double x = NAN;
++    double y = NAN;
++    if (JS_ToInt32(ctx, &handle, argv[0]) != 0 || JS_ToFloat64(ctx, &x, argv[1]) != 0
++        || JS_ToFloat64(ctx, &y, argv[2]) != 0)
++    {
++        return JS_UNDEFINED;
++    }
++    ERNode* node = handle_node(handle);
++    float out[4];
++    if (!node || !er_scroll_view_get_offset(node, &out[0], &out[1], &out[2], &out[3]))
++    {
++        return JS_UNDEFINED;
++    }
++    er_scroll_view_set_offset(node, (float)x, (float)y);
++    er_scroll_view_get_offset(node, &out[0], &out[1], &out[2], &out[3]);
++    JSValue result = JS_NewArray(ctx);
++    for (uint32_t i = 0; i < 4; i++)
++    {
++        JS_SetPropertyUint32(ctx, result, i, JS_NewFloat64(ctx, (double)out[i]));
++    }
++    return result;
++}
++
+ ER_BRIDGE_MARSHAL_FN(js_set_event)
+ {
+     (void)this_val;
+@@ -4864,6 +4914,7 @@ void er_bridge_install(JSContext* ctx)
+     JS_SetPropertyStr(ctx, native_ui, "maxVectorPaints", JS_NewInt32(ctx, VEC_BRIDGE_MAX_PAINTS));
+     JS_SetPropertyStr(ctx, native_ui, "maxVectorGrads", JS_NewInt32(ctx, VEC_BRIDGE_MAX_GRADS));
+     JS_SetPropertyStr(ctx, native_ui, "setEvent", JS_NewCFunction(ctx, js_set_event, "setEvent", 3));
++    JS_SetPropertyStr(ctx, native_ui, "scrollTo", JS_NewCFunction(ctx, js_scroll_to, "scrollTo", 3));
+     JS_SetPropertyStr(ctx, native_ui, "commit", JS_NewCFunction(ctx, js_commit, "commit", 0));
+     JS_SetPropertyStr(ctx, native_ui, "setBatcher", JS_NewCFunction(ctx, js_set_batcher, "setBatcher", 1));
+ #if ER_PERF_STATS

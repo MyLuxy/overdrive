@@ -1,0 +1,865 @@
+Embedded React: a border sweep, a light travelling around a View's rounded edge.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, after the patches listed before this
+one there. Changed files: engine/include/er_scene.h,
+engine/scene/er_node_internal.h, engine/scene/compositor.c,
+engine/animation/animation.c, engine/CMakeLists.txt,
+bridges/quickjs/native_ui_bridge.c,
+bridges/quickjs/js/src/embedded-react/index.d.ts,
+engine/tests/rendering/CMakeLists.txt and the new
+engine/rendering/border_sweep.c, engine/rendering/border_sweep.h and
+engine/tests/rendering/test_border_sweep.c. Proposed upstream, with the other
+border ring patches, as pull request #325.
+
+The PS5 focus ring is a continuous light running around the focused item's
+rounded border, bright at its head and fading in a long tail. Points moved by
+Animated could only approximate it. View styles borderSweepColor,
+borderSweepWidth, borderSweepLength and borderSweepPhase draw a ring of that
+width inside the box, over the content, following the corner radius,
+anti-aliased on both edges, with alpha falling off behind the head along the
+perimeter. borderSweepPhase is animatable by the native driver (wrapping at 1),
+and a phase-only change damages the bands along the four edges the ring can
+reach rather than the whole box. A transformed (scaled) node still repaints
+its whole transformed box.
+
+diff --git a/bridges/quickjs/js/src/embedded-react/index.d.ts b/bridges/quickjs/js/src/embedded-react/index.d.ts
+index 5f47744..92e2952 100644
+--- a/bridges/quickjs/js/src/embedded-react/index.d.ts
++++ b/bridges/quickjs/js/src/embedded-react/index.d.ts
+@@ -181,6 +181,15 @@ export interface ViewStyle {
+   backgroundGradient?: BackgroundGradient;
+   opacity?: number | AnimatedValue;
+ 
++  // Border sweep: a light travelling around the rounded edge, over the content.
++  borderSweepColor?: string;
++  /** Ring thickness in px, inside the box; 0 = none. */
++  borderSweepWidth?: number;
++  /** Tail length as a fraction of the perimeter (default 0.3). */
++  borderSweepLength?: number;
++  /** Head position, 0–1 clockwise from the top edge's left end; wraps. Animate it with the native driver. */
++  borderSweepPhase?: number | AnimatedValue;
++
+   // Border.
+   borderRadius?: number;
+   borderTopLeftRadius?: number;
+diff --git a/bridges/quickjs/native_ui_bridge.c b/bridges/quickjs/native_ui_bridge.c
+index 6e8dbe7..95a9f65 100644
+--- a/bridges/quickjs/native_ui_bridge.c
++++ b/bridges/quickjs/native_ui_bridge.c
+@@ -1171,6 +1171,10 @@ typedef enum
+     PROP_MIN_SPAN,
+     PROP_INDICATOR_GRADIENT,
+     PROP_BACKGROUND_GRADIENT,
++    PROP_BORDER_SWEEP_COLOR,
++    PROP_BORDER_SWEEP_WIDTH,
++    PROP_BORDER_SWEEP_PHASE,
++    PROP_BORDER_SWEEP_LENGTH,
+     PROP_COUNT_,
+ } PropId;
+ 
+@@ -1295,6 +1299,10 @@ static const char* const k_prop_names[PROP_COUNT_] = {
+     [PROP_MIN_SPAN] = "minSpan",
+     [PROP_INDICATOR_GRADIENT] = "indicatorGradient",
+     [PROP_BACKGROUND_GRADIENT] = "backgroundGradient",
++    [PROP_BORDER_SWEEP_COLOR] = "borderSweepColor",
++    [PROP_BORDER_SWEEP_WIDTH] = "borderSweepWidth",
++    [PROP_BORDER_SWEEP_PHASE] = "borderSweepPhase",
++    [PROP_BORDER_SWEEP_LENGTH] = "borderSweepLength",
+ };
+ 
+ /** @brief (atom, id) pair; s_prop_atoms is sorted by atom value once, for prop_id_from_atom()'s bsearch. */
+@@ -2316,6 +2324,19 @@ static void apply_props(JSContext* ctx, ERNode* node, JSValueConst obj)
+     ER_U8(PROP_SHADOW_RADIUS, shadow_radius);
+     ER_U8(PROP_ELEVATION, elevation);
+ 
++    /* Border sweep (View-family). */
++    ER_COL(PROP_BORDER_SWEEP_COLOR, border_sweep_color);
++    ER_DIM(PROP_BORDER_SWEEP_WIDTH, border_sweep_width);
++    {
++        double d = 0.0;
++        if (!JS_IsUndefined(s_prop_slots[PROP_BORDER_SWEEP_PHASE])
++            && JS_ToFloat64(ctx, &d, s_prop_slots[PROP_BORDER_SWEEP_PHASE]) == 0)
++            p.border_sweep_phase = (float)(d - floor(d));
++        if (!JS_IsUndefined(s_prop_slots[PROP_BORDER_SWEEP_LENGTH])
++            && JS_ToFloat64(ctx, &d, s_prop_slots[PROP_BORDER_SWEEP_LENGTH]) == 0)
++            p.border_sweep_length = (float)d;
++    }
++
+     /* ActivityIndicator (RN uses `color` for the spinner tint). */
+     ER_COL(PROP_COLOR, indicator_color);
+     ER_U8(PROP_ANIMATING, animating);
+@@ -4216,6 +4237,7 @@ static bool anim_prop_from_name(const char* s, ERAnimProp* out)
+         {"color", ER_PROP_COLOR},
+         {"value", ER_PROP_ARC_VALUE},            /* Dial value (ER_NODE_ARC) */
+         {"valueStart", ER_PROP_ARC_VALUE_START}, /* Dial RANGE low end */
++        {"borderSweepPhase", ER_PROP_BORDER_SWEEP_PHASE},
+     };
+     for (size_t i = 0; i < sizeof(k) / sizeof(k[0]); i++)
+     {
+diff --git a/engine/CMakeLists.txt b/engine/CMakeLists.txt
+index 805f931..938107f 100644
+--- a/engine/CMakeLists.txt
++++ b/engine/CMakeLists.txt
+@@ -18,6 +18,7 @@ set(EMBEDDED_REACT_SOURCES
+ 
+         # rendering: primitives (rounded rects, shadows, transforms, image, gradient, canvas)
+         rendering/arc.c
++        rendering/border_sweep.c
+         rendering/canvas_bindings.c
+         rendering/gradient.c
+         rendering/image_registry.c
+diff --git a/engine/animation/animation.c b/engine/animation/animation.c
+index 0fafbdb..12c6358 100644
+--- a/engine/animation/animation.c
++++ b/engine/animation/animation.c
+@@ -297,6 +297,11 @@ static bool read_numeric_value(const ERNode* node, ERAnimProp prop, float* value
+         case ER_PROP_ROTATE_Y:
+             *value = node->tp_rotate_y;
+             return true;
++        case ER_PROP_BORDER_SWEEP_PHASE:
++            if (!is_view_node(node))
++                return false;
++            *value = node->props.view.border_sweep_phase;
++            return true;
+         case ER_PROP_SWITCH_THUMB:
+             if (node->type != ER_NODE_SWITCH)
+                 return false;
+@@ -463,6 +468,19 @@ static bool apply_numeric_value(ERNode* node, ERAnimProp prop, float value)
+             node->switch_thumb_t = value;
+             return true;
+         }
++        case ER_PROP_BORDER_SWEEP_PHASE:
++        {
++            if (!is_view_node(node))
++                return false;
++            value -= floorf(value); /* a phase wraps: 1.25 is a quarter round past the start */
++            if (node->props.view.border_sweep_phase == value)
++                return false;
++            node->props.view.border_sweep_phase = value;
++            /* Only the ring moved: the damage pre-pass repaints its bands, not the whole box. */
++            if (!node->source_dirty)
++                node->sweep_moved = true;
++            return true;
++        }
+         case ER_PROP_ARC_VALUE:
+             return er_arc_apply_value(node, value);
+         case ER_PROP_ARC_VALUE_START:
+@@ -865,6 +883,8 @@ static void push_to_value_bindings(ERAnimValue* val)
+             /* An animated opacity value changes only the blend, not the subtree's rendered
+              * content — mark visual-only so the compositor's fade cache stays valid. Every
+              * other prop (position, scale, rotation, color) changes content. */
++            if (bind->prop != ER_PROP_BORDER_SWEEP_PHASE)
++                n->sweep_moved = false; /* anything else changed too: the whole box repaints */
+             if (bind->prop == ER_PROP_OPACITY)
+                 er_mark_dirty_upward_visual(n);
+             else
+diff --git a/engine/include/er_scene.h b/engine/include/er_scene.h
+index a26c36f..e048243 100644
+--- a/engine/include/er_scene.h
++++ b/engine/include/er_scene.h
+@@ -503,6 +503,7 @@ extern "C"
+         ER_PROP_SWITCH_THUMB,     /**< Switch thumb position 0.0 (off) – 1.0 (on). */
+         ER_PROP_ARC_VALUE,        /**< Arc value in [arc_min, arc_max] units (ER_NODE_ARC only). */
+         ER_PROP_ARC_VALUE_START,  /**< Arc range-mode low end, same units (ER_NODE_ARC with arc_range). */
++        ER_PROP_BORDER_SWEEP_PHASE, /**< Border sweep head position, 0–1 around the perimeter (wraps). */
+     } ERAnimProp;
+ 
+     /**
+@@ -761,6 +762,12 @@ extern "C"
+         uint8_t shadow_radius; /**< Blur radius in pixels; 0 = hard edge. */
+         uint8_t elevation;     /**< Android-style elevation in dp; synthesises a shadow when shadow_opacity is 0. */
+ 
++        /* --- Border sweep (View-family): a light travelling around the rounded border --- */
++        uint32_t border_sweep_color; /**< Straight-alpha ARGB8888 at the head; 0 = no sweep. */
++        int16_t border_sweep_width;  /**< Ring thickness in pixels, inside the box; 0 = no sweep. */
++        float border_sweep_phase;    /**< Head position, 0–1 around the perimeter clockwise from top-left. */
++        float border_sweep_length;   /**< Tail as a fraction of the perimeter; 0 = 0.3. */
++
+         /* --- ActivityIndicator --- */
+         uint32_t indicator_color; /**< Spinner dot color; 0 = 0xFFFFFFFF (white). */
+         uint8_t animating;        /**< 1 = spinning (default when node created), 0 = stopped. */
+diff --git a/engine/rendering/border_sweep.c b/engine/rendering/border_sweep.c
+new file mode 100644
+index 0000000..81ff851
+--- /dev/null
++++ b/engine/rendering/border_sweep.c
+@@ -0,0 +1,169 @@
++/*
++ * Copyright 2026 PS5 React contributors
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#include "border_sweep.h"
++#include "renderer_internal.h"
++#include <math.h>
++
++#define SWEEP_ROW_MAX 512
++#define SWEEP_PI 3.14159265f
++/* The head fades in over this much of the perimeter ahead of it, so it has no hard front edge. */
++#define SWEEP_LEAD 0.01f
++
++static uint32_t s_row[ERUI_RENDER_WORKERS][SWEEP_ROW_MAX];
++
++/** Signed distance from (px, py) to a rounded rect centred on the origin: negative inside. */
++static float sd_rrect(float px, float py, float hw, float hh, float r)
++{
++    const float qx = fabsf(px) - (hw - r);
++    const float qy = fabsf(py) - (hh - r);
++    const float ox = qx > 0.0f ? qx : 0.0f;
++    const float oy = qy > 0.0f ? qy : 0.0f;
++    return sqrtf(ox * ox + oy * oy) + fminf(fmaxf(qx, qy), 0.0f) - r;
++}
++
++/**
++ * Where (px, py) sits along the ring's centre line, as a fraction of its perimeter: clockwise from the
++ * left end of the top edge. `a` and `b` are the half-lengths of the straight edges, `r` the corner radius.
++ */
++static float perimeter_at(float px, float py, float a, float b, float r)
++{
++    const float quarter = r * SWEEP_PI * 0.5f;
++    const float total = 4.0f * a + 4.0f * b + 4.0f * quarter;
++    if (total <= 0.0f)
++        return 0.0f;
++    float s;
++    if (fabsf(px) <= a && py < 0.0f)
++        s = px + a;
++    else if (px > a && py < -b)
++        s = 2.0f * a + r * (atan2f(py + b, px - a) + SWEEP_PI * 0.5f);
++    else if (px > 0.0f && fabsf(py) <= b)
++        s = 2.0f * a + quarter + (py + b);
++    else if (px > a && py > b)
++        s = 2.0f * a + 2.0f * b + quarter + r * atan2f(py - b, px - a);
++    else if (fabsf(px) <= a && py > 0.0f)
++        s = 2.0f * a + 2.0f * b + 2.0f * quarter + (a - px);
++    else if (px < -a && py > b)
++        s = 4.0f * a + 2.0f * b + 2.0f * quarter + r * (atan2f(py - b, px + a) - SWEEP_PI * 0.5f);
++    else if (px < 0.0f && fabsf(py) <= b)
++        s = 4.0f * a + 2.0f * b + 3.0f * quarter + (b - py);
++    else
++        s = 4.0f * a + 4.0f * b + 3.0f * quarter + r * (atan2f(py + b, px + a) + SWEEP_PI);
++    return s / total;
++}
++
++/** Brightness at perimeter position t: 1 at the head, fading to 0 over `length` behind it. */
++static float sweep_alpha(float t, float phase, float length)
++{
++    float d = phase - t;
++    d -= floorf(d); /* distance behind the head, 0..1 */
++    if (d > 1.0f - SWEEP_LEAD)
++        return (d - (1.0f - SWEEP_LEAD)) / SWEEP_LEAD;
++    if (d >= length)
++        return 0.0f;
++    const float f = 1.0f - d / length;
++    return f * f;
++}
++
++int er_border_sweep_reach(int radius, int width)
++{
++    return (radius > width ? radius : width) + 2;
++}
++
++void er_border_sweep_render(int x, int y, int w, int h, int radius, int width, uint32_t argb, float phase,
++                            float length)
++{
++    if (w <= 0 || h <= 0 || width <= 0 || (argb >> 24) == 0U || length <= 0.0f)
++        return;
++    const int max_r = (w < h ? w : h) / 2;
++    const int r = radius < 0 ? 0 : (radius > max_r ? max_r : radius);
++    const float hw = (float)w * 0.5f, hh = (float)h * 0.5f;
++    const float bw = (float)width;
++    const float inner_r = (float)r > bw ? (float)r - bw : 0.0f;
++    /* The ring's centre line, which the sweep travels along. */
++    const float mid = bw * 0.5f;
++    float cr = (float)r - mid;
++    if (cr < 0.0f)
++        cr = 0.0f;
++    const float ca = hw - mid - cr, cb = hh - mid - cr;
++    const float head_a = (float)(argb >> 24) / 255.0f;
++    const uint32_t cr8 = (argb >> 16) & 0xFFU, cg8 = (argb >> 8) & 0xFFU, cb8 = argb & 0xFFU;
++
++    int cx0 = x, cy0 = y, cx1 = x + w, cy1 = y + h;
++    int gx, gy, gw, gh;
++    if (er_get_clip_rect(&gx, &gy, &gw, &gh))
++    {
++        if (gx > cx0)
++            cx0 = gx;
++        if (gy > cy0)
++            cy0 = gy;
++        if (gx + gw < cx1)
++            cx1 = gx + gw;
++        if (gy + gh < cy1)
++            cy1 = gy + gh;
++    }
++    if (cx0 >= cx1 || cy0 >= cy1)
++        return;
++
++    uint32_t* const row = s_row[er_render_worker_id()];
++    const int reach = er_border_sweep_reach(r, width);
++    for (int sy = cy0; sy < cy1; sy++)
++    {
++        const int ry = sy - y;
++        const bool band = ry < reach || ry >= h - reach;
++        /* A row clear of the top and bottom bands holds the ring only near its left and right edges. */
++        const int spans[2][2] = {{0, band ? w : reach}, {band ? w : w - reach, w}};
++        for (int k = 0; k < (band ? 1 : 2); k++)
++        {
++            int s0 = x + spans[k][0], s1 = x + spans[k][1];
++            if (s0 < cx0)
++                s0 = cx0;
++            if (s1 > cx1)
++                s1 = cx1;
++            for (int c0 = s0; c0 < s1; c0 += SWEEP_ROW_MAX)
++            {
++                const int c1 = (s1 - c0) < SWEEP_ROW_MAX ? s1 : c0 + SWEEP_ROW_MAX;
++                bool any = false;
++                for (int sx = c0; sx < c1; sx++)
++                {
++                    const float px = (float)(sx - x) + 0.5f - hw, py = (float)ry + 0.5f - hh;
++                    float cov = 0.5f - sd_rrect(px, py, hw, hh, (float)r);
++                    cov = cov < 0.0f ? 0.0f : (cov > 1.0f ? 1.0f : cov);
++                    if (cov > 0.0f)
++                    {
++                        float in = 0.5f + sd_rrect(px, py, hw - bw, hh - bw, inner_r);
++                        cov *= in < 0.0f ? 0.0f : (in > 1.0f ? 1.0f : in);
++                    }
++                    uint32_t p = 0U;
++                    if (cov > 0.0f)
++                    {
++                        const float a = cov * head_a * sweep_alpha(perimeter_at(px, py, ca, cb, cr), phase, length);
++                        const uint32_t a8 = (uint32_t)(a * 255.0f + 0.5f);
++                        if (a8 > 0U)
++                        {
++                            p = (a8 << 24) | (((cr8 * a8 + 127U) / 255U) << 16) | (((cg8 * a8 + 127U) / 255U) << 8)
++                                | ((cb8 * a8 + 127U) / 255U);
++                            any = true;
++                        }
++                    }
++                    row[sx - c0] = p;
++                }
++                if (any)
++                    er_blit_blend(row, (c1 - c0) * (int)sizeof(uint32_t), 255, c0, sy, c1 - c0, 1);
++            }
++        }
++    }
++}
+diff --git a/engine/rendering/border_sweep.h b/engine/rendering/border_sweep.h
+new file mode 100644
+index 0000000..076d1bf
+--- /dev/null
++++ b/engine/rendering/border_sweep.h
+@@ -0,0 +1,47 @@
++/*
++ * Copyright 2026 PS5 React contributors
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#ifndef EMBEDDED_REACT_BORDER_SWEEP_H
++#define EMBEDDED_REACT_BORDER_SWEEP_H
++
++#include <stdint.h>
++
++/**
++ * @brief Draws a light sweeping around a rounded-rect border: a ring `width` px thick inside the box,
++ * brightest at `phase` (a fraction of the perimeter, clockwise from the top edge's left end) and fading
++ * over the `length` of the perimeter behind it. Anti-aliased against both edges of the ring.
++ *
++ * @param[in] x, y, w, h  The node's box in screen pixels.
++ * @param[in] radius      Corner radius of the box (clamped to half its shorter side).
++ * @param[in] width       Ring thickness in pixels.
++ * @param[in] argb        Straight-alpha colour at the head.
++ * @param[in] phase       Head position, 0..1 around the perimeter (wrapped).
++ * @param[in] length      Tail length as a fraction of the perimeter, 0..1.
++ */
++void er_border_sweep_render(int x, int y, int w, int h, int radius, int width, uint32_t argb, float phase,
++                            float length);
++
++/**
++ * @brief How far the sweep reaches in from each edge of the box: the bands a phase change repaints.
++ *
++ * @param[in] radius  Corner radius.
++ * @param[in] width   Ring thickness.
++ *
++ * @return Band thickness in pixels.
++ */
++int er_border_sweep_reach(int radius, int width);
++
++#endif /* EMBEDDED_REACT_BORDER_SWEEP_H */
+diff --git a/engine/scene/compositor.c b/engine/scene/compositor.c
+index 76fc93e..6133ff0 100644
+--- a/engine/scene/compositor.c
++++ b/engine/scene/compositor.c
+@@ -16,6 +16,7 @@
+ 
+ #include "arc.h"
+ #include "arc_widget.h"
++#include "border_sweep.h"
+ #include "er_damage_internal.h"
+ #include "er_limits.h"
+ #include "er_node_internal.h"
+@@ -2886,6 +2887,16 @@ static void render_node_content(
+         render_tree(child, needs_paint, occluded || buried, child_tx, child_ty);
+     }
+ 
++    /* The border sweep lights the edge over the node's content, like a focus ring. */
++    if (should_render && (n->type == ER_NODE_VIEW || n->type == ER_NODE_PRESSABLE)
++        && n->props.view.border_sweep_width > 0)
++    {
++        const ERViewProps* vp = &n->props.view;
++        er_border_sweep_render(px, py, w, h, vp->border_tl_radius > 0 ? vp->border_tl_radius : vp->border_radius,
++                               vp->border_sweep_width, vp->border_sweep_color, vp->border_sweep_phase,
++                               vp->border_sweep_length > 0.0f ? vp->border_sweep_length : 0.3f);
++    }
++
+     if (clips)
+         er_pop_clip_rect();
+ }
+@@ -3343,6 +3354,10 @@ static void copy_view_shadow_and_gradient(ERNode* node, const ERProps* props)
+     node->props.view.shadow_opacity = props->shadow_opacity;
+     node->props.view.shadow_radius = props->shadow_radius;
+     node->props.view.elevation = props->elevation;
++    node->props.view.border_sweep_color = props->border_sweep_color;
++    node->props.view.border_sweep_width = props->border_sweep_width;
++    node->props.view.border_sweep_phase = props->border_sweep_phase;
++    node->props.view.border_sweep_length = props->border_sweep_length;
+     node->props.view.gradient_type = props->gradient_type;
+     node->props.view.gradient_corner = props->gradient_corner;
+     node->props.view.gradient_angle = props->gradient_angle;
+@@ -3706,6 +3721,7 @@ void er_node_set_props(ERNode* node, const ERProps* props)
+     if (props_changed)
+     {
+         mark_layout_dirty();
++        node->sweep_moved = false; /* a real change repaints the box, not just the sweep's bands */
+         if (visual_changed || !node->has_last_paint)
+             er_mark_dirty_upward(node);
+         else
+@@ -5424,6 +5440,9 @@ void er_commit(void)
+             if (!n)
+                 continue;
+ 
++            /* Consumed here whichever path measures the node, so a stale flag never narrows a later change. */
++            const bool sweep_only = n->sweep_moved;
++            n->sweep_moved = false;
+             if (n->subtree_hidden && !(n->type == ER_NODE_MODAL && n->modal_scrim_shown))
+                 continue;
+             if (n->overflow_toggled)
+@@ -5571,6 +5590,31 @@ void er_commit(void)
+                                    || spans_paint_window(rx, ry, rw, rh));
+             if (!n->source_dirty && !moved)
+                 continue; /* unchanged and in place: contributes nothing to the damage */
++            if (sweep_only && !n->overflow_toggled)
++            {
++                /* Only the sweep's phase changed: repaint the bands along the edges the ring can reach,
++                 * not the whole box (a focused card under a travelling light). */
++                if (!moved)
++                {
++                    int reach = er_border_sweep_reach(
++                        n->props.view.border_tl_radius > 0 ? n->props.view.border_tl_radius : n->props.view.border_radius,
++                        n->props.view.border_sweep_width);
++                    if (reach > rw / 2)
++                        reach = (rw + 1) / 2;
++                    if (reach > rh / 2)
++                        reach = (rh + 1) / 2;
++                    const int bands[4][4] = {{rx, ry, rw, reach}, {rx, ry + rh - reach, rw, reach},
++                                             {rx, ry + reach, reach, rh - 2 * reach},
++                                             {rx + rw - reach, ry + reach, reach, rh - 2 * reach}};
++                    for (int b = 0; b < 4; b++)
++                    {
++                        int bx = bands[b][0], by = bands[b][1], bw = bands[b][2], bh = bands[b][3];
++                        clip_rect_to_clippers(n, &bx, &by, &bw, &bh);
++                        add_damage(&dmg, bx, by, bw, bh, rb_x0, rb_y0, rb_x1, rb_y1);
++                    }
++                    continue;
++                }
++            }
+             /* A container that only MOVED (or resized) and paints nothing, now or last time, has no pixels
+              * of its own to repaint or erase: its children report their own moves. Damaging its box instead
+              * made a list that grows at its unseen end (more rows, a taller spacer) repaint the whole
+diff --git a/engine/scene/er_node_internal.h b/engine/scene/er_node_internal.h
+index 60f8250..5e3992d 100644
+--- a/engine/scene/er_node_internal.h
++++ b/engine/scene/er_node_internal.h
+@@ -221,6 +221,12 @@ typedef struct
+     uint8_t shadow_radius; /**< Blur radius in pixels. */
+     uint8_t elevation;     /**< Android-style elevation in dp; synthesises a shadow when shadow_opacity is 0. */
+ 
++    /* Border sweep */
++    uint32_t border_sweep_color;
++    int16_t border_sweep_width;
++    float border_sweep_phase;
++    float border_sweep_length;
++
+     /* Gradient (requires ERUI_GRADIENT) */
+     uint8_t gradient_type;                                /**< ERGradientType. */
+     uint8_t gradient_corner;                              /**< ERGradientCorner (overrides gradient_angle). */
+@@ -421,6 +427,7 @@ struct ERNode
+                                        clearing a shadow used to erase only the box (issue #140). */
+     bool has_last_paint;          /**< Whether last_paint_rect holds a valid prior-frame rect. */
+     bool last_paint_empty;        /**< The last paint was of a container that paints nothing itself. */
++    bool sweep_moved;             /**< Only the border sweep phase changed since the last commit. */
+     bool last_paint_untransformed; /**< The last paint of this TRANSFORMED node degraded to its raw,
+                                         untransformed box: the scratch capture could not be started, so
+                                         last_paint_rect holds that box (knob reach and shadow bleed included
+diff --git a/engine/tests/rendering/CMakeLists.txt b/engine/tests/rendering/CMakeLists.txt
+index 2c8d3d1..d22a936 100644
+--- a/engine/tests/rendering/CMakeLists.txt
++++ b/engine/tests/rendering/CMakeLists.txt
+@@ -206,3 +206,8 @@ add_test(NAME rendering_content_padding COMMAND test_content_padding)
+ add_executable(test_paint_free_container test_paint_free_container.c)
+ target_link_libraries(test_paint_free_container PRIVATE embedded-react)
+ add_test(NAME rendering_paint_free_container COMMAND test_paint_free_container)
++
++add_executable(test_border_sweep test_border_sweep.c)
++target_link_libraries(test_border_sweep PRIVATE embedded-react)
++target_include_directories(test_border_sweep PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../core)
++add_test(NAME rendering_border_sweep COMMAND test_border_sweep)
+diff --git a/engine/tests/rendering/test_border_sweep.c b/engine/tests/rendering/test_border_sweep.c
+new file mode 100644
+index 0000000..d727369
+--- /dev/null
++++ b/engine/tests/rendering/test_border_sweep.c
+@@ -0,0 +1,322 @@
++/*
++ * Copyright 2026 Cory Lamming
++ * Copyright 2026 PS5 React contributors
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++/*
++ * A border sweep draws a light around the rounded border, brightest at its phase and fading behind it,
++ * and an animated phase repaints only the bands along the edges, every frame matching a full repaint.
++ */
++#include "er_scene.h"
++#include "native_renderer.h"
++#include "renderer_internal.h"
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++/*----------------------------------------------------------------------------------------------------------------------
++ - Constants
++ ---------------------------------------------------------------------------------------------------------------------*/
++
++#define FB_W 200
++#define FB_H 160
++
++#define ANIM_MS 480 /* animation duration */
++#define FRAME_MS 16 /* per-tick advance */
++#define FRAMES 40   /* ticks driven (runs past the end so the settled frames are checked too) */
++
++/*----------------------------------------------------------------------------------------------------------------------
++ - Types: Private
++ ---------------------------------------------------------------------------------------------------------------------*/
++
++/**
++ * @brief Framebuffer the backend stubs rasterise into.
++ */
++typedef struct
++{
++    uint32_t* fb; /**< Flat ARGB8888 framebuffer. */
++    int fb_w;     /**< Width in pixels. */
++    int fb_h;     /**< Height in pixels. */
++} TestCtx;
++
++/*----------------------------------------------------------------------------------------------------------------------
++ - Functions: Private — backend stubs
++ ---------------------------------------------------------------------------------------------------------------------*/
++
++/** @brief Rounds a 0–65025 product back to 0–255 the way the engine's blenders do. */
++static uint32_t div255(uint32_t v)
++{
++    return (v + 127U) / 255U;
++}
++
++/**
++ * @brief Backend fill_rect: source-over composites a straight-alpha colour into the framebuffer.
++ *
++ * @param[in] argb  Straight-alpha ARGB8888 fill colour.
++ * @param[in] x     Left edge.
++ * @param[in] y     Top edge.
++ * @param[in] w     Width in pixels.
++ * @param[in] h     Height in pixels.
++ * @param[in] ctx   Pointer to TestCtx.
++ */
++static long s_area;
++
++static void fill_cb(uint32_t argb, int x, int y, int w, int h, void* ctx)
++{
++    s_area += (long)(w > 0 ? w : 0) * (h > 0 ? h : 0);
++    TestCtx* t = ctx;
++    const uint32_t a = (argb >> 24) & 0xFFU;
++    if (a == 0U || w <= 0 || h <= 0)
++        return;
++    const uint32_t inv = 255U - a;
++    const uint32_t sr = (argb >> 16) & 0xFFU, sg = (argb >> 8) & 0xFFU, sb = argb & 0xFFU;
++
++    for (int row = y; row < y + h; row++)
++    {
++        if (row < 0 || row >= t->fb_h)
++            continue;
++        for (int col = x; col < x + w; col++)
++        {
++            if (col < 0 || col >= t->fb_w)
++                continue;
++            uint32_t* d = &t->fb[row * t->fb_w + col];
++            const uint32_t dr = (*d >> 16) & 0xFFU, dg = (*d >> 8) & 0xFFU, db = *d & 0xFFU;
++            *d = 0xFF000000U | ((div255(sr * a) + div255(dr * inv)) << 16) | ((div255(sg * a) + div255(dg * inv)) << 8)
++                 | (div255(sb * a) + div255(db * inv));
++        }
++    }
++}
++
++/**
++ * @brief Backend copy_rect: source-over composites a premultiplied buffer into the framebuffer.
++ *
++ * Fully transparent source pixels are skipped and the rest blended, matching the engine's own
++ * scratch copy — an unconditional overwrite would erase the background under antialiased edges and
++ * make the comparison depend on repaint history rather than on scene state.
++ *
++ * @param[in] src     Source pixel buffer (premultiplied ARGB8888).
++ * @param[in] stride  Source row stride in bytes.
++ * @param[in] x       Destination left edge.
++ * @param[in] y       Destination top edge.
++ * @param[in] w       Width in pixels.
++ * @param[in] h       Height in pixels.
++ * @param[in] ctx     Pointer to TestCtx.
++ */
++static void copy_cb(const void* src, int stride, int x, int y, int w, int h, void* ctx)
++{
++    s_area += (long)(w > 0 ? w : 0) * (h > 0 ? h : 0);
++    TestCtx* t = ctx;
++    for (int row = 0; row < h; row++)
++    {
++        const uint32_t* s = (const uint32_t*)((const uint8_t*)src + (size_t)row * (size_t)stride);
++        for (int col = 0; col < w; col++)
++        {
++            const int dx = x + col, dy = y + row;
++            if (dx < 0 || dx >= t->fb_w || dy < 0 || dy >= t->fb_h)
++                continue;
++            const uint32_t sp = s[col];
++            const uint32_t sa = (sp >> 24) & 0xFFU;
++            if (sa == 0U)
++                continue;
++            uint32_t* d = &t->fb[dy * t->fb_w + dx];
++            if (sa == 0xFFU)
++            {
++                *d = sp;
++                continue;
++            }
++            const uint32_t inv = 255U - sa;
++            const uint32_t dr = (*d >> 16) & 0xFFU, dg = (*d >> 8) & 0xFFU, db = *d & 0xFFU;
++            *d = 0xFF000000U | ((((sp >> 16) & 0xFFU) + div255(dr * inv)) << 16)
++                 | ((((sp >> 8) & 0xFFU) + div255(dg * inv)) << 8) | ((sp & 0xFFU) + div255(db * inv));
++        }
++    }
++}
++
++/**
++ * @brief Backend blend_rect: source-over composites premultiplied pixels scaled by a global alpha.
++ *
++ * @param[in] src     Source pixel buffer (premultiplied ARGB8888).
++ * @param[in] stride  Source row stride in bytes.
++ * @param[in] alpha   Global alpha scale 0–255.
++ * @param[in] x       Destination left edge.
++ * @param[in] y       Destination top edge.
++ * @param[in] w       Width in pixels.
++ * @param[in] h       Height in pixels.
++ * @param[in] ctx     Pointer to TestCtx.
++ */
++static void blend_cb(const void* src, int stride, uint8_t alpha, int x, int y, int w, int h, void* ctx)
++{
++    s_area += (long)(w > 0 ? w : 0) * (h > 0 ? h : 0);
++    TestCtx* t = ctx;
++    for (int row = 0; row < h; row++)
++    {
++        const uint32_t* s = (const uint32_t*)((const uint8_t*)src + (size_t)row * (size_t)stride);
++        for (int col = 0; col < w; col++)
++        {
++            const int dx = x + col, dy = y + row;
++            if (dx < 0 || dx >= t->fb_w || dy < 0 || dy >= t->fb_h)
++                continue;
++            const uint32_t sp = s[col];
++            const uint32_t sa = div255(((sp >> 24) & 0xFFU) * (uint32_t)alpha);
++            if (sa == 0U)
++                continue;
++            const uint32_t inv = 255U - sa;
++            /* Source is premultiplied: scale its colour by the same global alpha, not by sa. */
++            const uint32_t sr = div255(((sp >> 16) & 0xFFU) * (uint32_t)alpha);
++            const uint32_t sg = div255(((sp >> 8) & 0xFFU) * (uint32_t)alpha);
++            const uint32_t sb = div255((sp & 0xFFU) * (uint32_t)alpha);
++            uint32_t* d = &t->fb[dy * t->fb_w + dx];
++            const uint32_t dr = (*d >> 16) & 0xFFU, dg = (*d >> 8) & 0xFFU, db = *d & 0xFFU;
++            *d = 0xFF000000U | ((sr + div255(dr * inv)) << 16) | ((sg + div255(dg * inv)) << 8)
++                 | (sb + div255(db * inv));
++        }
++    }
++}
++
++/*----------------------------------------------------------------------------------------------------------------------
++ - Functions: Private — helpers
++ ---------------------------------------------------------------------------------------------------------------------*/
++
++/**
++ * @brief Prints a failure message.
++ *
++ * @param[in] msg  Message describing the failed assertion.
++ *
++ * @return EXIT_FAILURE, so callers can `return fail(...)`.
++ */
++static int fail(const char* msg)
++{
++    fprintf(stderr, "FAIL: %s\n", msg);
++    return EXIT_FAILURE;
++}
++
++/**
++ * @brief Returns an ERProps with every int16_t layout field set to ER_LAYOUT_AUTO.
++ *
++ * @return Initialised ERProps with opacity 255.
++ */
++static ERProps props_default(void)
++{
++    ERProps p = {0};
++    p.left = p.top = p.right = p.bottom = ER_LAYOUT_AUTO;
++    p.width = p.height = ER_LAYOUT_AUTO;
++    p.min_width = p.max_width = ER_LAYOUT_AUTO;
++    p.min_height = p.max_height = ER_LAYOUT_AUTO;
++    p.padding = p.padding_left = p.padding_top = ER_LAYOUT_AUTO;
++    p.padding_right = p.padding_bottom = ER_LAYOUT_AUTO;
++    p.margin = p.margin_left = p.margin_top = ER_LAYOUT_AUTO;
++    p.margin_right = p.margin_bottom = ER_LAYOUT_AUTO;
++    p.gap = p.row_gap = p.column_gap = ER_LAYOUT_AUTO;
++    p.flex_basis = ER_LAYOUT_AUTO;
++    p.opacity = 255U;
++    return p;
++}
++
++static uint32_t px_at(const TestCtx* t, int x, int y)
++{
++    return t->fb[y * FB_W + x];
++}
++
++static unsigned brightness(uint32_t p)
++{
++    return ((p >> 16) & 0xFFU) + ((p >> 8) & 0xFFU) + (p & 0xFFU);
++}
++
++int main(void)
++{
++    static uint32_t fb[FB_W * FB_H];
++    static uint32_t incremental[FB_W * FB_H];
++    TestCtx t = {fb, FB_W, FB_H};
++    EmbeddedRenderBackend be = {fill_cb, copy_cb, blend_cb, NULL, NULL, &t};
++    embedded_renderer_set_backend(&be);
++
++    er_reset();
++    ERNode* root = er_node_create(ER_NODE_VIEW);
++    ERProps rp = props_default();
++    rp.width = FB_W;
++    rp.height = FB_H;
++    rp.background_color = 0xFF101010U;
++    er_node_set_props(root, &rp);
++
++    /* A 160x120 card at (20, 20) with a 12 px radius and a 3 px white sweep, head at the top centre. */
++    ERNode* card = er_node_create(ER_NODE_VIEW);
++    ERProps cp = props_default();
++    cp.position = ER_POS_ABSOLUTE;
++    cp.left = 20;
++    cp.top = 20;
++    cp.width = 160;
++    cp.height = 120;
++    cp.border_radius = 12;
++    cp.background_color = 0xFF203040U;
++    cp.border_sweep_color = 0xFFFFFFFFU;
++    cp.border_sweep_width = 3;
++    cp.border_sweep_length = 0.3f;
++    er_node_set_props(card, &cp);
++    er_tree_append_child(root, card);
++    er_tree_set_root(root);
++
++    ERAnimConfig cfg = {0};
++    cfg.type = ER_ANIM_TIMING;
++    cfg.duration_ms = 1000;
++    cfg.easing = ER_EASE_LINEAR;
++    ERAnimValueHandle phase = er_anim_value_create(0.1f);
++    er_anim_value_bind(phase, card, ER_PROP_BORDER_SWEEP_PHASE);
++    er_force_full_repaint();
++    er_commit();
++
++    /* The straight top edge spans perimeter 0..~0.24: the head (0.1) is on it, a third along. */
++    const unsigned head = brightness(px_at(&t, 20 + 12 + 37, 21));
++    const unsigned tail = brightness(px_at(&t, 20 + 12 + 5, 21));
++    const unsigned dark = brightness(px_at(&t, 100, 20 + 119 - 1));
++    const unsigned card_bg = brightness(0xFF203040U);
++    if (head < 600)
++        return fail("the sweep's head is not bright");
++    if (!(tail > card_bg && tail < head))
++        return fail("the tail behind the head does not fade");
++    if (dark > card_bg + 10)
++        return fail("the far side of the border is lit");
++    if (brightness(px_at(&t, 100, 80)) != card_bg)
++        return fail("the sweep drew inside the card");
++
++    /* What repainting the whole card costs, to compare a phase step against. */
++    cp.background_color = 0xFF203041U;
++    er_node_set_props(card, &cp);
++    s_area = 0;
++    er_commit();
++    const long whole_card = s_area;
++
++    er_anim_value_animate(phase, 1.1f, &cfg);
++    for (int f = 0; f < 20; f++)
++    {
++        embedded_renderer_tick(16);
++        s_area = 0;
++        er_commit();
++        if (s_area * 2 >= whole_card)
++            return fail("a phase step repainted more than half of what the whole card costs");
++        memcpy(incremental, fb, sizeof(incremental));
++        memset(fb, 0, sizeof(fb));
++        er_force_full_repaint();
++        er_commit();
++        if (memcmp(incremental, fb, sizeof(incremental)) != 0)
++        {
++            char msg[96];
++            snprintf(msg, sizeof(msg), "frame %d of the sweep differs from a full repaint", f);
++            return fail(msg);
++        }
++        memcpy(fb, incremental, sizeof(incremental));
++    }
++    return EXIT_SUCCESS;
++}

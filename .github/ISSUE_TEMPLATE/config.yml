@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Install guide
+    url: https://gitlab.com/myluxy/overdrive#install-in-four-steps
+    about: How to install Overdrive with ShadowMount+, step by step.
+  - name: Troubleshooting
+    url: https://gitlab.com/myluxy/overdrive#troubleshooting
+    about: Overdrive doesn't show up, an update won't install, and other common problems.

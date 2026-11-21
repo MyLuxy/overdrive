@@ -1,0 +1,475 @@
+Embedded React: right-to-left direction and start/end text alignment.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, after the patches listed before this
+one there. Changed files: engine/include/er_scene.h,
+engine/scene/er_node_internal.h, engine/scene/compositor.c,
+engine/layout/layout_engine.c, engine/text/text_renderer.h,
+engine/text/text_renderer.c, engine/text/er_text_shaper.h,
+bridges/quickjs/native_ui_bridge.c and
+bridges/quickjs/js/src/embedded-react/index.d.ts. Not yet proposed upstream.
+
+Arabic and Urdu interfaces run right to left. The `direction` style ('ltr',
+'rtl', 'inherit') on any node is inherited like Yoga's: a right-to-left row
+lays its children out from the right edge and a column starts its cross axis
+at the right, except inside a scroll container, whose content cannot scroll to
+negative offsets. Text takes `writingDirection` ('auto', 'ltr', 'rtl') or the
+inherited direction as its paragraph's base direction, passed to the shaper
+(ERTextRenderParams.direction and a new claims() argument).
+
+textAlign gains 'start' (the default, also 'auto') and 'end', which follow the
+paragraph direction; 'left' and 'right' stay physical. ERTextAlign is
+renumbered so a zeroed node means START, which is left in left-to-right text,
+so existing layouts draw the same.
+
+diff --git a/bridges/quickjs/js/src/embedded-react/index.d.ts b/bridges/quickjs/js/src/embedded-react/index.d.ts
+index 93e0e8a..4d27110 100644
+--- a/bridges/quickjs/js/src/embedded-react/index.d.ts
++++ b/bridges/quickjs/js/src/embedded-react/index.d.ts
+@@ -143,6 +143,9 @@ export interface ViewStyle {
+   flexShrink?: number;
+   flexBasis?: number;
+   flexDirection?: 'row' | 'column' | 'row-reverse' | 'column-reverse';
++  /** Inherited. 'rtl' lays a row out from the right and starts a column's cross axis at the right
++   * (except inside a ScrollView), and makes text start at the right. */
++  direction?: 'inherit' | 'ltr' | 'rtl';
+   flexWrap?: 'nowrap' | 'wrap' | 'wrap-reverse';
+   justifyContent?:
+     | 'flex-start'
+@@ -236,7 +239,11 @@ export interface TextStyle extends ViewStyle {
+   fontWeight?: string | number;
+   /** 'italic' is a synthetic slant (horizontal shear), not a separate face. */
+   fontStyle?: 'normal' | 'italic';
+-  textAlign?: 'auto' | 'left' | 'right' | 'center';
++  /** 'auto' and 'start' follow the paragraph direction; 'left' and 'right' do not. */
++  textAlign?: 'auto' | 'start' | 'end' | 'left' | 'right' | 'center';
++  /** Base direction of the paragraph; 'auto' (default) takes the inherited `direction`, else the
++   * first strong character's. */
++  writingDirection?: 'auto' | 'ltr' | 'rtl';
+   textDecorationLine?: 'none' | 'underline' | 'line-through';
+   lineHeight?: number;
+   letterSpacing?: number;
+diff --git a/bridges/quickjs/native_ui_bridge.c b/bridges/quickjs/native_ui_bridge.c
+index b94d7bf..4ffc64a 100644
+--- a/bridges/quickjs/native_ui_bridge.c
++++ b/bridges/quickjs/native_ui_bridge.c
+@@ -826,7 +826,7 @@ static uint8_t map_overflow(const char* s)
+     return ER_OVERFLOW_VISIBLE;
+ }
+ 
+-/** @brief Maps a textAlign string to ERTextAlign. @param[in] s String. @return Enum value. */
++/** @brief Maps a textAlign string to ERTextAlign ('auto' is 'start'). @param[in] s String. @return Enum value. */
+ static uint8_t map_text_align(const char* s)
+ {
+     if (strcmp(s, "center") == 0)
+@@ -837,7 +837,29 @@ static uint8_t map_text_align(const char* s)
+     {
+         return ER_TEXT_ALIGN_RIGHT;
+     }
+-    return ER_TEXT_ALIGN_LEFT;
++    if (strcmp(s, "left") == 0)
++    {
++        return ER_TEXT_ALIGN_LEFT;
++    }
++    if (strcmp(s, "end") == 0)
++    {
++        return ER_TEXT_ALIGN_END;
++    }
++    return ER_TEXT_ALIGN_START;
++}
++
++/** @brief Maps a direction or writingDirection string to ERDirection. @param[in] s String. @return Enum value. */
++static uint8_t map_direction(const char* s)
++{
++    if (strcmp(s, "ltr") == 0)
++    {
++        return ER_DIRECTION_LTR;
++    }
++    if (strcmp(s, "rtl") == 0)
++    {
++        return ER_DIRECTION_RTL;
++    }
++    return ER_DIRECTION_INHERIT;
+ }
+ 
+ /** @brief Maps a resizeMode string to ERResizeMode. @param[in] s String. @return Enum value. */
+@@ -1084,6 +1106,7 @@ typedef enum
+     PROP_FLEX_SHRINK,
+     PROP_FLEX_BASIS,
+     PROP_FLEX_DIRECTION,
++    PROP_DIRECTION,
+     PROP_FLEX_WRAP,
+     PROP_JUSTIFY_CONTENT,
+     PROP_ALIGN_ITEMS,
+@@ -1121,6 +1144,7 @@ typedef enum
+     PROP_FONT_WEIGHT,
+     PROP_FONT_STYLE,
+     PROP_TEXT_ALIGN,
++    PROP_WRITING_DIRECTION,
+     PROP_TEXT_DECORATION_LINE,
+     PROP_NUMBER_OF_LINES,
+     PROP_ELLIPSIZE_MODE,
+@@ -1214,6 +1238,7 @@ static const char* const k_prop_names[PROP_COUNT_] = {
+     [PROP_FLEX_SHRINK] = "flexShrink",
+     [PROP_FLEX_BASIS] = "flexBasis",
+     [PROP_FLEX_DIRECTION] = "flexDirection",
++    [PROP_DIRECTION] = "direction",
+     [PROP_FLEX_WRAP] = "flexWrap",
+     [PROP_JUSTIFY_CONTENT] = "justifyContent",
+     [PROP_ALIGN_ITEMS] = "alignItems",
+@@ -1251,6 +1276,7 @@ static const char* const k_prop_names[PROP_COUNT_] = {
+     [PROP_FONT_WEIGHT] = "fontWeight",
+     [PROP_FONT_STYLE] = "fontStyle",
+     [PROP_TEXT_ALIGN] = "textAlign",
++    [PROP_WRITING_DIRECTION] = "writingDirection",
+     [PROP_TEXT_DECORATION_LINE] = "textDecorationLine",
+     [PROP_NUMBER_OF_LINES] = "numberOfLines",
+     [PROP_ELLIPSIZE_MODE] = "ellipsizeMode",
+@@ -2309,6 +2335,7 @@ static void apply_props(JSContext* ctx, ERNode* node, JSValueConst obj)
+     ER_DIM(PROP_FLEX_SHRINK, flex_shrink);
+     apply_flex_basis(ctx, s_prop_slots[PROP_FLEX_BASIS], &p);
+     ER_ENUM(PROP_FLEX_DIRECTION, flex_direction, map_flex_direction);
++    ER_ENUM(PROP_DIRECTION, direction, map_direction);
+     ER_ENUM(PROP_FLEX_WRAP, flex_wrap, map_flex_wrap);
+     ER_ENUM(PROP_JUSTIFY_CONTENT, justify_content, map_justify);
+     ER_ENUM(PROP_ALIGN_ITEMS, align_items, map_align);
+@@ -2375,6 +2402,7 @@ static void apply_props(JSContext* ctx, ERNode* node, JSValueConst obj)
+     apply_font_weight(ctx, s_prop_slots[PROP_FONT_WEIGHT], &p);
+     ER_ENUM(PROP_FONT_STYLE, font_style, map_font_style);
+     ER_ENUM(PROP_TEXT_ALIGN, text_align, map_text_align);
++    ER_ENUM(PROP_WRITING_DIRECTION, writing_direction, map_direction);
+     ER_ENUM(PROP_TEXT_DECORATION_LINE, text_decoration, map_text_decoration);
+     ER_U8(PROP_NUMBER_OF_LINES, number_of_lines);
+     ER_ENUM(PROP_ELLIPSIZE_MODE, ellipsize_mode, map_ellipsize);
+diff --git a/engine/include/er_scene.h b/engine/include/er_scene.h
+index 7130bb6..f45de70 100644
+--- a/engine/include/er_scene.h
++++ b/engine/include/er_scene.h
+@@ -299,11 +299,28 @@ extern "C"
+      */
+     typedef enum
+     {
+-        ER_TEXT_ALIGN_LEFT = 0,   /**< Left-align each line (default). */
++        ER_TEXT_ALIGN_START = 0,  /**< Start of the paragraph: left, or right in right-to-left text (default). */
+         ER_TEXT_ALIGN_CENTER = 1, /**< Centre each line horizontally. */
+         ER_TEXT_ALIGN_RIGHT = 2,  /**< Right-align each line. */
++        ER_TEXT_ALIGN_LEFT = 3,   /**< Left-align each line, whatever the direction. */
++        ER_TEXT_ALIGN_END = 4,    /**< End of the paragraph: right, or left in right-to-left text. */
+     } ERTextAlign;
+ 
++    /**
++     * @brief Writing and layout direction (`direction` on any node, `writingDirection` on Text).
++     *
++     * A node's direction is inherited from the nearest ancestor that sets one. Right-to-left lays
++     * out a row's children from the right and aligns a column's children to the right (as Yoga
++     * does), except inside a scroll container; on Text it sets the paragraph's base direction.
++     * Without one anywhere, text takes the direction of its first strong character.
++     */
++    typedef enum
++    {
++        ER_DIRECTION_INHERIT = 0, /**< From the parent; `auto` for writingDirection (default). */
++        ER_DIRECTION_LTR = 1,     /**< Left to right. */
++        ER_DIRECTION_RTL = 2,     /**< Right to left. */
++    } ERDirection;
++
+     /**
+      * @brief Ellipsis placement when text is truncated by number_of_lines.
+      */
+@@ -665,6 +682,7 @@ extern "C"
+         int16_t flex_shrink;     /**< How much to shrink relative to siblings (0 = no shrink). */
+         int16_t flex_basis;      /**< Base size before grow/shrink (ER_LAYOUT_AUTO = use width/height). */
+         uint8_t flex_direction;  /**< ERFlexDirection — default ER_FLEX_COL. */
++        uint8_t direction;       /**< ERDirection    — default ER_DIRECTION_INHERIT. */
+         uint8_t flex_wrap;       /**< ERFlexWrap     — default ER_WRAP_NOWRAP. */
+         uint8_t align_items;     /**< ERFlexAlign    — default ER_ALIGN_STRETCH. */
+         uint8_t align_self;      /**< ERFlexAlign    — default ER_ALIGN_AUTO. */
+@@ -731,7 +749,8 @@ extern "C"
+         uint8_t font_size;                        /**< Font size in pixels. */
+         uint8_t font_weight;                      /**< 0 = normal, 1 = bold. */
+         uint8_t font_style;                       /**< ERFontStyle — default ER_FONT_STYLE_NORMAL. */
+-        uint8_t text_align;                       /**< ERTextAlign — default ER_TEXT_ALIGN_LEFT. */
++        uint8_t text_align;                       /**< ERTextAlign — default ER_TEXT_ALIGN_START. */
++        uint8_t writing_direction;                /**< ERDirection of the paragraph; INHERIT = auto. */
+         uint8_t number_of_lines;                  /**< Maximum rendered lines; 0 = unlimited. */
+         uint8_t ellipsize_mode;                   /**< ERTextEllipsize — used when number_of_lines truncates. */
+         uint8_t text_decoration;                  /**< ERTextDecoration — default none. */
+diff --git a/engine/layout/layout_engine.c b/engine/layout/layout_engine.c
+index d3d365b..667a8ac 100644
+--- a/engine/layout/layout_engine.c
++++ b/engine/layout/layout_engine.c
+@@ -335,6 +335,26 @@ static bool is_reverse_dir(const uint8_t d)
+     return d == ER_FLEX_ROW_REVERSE || d == ER_FLEX_COL_REVERSE;
+ }
+ 
++/**
++ * @brief True when @p n lays its children out right to left (ERDirection, inherited).
++ *
++ * A row then runs from the right edge, as row-reverse does, and a column's cross axis starts at the
++ * right. A scroll container keeps left-to-right order: its content cannot scroll to negative offsets.
++ *
++ * @param[in] n  Container node.
++ *
++ * @return true when the nearest node at or above @p n that sets a direction sets RTL.
++ */
++static bool layout_rtl(const ERNode* n)
++{
++    if (n->layout.overflow == ER_OVERFLOW_SCROLL)
++        return false;
++    for (const ERNode* a = n; a; a = er_get_node(a->parent_tag))
++        if (a->layout.direction != ER_DIRECTION_INHERIT)
++            return a->layout.direction == ER_DIRECTION_RTL;
++    return false;
++}
++
+ /**
+  * @brief Main-axis offset of a SOLE flex item under justifyContent, for a static position.
+  *
+@@ -860,7 +880,8 @@ static void compute_layout(const uint16_t tag, const int16_t w, const int16_t h,
+     const int16_t content_y = (int16_t)(y + pt);
+ 
+     const bool is_row = is_row_dir(L->flex_direction);
+-    const bool rev_main = is_reverse_dir(L->flex_direction);
++    const bool rtl = layout_rtl(n);
++    const bool rev_main = is_reverse_dir(L->flex_direction) != (is_row && rtl);
+     const int16_t main_size = is_row ? content_w : content_h;
+     const int16_t cross_avail = is_row ? content_h : content_w;
+     const int16_t main_gap = is_row ? edge_or(L->column_gap, L->gap) : edge_or(L->row_gap, L->gap);
+@@ -1285,7 +1306,7 @@ static void compute_layout(const uint16_t tag, const int16_t w, const int16_t h,
+     /*--------------------------------------------------------------------------
+      * Pass 5 — main-axis positions (justifyContent) + cross-axis (alignSelf).
+      *------------------------------------------------------------------------*/
+-    const bool rev_cross = (L->flex_wrap == ER_WRAP_WRAP_REVERSE);
++    const bool rev_cross = (L->flex_wrap == ER_WRAP_WRAP_REVERSE) != (!is_row && rtl);
+     const int32_t cross_den = 2 * ac_den; /* The 2 is alignSelf: center halves the leftover. */
+     int32_t line_cross_int = 0;           /* Whole-pixel cross start of line ln (unstretched). */
+     for (int ln = 0; ln < n_lines; ln++)
+@@ -1641,7 +1662,7 @@ static void compute_layout(const uint16_t tag, const int16_t w, const int16_t h,
+                               mm_lead,
+                               mm_trail,
+                               solo_main_offset2(L->justify_content, (int16_t)(main_size - s_main - mm_lead - mm_trail)),
+-                              is_reverse_dir(L->flex_direction));
++                              rev_main);
+             const int16_t cross_static =
+                 solo_axis_pos(is_row ? content_y : content_x,
+                               cross_avail,
+@@ -1649,7 +1670,7 @@ static void compute_layout(const uint16_t tag, const int16_t w, const int16_t h,
+                               mc_lead,
+                               mc_trail,
+                               solo_cross_offset2(self_align, (int16_t)(cross_avail - s_cross - mc_lead - mc_trail)),
+-                              L->flex_wrap == ER_WRAP_WRAP_REVERSE);
++                              rev_cross);
+ 
+             /* Insets measure from the padding box; an axis pinned by neither takes the static position. */
+             float ex, ey;
+diff --git a/engine/scene/compositor.c b/engine/scene/compositor.c
+index 93fa426..53e21ba 100644
+--- a/engine/scene/compositor.c
++++ b/engine/scene/compositor.c
+@@ -62,6 +62,20 @@ static inline bool cursor_blink_on(uint64_t now_ms)
+     return ((uint32_t)now_ms % ER_CURSOR_BLINK_MS) < (ER_CURSOR_BLINK_MS / 2U);
+ }
+ 
++/**
++ * @brief The paragraph direction text in @p n is drawn with: its writingDirection, else the
++ *        direction of the nearest node at or above it that sets one, else INHERIT (auto).
++ */
++static uint8_t text_direction(const ERNode* n)
++{
++    if (n->type == ER_NODE_TEXT && n->props.text.writing_direction != ER_DIRECTION_INHERIT)
++        return n->props.text.writing_direction;
++    for (const ERNode* a = n; a; a = er_get_node(a->parent_tag))
++        if (a->layout.direction != ER_DIRECTION_INHERIT)
++            return a->layout.direction;
++    return ER_DIRECTION_INHERIT;
++}
++
+ /** @brief Drops a UTF-8 sequence cut short at the end of @p s, as a copy truncated to a byte limit leaves. */
+ static void trim_partial_utf8(char* s)
+ {
+@@ -187,6 +201,7 @@ static void init_layout_defaults(ERLayoutSpec* L)
+     L->flex_shrink = 0;
+     L->flex_basis = ER_LAYOUT_AUTO;
+     L->flex_direction = ER_FLEX_COL;
++    L->direction = ER_DIRECTION_INHERIT;
+     L->flex_wrap = ER_WRAP_NOWRAP;
+     L->align_items = ER_ALIGN_STRETCH;
+     L->align_self = ER_ALIGN_AUTO;
+@@ -2712,6 +2727,7 @@ static void render_node_content(
+                 par.font_size = tp->font_size;
+                 par.font_family = tp->font_family;
+                 par.text_align = tp->text_align;
++                par.direction = text_direction(n);
+                 par.number_of_lines = tp->number_of_lines;
+                 par.ellipsize_mode = tp->ellipsize_mode;
+                 par.text_decoration = tp->text_decoration;
+@@ -2847,6 +2863,7 @@ static void render_node_content(
+                                     : (tip->color ? tip->color : 0xFFFFFFFFU);
+                 par.font_size = tip->font_size ? tip->font_size : 16U;
+                 par.font_family = tip->font_family;
++                par.direction = text_direction(n);
+                 par.number_of_lines = 1;
+                 par.ellipsize_mode = ER_TEXT_ELLIPSIZE_CLIP;
+                 const bool masked = tip->secure && !show_ph;
+@@ -3470,6 +3487,7 @@ void er_node_set_props(ERNode* node, const ERProps* props)
+     L->flex_shrink = props->flex_shrink;
+     L->flex_basis = props->flex_basis;
+     L->flex_direction = props->flex_direction;
++    L->direction = props->direction;
+     L->flex_wrap = props->flex_wrap;
+     L->align_items = props->align_items;
+     L->align_self = props->align_self;
+@@ -3548,6 +3566,7 @@ void er_node_set_props(ERNode* node, const ERProps* props)
+             node->props.text.font_weight = props->font_weight;
+             node->props.text.font_style = props->font_style;
+             node->props.text.text_align = props->text_align;
++            node->props.text.writing_direction = props->writing_direction;
+             node->props.text.number_of_lines = props->number_of_lines;
+             node->props.text.ellipsize_mode = props->ellipsize_mode;
+             node->props.text.text_decoration = props->text_decoration;
+diff --git a/engine/scene/er_node_internal.h b/engine/scene/er_node_internal.h
+index 4239b81..e690565 100644
+--- a/engine/scene/er_node_internal.h
++++ b/engine/scene/er_node_internal.h
+@@ -51,6 +51,7 @@ typedef struct
+     int16_t gap, row_gap, column_gap;
+     int16_t flex_grow, flex_shrink, flex_basis;
+     uint8_t flex_direction;  /**< ERFlexDirection  */
++    uint8_t direction;       /**< ERDirection      */
+     uint8_t flex_wrap;       /**< ERFlexWrap       */
+     uint8_t align_items;     /**< ERFlexAlign      */
+     uint8_t align_self;      /**< ERFlexAlign      */
+@@ -254,6 +255,7 @@ typedef struct
+     uint8_t font_weight; /**< 0 = normal, 1 = bold. */
+     uint8_t font_style;  /**< ERFontStyle — 0 = normal, 1 = italic. */
+     uint8_t text_align;  /**< ERTextAlign. */
++    uint8_t writing_direction; /**< ERDirection; INHERIT = from the nodes above, else auto. */
+     uint8_t number_of_lines;
+     uint8_t ellipsize_mode;  /**< ERTextEllipsize. */
+     uint8_t text_decoration; /**< ERTextDecoration. */
+diff --git a/engine/text/er_text_shaper.h b/engine/text/er_text_shaper.h
+index 59fd724..4d02e32 100644
+--- a/engine/text/er_text_shaper.h
++++ b/engine/text/er_text_shaper.h
+@@ -40,8 +40,12 @@ extern "C"
+      */
+     typedef struct ERTextShaper
+     {
+-        /** True when the shaper lays out @p text (UTF-8, spans already merged). Must be cheap. */
+-        bool (*claims)(const char* text, const char* font_family, uint8_t font_size);
++        /**
++         * True when the shaper lays out @p text (UTF-8, spans already merged). Must be cheap. Measuring
++         * passes ER_DIRECTION_INHERIT for @p direction: the shaper must measure text it only claims
++         * when drawing because of its direction exactly as the bitmap path does.
++         */
++        bool (*claims)(const char* text, const char* font_family, uint8_t font_size, uint8_t direction);
+         /** Single-line width and line height, as er_text_measure() reports them. */
+         void (*measure)(const char* text,
+                         uint8_t font_size,
+diff --git a/engine/text/text_renderer.c b/engine/text/text_renderer.c
+index 29ab28a..a0d45f5 100644
+--- a/engine/text/text_renderer.c
++++ b/engine/text/text_renderer.c
+@@ -581,7 +581,7 @@ void er_text_render(const ERTextRenderParams* params)
+     if (!render_src || !render_src[0])
+         return;
+ 
+-    if (s_shaper && s_shaper->claims(render_src, params->font_family, sz))
++    if (s_shaper && s_shaper->claims(render_src, params->font_family, sz, params->direction))
+     {
+         s_shaper->render(params, render_src, span_mode ? span_map : NULL);
+         return;
+@@ -611,6 +611,9 @@ void er_text_render(const ERTextRenderParams* params)
+         ellipsis_px = (int)ellipsis_g->advance + ls + (bold ? 1 : 0);
+     }
+ 
++    /* The bitmap path draws left to right; only an explicitly right-to-left paragraph flips START/END. */
++    const uint8_t align = er_text_physical_align(params->text_align, params->direction == ER_DIRECTION_RTL);
++
+     /* ---- Render each line. ---- */
+     for (int i = 0; i < n_lines; i++)
+     {
+@@ -650,11 +653,11 @@ void er_text_render(const ERTextRenderParams* params)
+ 
+         /* Compute horizontal cursor from alignment. */
+         int cursor_x;
+-        if (apply_ellip || params->text_align == ER_TEXT_ALIGN_LEFT)
++        if (apply_ellip || align == ER_TEXT_ALIGN_LEFT)
+         {
+             cursor_x = params->clip.x;
+         }
+-        else if (params->text_align == ER_TEXT_ALIGN_CENTER)
++        else if (align == ER_TEXT_ALIGN_CENTER)
+         {
+             const int off = (params->clip.w - lines[i].px_width) / 2;
+             cursor_x = params->clip.x + (off > 0 ? off : 0);
+@@ -783,7 +786,7 @@ void er_text_measure(const char* text,
+ 
+     font_size = er_text_clamp_font_size(font_size);
+ 
+-    if (s_shaper && text && text[0] && s_shaper->claims(text, font_family, font_size))
++    if (s_shaper && text && text[0] && s_shaper->claims(text, font_family, font_size, ER_DIRECTION_INHERIT))
+     {
+         int w = 0, h = 0;
+         s_shaper->measure(text, font_size, font_family, letter_spacing, font_weight, &w, &h);
+@@ -859,7 +862,7 @@ void er_text_measure_spans(const ERTextSpan* spans,
+             for (const char* s = spans[si].text; *s && pos < sizeof(merged) - 1U;)
+                 merged[pos++] = *s++;
+         merged[pos] = '\0';
+-        if (merged[0] && s_shaper->claims(merged, font_family, font_size))
++        if (merged[0] && s_shaper->claims(merged, font_family, font_size, ER_DIRECTION_INHERIT))
+         {
+             int w = 0, h = 0;
+             s_shaper->measure(merged, font_size, font_family, base_letter_spacing, base_font_weight, &w, &h);
+@@ -932,7 +935,7 @@ int er_text_wrap(const char* text,
+     if (!src || !src[0])
+         return 1;
+ 
+-    if (s_shaper && s_shaper->claims(src, font_family, er_text_clamp_font_size(font_size)))
++    if (s_shaper && s_shaper->claims(src, font_family, er_text_clamp_font_size(font_size), ER_DIRECTION_INHERIT))
+         return s_shaper->wrap(src, er_text_clamp_font_size(font_size), font_family, letter_spacing, font_weight, max_w,
+                               max_lines, out_width);
+ 
+diff --git a/engine/text/text_renderer.h b/engine/text/text_renderer.h
+index 3e76450..a79d05d 100644
+--- a/engine/text/text_renderer.h
++++ b/engine/text/text_renderer.h
+@@ -18,6 +18,7 @@
+ #define EMBEDDED_REACT_TEXT_RENDERER_H
+ 
+ #include "er_scene.h"
++#include <stdbool.h>
+ #include <stdint.h>
+ 
+ /*----------------------------------------------------------------------------------------------------------------------
+@@ -43,6 +44,21 @@ static inline uint8_t er_text_clamp_font_size(uint8_t sz)
+     return (sz > TEXT_FONT_SIZE_MAX) ? TEXT_FONT_SIZE_MAX : sz;
+ }
+ 
++/**
++ * @brief Resolves START and END against the paragraph direction to LEFT, CENTER or RIGHT.
++ *
++ * @param[in] align  ERTextAlign.
++ * @param[in] rtl    True for a right-to-left paragraph.
++ */
++static inline uint8_t er_text_physical_align(uint8_t align, bool rtl)
++{
++    if (align == ER_TEXT_ALIGN_START)
++        return rtl ? ER_TEXT_ALIGN_RIGHT : ER_TEXT_ALIGN_LEFT;
++    if (align == ER_TEXT_ALIGN_END)
++        return rtl ? ER_TEXT_ALIGN_LEFT : ER_TEXT_ALIGN_RIGHT;
++    return align;
++}
++
+ /*----------------------------------------------------------------------------------------------------------------------
+  - Types: Public
+  ---------------------------------------------------------------------------------------------------------------------*/
+@@ -60,7 +76,8 @@ typedef struct ERTextRenderParams
+     uint32_t color;          /**< Straight-alpha ARGB8888 text color. */
+     uint8_t font_size;       /**< Desired font size in pixels (clamped to [8, 96]). */
+     const char* font_family; /**< Font family name, or NULL for the built-in default. */
+-    uint8_t text_align;      /**< ERTextAlign — default ER_TEXT_ALIGN_LEFT. */
++    uint8_t text_align;      /**< ERTextAlign — default ER_TEXT_ALIGN_START. */
++    uint8_t direction;       /**< ERDirection of the paragraph; INHERIT = from its first strong character. */
+     uint8_t number_of_lines; /**< Maximum rendered lines; 0 = unlimited. */
+     uint8_t ellipsize_mode;  /**< ERTextEllipsize — applied when number_of_lines truncates. */
+     uint8_t text_decoration; /**< ERTextDecoration — default none. */

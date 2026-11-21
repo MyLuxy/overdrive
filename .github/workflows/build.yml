@@ -1,0 +1,112 @@
+name: build
+
+# Builds run only from Run workflow: a push builds nothing. Each run puts its build in a draft
+# release; publishing that draft creates its tag, and no build runs on tags, so players get the
+# very files that were tested.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ps5:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang-18 llvm-18 llvm-18-dev cmake ninja-build nodejs npm python3-venv \
+            zlib1g-dev build-essential pkg-config unzip zip curl zstd exfatprogs exfat-fuse
+          # The build wants unversioned clang and llvm-config in --llvm.
+          for tool in clang clang++ llvm-config; do
+            sudo ln -sf "/usr/bin/$tool-18" "/usr/local/bin/$tool"
+          done
+          clang --version | head -1
+          llvm-config --version
+
+      - name: Install the Python dependencies
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --disable-pip-version-check -r ps5-react/requirements.txt
+          # The build spawns python3 for its own tools, so the venv goes on PATH.
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+
+      - name: Check the exfat packaging
+        run: |
+          mkdir -p "$RUNNER_TEMP/check/payload"
+          printf 'eboot' > "$RUNNER_TEMP/check/payload/eboot.bin"
+          # Big enough that the image gets the same geometry as the real one.
+          head -c 24000000 /dev/urandom > "$RUNNER_TEMP/check/payload/data.bin"
+          sudo bash packaging/make-exfat.sh "$RUNNER_TEMP/check/payload" \
+            "$RUNNER_TEMP/check/check.exfat" CHECK
+
+      - name: Cache the downloaded sources
+        uses: actions/cache@v4
+        with:
+          path: ps5-react/.deps
+          key: deps-${{ hashFiles('ps5-react/dependencies.lock.json') }}
+
+      - name: Stamp the build
+        # app.log names the build that wrote it: a draft rebuilt with the same version is otherwise
+        # indistinguishable from the one before it. A local build keeps the committed "dev".
+        run: |
+          printf 'var BUILD = { commit: "%s", built: "%s" };\n\nexport { BUILD };\n' \
+            "${GITHUB_SHA:0:7}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > app/build.js
+          cat app/build.js
+
+      - name: Build
+        working-directory: ps5-react
+        run: python3 tools/build_ps5.py --app-dir "$GITHUB_WORKSPACE/app" --llvm /usr/bin
+
+      - name: Package
+        run: |
+          sudo bash packaging/make-exfat.sh ps5-react/dist/PPSA99058 Overdrive.exfat OVERDRIVE
+          # The in-app updater fetches one name, for an image install: the image
+          # alone at the root of update.zip.
+          zip -q -X -j update.zip Overdrive.exfat
+          unzip -l update.zip
+          ls -l Overdrive.exfat update.zip ps5-react/dist/
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: Overdrive
+          path: |
+            Overdrive.exfat
+            update.zip
+            ps5-react/dist/PPSA99058.receipt.json
+          if-no-files-found: error
+
+      - name: Draft release
+        # Only people with write access see a draft, and the in-app update feed
+        # (releases/latest) never returns one, so a test build reaches nobody else.
+        # The draft is named after app/version.js; building again replaces its files
+        # and moves it to this commit. A version already published is left alone.
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n 's/.*var VERSION = "\([^"]*\)".*/\1/p' app/version.js)
+          test -n "$version" || { echo "no VERSION in app/version.js" >&2; exit 1; }
+          tag="v$version"
+          assets="Overdrive.exfat update.zip"
+          draft=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
+            --jq ".[] | select(.tag_name == \"$tag\") | .draft")
+          case "$draft" in
+            "")
+              gh release create "$tag" $assets --draft --target "$GITHUB_SHA" \
+                --title "Overdrive $tag" --notes "Test build of $GITHUB_SHA." ;;
+            true)
+              gh release edit "$tag" --target "$GITHUB_SHA" --notes "Test build of $GITHUB_SHA."
+              gh release upload "$tag" $assets --clobber ;;
+            *)
+              echo "$tag is already published: raise the version in app/version.js" >&2
+              exit 1 ;;
+          esac
+          gh release view "$tag" --json isDraft,tagName,assets \
+            --jq '"\(.tagName) draft=\(.isDraft) " + ([.assets[] | "\(.name) \(.size)"] | join(", "))'

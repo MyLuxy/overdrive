@@ -1,0 +1,406 @@
+Embedded React: size a Text node by the lines it wraps into.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, after the patches listed before this
+one there. Changed files: engine/layout/layout_engine.c,
+engine/text/text_renderer.c, engine/text/text_renderer.h and
+engine/tests/layout/test_layout.c. Proposed upstream as pull request #319.
+
+The renderer breaks text at its node's width (unlimited lines by default, at
+most numberOfLines), but layout gave an auto-height Text one line, or exactly
+numberOfLines lines whether or not the text needed them. Wrapped text was cut
+to its first line, and a short label with numberOfLines = 3 reserved three.
+Layout now breaks the text the way the renderer does (er_text_wrap) at the
+width the node gets and is as tall as the lines, capped by numberOfLines; a run
+that fits on one line keeps its single-line measurement and costs nothing more.
+The width a Text gets in a row is known only after flexing, so a row child
+whose width flexed is measured again at that width, and a row's intrinsic
+height distributes its free space by flexGrow and flexShrink before measuring
+the children whose width changes. Measurements stay memoised per layout pass.
+
+diff --git a/engine/layout/layout_engine.c b/engine/layout/layout_engine.c
+index 9f56425..46b1d27 100644
+--- a/engine/layout/layout_engine.c
++++ b/engine/layout/layout_engine.c
+@@ -49,6 +49,8 @@ typedef struct
+     uint8_t line;     /**< Wrap-line index. */
+     uint8_t align;    /**< Resolved align (auto → parent align_items). */
+     uint8_t frozen;   /**< Pass 3: 1 once the item's flexed main size is final. */
++    uint8_t cross_measured; /**< The cross size is the intrinsic one, measured at width `measured_w`. */
++    int16_t measured_w;
+ } FlexChild;
+ 
+ /**
+@@ -426,6 +428,17 @@ static int16_t solo_axis_pos(const int16_t start,
+ 
+ static void measure_content(const uint16_t tag, const int16_t avail_w, int16_t* out_w, int16_t* out_h);
+ 
++/** Whether a Text node's content holds a newline, which starts a line at any width. */
++static bool text_has_newline(const ERNode* n)
++{
++    if (n->props.text.span_count == 0U)
++        return strchr(n->props.text.text, '\n') != NULL;
++    for (uint8_t i = 0; i < n->props.text.span_count; i++)
++        if (strchr(n->props.text.spans[i].text, '\n'))
++            return true;
++    return false;
++}
++
+ /** Rounds a size derived through aspect_ratio to whole pixels within the int16 range. */
+ static int16_t aspect_px(const float v)
+ {
+@@ -455,6 +468,89 @@ static void measure_lazy(const uint16_t tag, const int16_t avail_w, bool* measur
+     *measured = true;
+ }
+ 
++/** A row child's flex basis: flexBasis when set, else its measured width. */
++static int16_t row_basis(const ERLayoutSpec* cl, const int16_t inner_w, const int16_t measured_w)
++{
++    if (cl->flex_basis_pct > 0.0f)
++        return (int16_t)((float)inner_w * cl->flex_basis_pct / 100.0f + 0.5f);
++    return cl->flex_basis != ER_LAYOUT_AUTO ? cl->flex_basis : measured_w;
++}
++
++/**
++ * @brief The height of a non-wrapping row of known width once its children grow or shrink.
++ *
++ * A child's height can depend on its width (a Text that wraps, or a column holding one), and the
++ * max-content pass measured each child at its own width. This distributes the row's free space by
++ * flexGrow, or its overflow by flexShrink weighted by basis, the way Pass 3 will, and measures the
++ * children whose width changes again at that width. Min/max widths are not re-applied. Rows whose
++ * children do not flex keep the max-content height, without a second measurement.
++ *
++ * @param[in] n          The row.
++ * @param[in] inner_w    The row's content width.
++ * @param[in] gap        The gap between its children.
++ * @param[in] measured_h The tallest child's outer height at max-content widths.
++ *
++ * @return The tallest child's outer height at the flexed widths.
++ */
++static int16_t flexed_row_height(const ERNode* n, const int16_t inner_w, const int16_t gap, const int16_t measured_h)
++{
++    int32_t used = 0, grow = 0, shrink = 0;
++    int count = 0;
++    for (uint16_t ct = n->first_child_tag; ct != ER_INVALID_TAG;)
++    {
++        const ERNode* c = er_get_node(ct);
++        if (!c)
++            break;
++        const ERLayoutSpec* cl = &c->layout;
++        if (cl->position != ER_POS_ABSOLUTE && cl->display != ER_DISPLAY_NONE)
++        {
++            int16_t cw = 0, ch = 0;
++            measure_content(ct, ER_LAYOUT_AUTO, &cw, &ch);
++            const int16_t basis = row_basis(cl, inner_w, cw);
++            used += basis + edge_or(cl->margin_left, cl->margin) + edge_or(cl->margin_right, cl->margin);
++            grow += cl->flex_grow > 0 ? cl->flex_grow : 0;
++            shrink += cl->flex_shrink > 0 ? (int32_t)cl->flex_shrink * basis : 0;
++            count++;
++        }
++        ct = c->next_sibling_tag;
++    }
++    if (count > 1)
++        used += (int32_t)gap * (count - 1);
++    const int32_t free_space = inner_w - used;
++    if (free_space == 0 || (free_space > 0 && grow == 0) || (free_space < 0 && shrink == 0))
++        return measured_h;
++
++    int16_t tallest = 0;
++    for (uint16_t ct = n->first_child_tag; ct != ER_INVALID_TAG;)
++    {
++        const ERNode* c = er_get_node(ct);
++        if (!c)
++            break;
++        const ERLayoutSpec* cl = &c->layout;
++        if (cl->position != ER_POS_ABSOLUTE && cl->display != ER_DISPLAY_NONE)
++        {
++            int16_t cw = 0, ch = 0;
++            measure_content(ct, ER_LAYOUT_AUTO, &cw, &ch);
++            const int16_t basis = row_basis(cl, inner_w, cw);
++            int32_t width = basis;
++            if (free_space > 0 && cl->flex_grow > 0)
++                width += free_space * cl->flex_grow / grow;
++            else if (free_space < 0 && cl->flex_shrink > 0)
++                width += free_space * ((int32_t)cl->flex_shrink * basis) / shrink;
++            if (width < 0)
++                width = 0;
++            if (width != cw && cl->width == ER_LAYOUT_AUTO)
++                measure_content(ct, (int16_t)width, &cw, &ch);
++            const int16_t outer_h =
++                (int16_t)(ch + edge_or(cl->margin_top, cl->margin) + edge_or(cl->margin_bottom, cl->margin));
++            if (outer_h > tallest)
++                tallest = outer_h;
++        }
++        ct = c->next_sibling_tag;
++    }
++    return tallest;
++}
++
+ /**
+  * @brief Computes a node's intrinsic content size, independent of the space its parent allocates.
+  *
+@@ -548,8 +644,31 @@ static void measure_content(const uint16_t tag, const int16_t avail_w, int16_t*
+                                 &measured_h);
+             }
+             const int16_t line_h = (n->props.text.line_height > 0) ? n->props.text.line_height : (int16_t)measured_h;
+-            const int lines = (n->props.text.number_of_lines > 1) ? (int)n->props.text.number_of_lines : 1;
+-            tw = (exp_w != ER_LAYOUT_AUTO) ? exp_w : (int16_t)(measured_w + tp.left + tp.right);
++            /* The lines the renderer will break the text into at the content width this node gets,
++             * at most numberOfLines (0 = unlimited, 1 = one line with an ellipsis). Without a known
++             * width only newlines break it. Broken only when it can: a run that fits on one line
++             * keeps its single-line measurement. */
++            const int16_t box_w = (exp_w != ER_LAYOUT_AUTO) ? exp_w : avail_w;
++            const int limit = (box_w == ER_LAYOUT_AUTO) ? 0
++                              : (box_w > tp.left + tp.right + 1 ? box_w - tp.left - tp.right : 1);
++            int lines = 1;
++            int text_w = measured_w;
++            if (n->props.text.number_of_lines != 1U && ((limit > 0 && measured_w > limit) || text_has_newline(n)))
++            {
++                int wrapped_w = 0;
++                lines = er_text_wrap(n->props.text.text,
++                                     n->props.text.spans,
++                                     n->props.text.span_count,
++                                     n->props.text.font_size,
++                                     n->props.text.font_family,
++                                     n->props.text.letter_spacing,
++                                     limit,
++                                     (int)n->props.text.number_of_lines,
++                                     &wrapped_w);
++                if (lines > 1)
++                    text_w = wrapped_w;
++            }
++            tw = (exp_w != ER_LAYOUT_AUTO) ? exp_w : (int16_t)(text_w + tp.left + tp.right);
+             th = (exp_h != ER_LAYOUT_AUTO) ? exp_h : (int16_t)(line_h * lines + tp.top + tp.bottom);
+         }
+         *out_w = clamp_size(tw, L->min_width, L->max_width);
+@@ -643,6 +762,8 @@ static void measure_content(const uint16_t tag, const int16_t avail_w, int16_t*
+         }
+         else if (count > 1)
+             main_sum += (int32_t)main_gap * (count - 1);
++        if (is_row && !wraps && inner_w != ER_LAYOUT_AUTO)
++            cross_max = flexed_row_height(n, inner_w, main_gap, cross_max);
+         if (main_sum > INT16_MAX)
+             main_sum = INT16_MAX;
+         if (is_row)
+@@ -842,6 +963,7 @@ static void compute_layout(const uint16_t tag, const int16_t w, const int16_t h,
+                 measure_lazy(ct, avail_w, &measured, &intr_w, &intr_h);
+                 hypo_cross = is_row ? intr_h : intr_w;
+             }
++            const bool cross_measured = crosssz == ER_LAYOUT_AUTO && cross_pct <= 0.0f && !cross_via_aspect;
+             hypo_cross = clamp_size(hypo_cross, cross_mn, cross_mx);
+ 
+             /* aspect_ratio: if the cross dimension is auto (no explicit size or percentage),
+@@ -875,6 +997,8 @@ static void compute_layout(const uint16_t tag, const int16_t w, const int16_t h,
+             fc->main_min = main_mn;
+             fc->main_max = main_mx;
+             fc->frozen = 0U;
++            fc->cross_measured = cross_measured ? 1U : 0U;
++            fc->measured_w = intr_w;
+             fc->line = 0;
+             fc->align = (cl->align_self != ER_ALIGN_AUTO) ? cl->align_self : L->align_items;
+             if (fc->align == ER_ALIGN_AUTO)
+@@ -1060,6 +1184,23 @@ static void compute_layout(const uint16_t tag, const int16_t w, const int16_t h,
+         }
+     }
+ 
++    /* A row child whose height came from measuring it at its max-content width, and whose width
++     * flexed, is measured again at the width it got: a Text that now wraps, or a column holding one,
++     * is taller. Measurements are memoised, so a child whose width did not change costs nothing. */
++    if (is_row)
++    {
++        for (int i = 0; i < n_inflow; i++)
++        {
++            FlexChild* fc = &s_scratch[i];
++            if (!fc->cross_measured || fc->main == fc->measured_w)
++                continue;
++            const ERNode* c = er_get_node(fc->tag);
++            int16_t mw = 0, mh = 0;
++            measure_content(fc->tag, fc->main, &mw, &mh);
++            fc->cross = clamp_size(mh, c->layout.min_height, c->layout.max_height);
++        }
++    }
++
+     /*--------------------------------------------------------------------------
+      * Pass 4 — per line: cross-axis size = max child outer cross-size.
+      *------------------------------------------------------------------------*/
+diff --git a/engine/tests/layout/test_layout.c b/engine/tests/layout/test_layout.c
+index 1b4b5b8..b3d856a 100644
+--- a/engine/tests/layout/test_layout.c
++++ b/engine/tests/layout/test_layout.c
+@@ -244,6 +244,90 @@ int main(void)
+     if (s_two_line_h < s_one_line_h + s_one_line_h / 2)
+         return fail("two-line height is not close to twice the one-line height");
+ 
++    /* -----------------------------------------------------------------------
++     * Test: a Text is as tall as the lines it breaks into at the width it gets.
++     * Column 120 wide: a short string takes one line, the long one wraps with
++     * no numberOfLines (unlimited) and stops at numberOfLines = 3 when it would
++     * break into more. In a 300-wide row, a flex: 1 Text beside a 200-wide box
++     * wraps at the 100 px it gets, and the row grows to hold it.
++     * -----------------------------------------------------------------------*/
++    {
++        er_reset();
++        ERNode* col = er_node_create(ER_NODE_VIEW);
++        ERProps cp = props_default();
++        cp.width = TEXT_BOX_W;
++        cp.flex_direction = ER_FLEX_COL;
++        er_node_set_props(col, &cp);
++
++        ERRect r_short = {-1, -1, -1, -1}, r_free = r_short, r_capped = r_short, r_row = r_short, r_flex = r_short;
++        ERNode* t_short = er_node_create(ER_NODE_TEXT);
++        ERProps sp = props_default();
++        sp.font_size = 14;
++        strncpy(sp.text, "Save", ER_TEXT_MAX);
++        er_node_set_props(t_short, &sp);
++        er_event_set(t_short, ER_EVENT_LAYOUT, on_layout_rect, &r_short);
++
++        ERNode* t_free = er_node_create(ER_NODE_TEXT);
++        ERProps fp = props_default();
++        fp.font_size = 14;
++        strncpy(fp.text, k_long, ER_TEXT_MAX);
++        er_node_set_props(t_free, &fp);
++        er_event_set(t_free, ER_EVENT_LAYOUT, on_layout_rect, &r_free);
++
++        ERNode* t_capped = er_node_create(ER_NODE_TEXT);
++        ERProps kp = fp;
++        kp.number_of_lines = 3;
++        er_node_set_props(t_capped, &kp);
++        er_event_set(t_capped, ER_EVENT_LAYOUT, on_layout_rect, &r_capped);
++
++        ERNode* row = er_node_create(ER_NODE_VIEW);
++        ERProps rwp = props_default();
++        rwp.width = 300;
++        rwp.flex_direction = ER_FLEX_ROW;
++        rwp.align_items = ER_ALIGN_FLEX_START;
++        er_node_set_props(row, &rwp);
++        er_event_set(row, ER_EVENT_LAYOUT, on_layout_rect, &r_row);
++        ERNode* box = er_node_create(ER_NODE_VIEW);
++        ERProps bxp = props_default();
++        bxp.width = 200;
++        bxp.height = 10;
++        er_node_set_props(box, &bxp);
++        ERNode* t_flex = er_node_create(ER_NODE_TEXT);
++        ERProps xp = fp;
++        xp.flex_grow = 1;
++        xp.flex_shrink = 1;
++        xp.flex_basis = 0;
++        er_node_set_props(t_flex, &xp);
++        er_event_set(t_flex, ER_EVENT_LAYOUT, on_layout_rect, &r_flex);
++
++        er_tree_append_child(col, t_short);
++        er_tree_append_child(col, t_free);
++        er_tree_append_child(col, t_capped);
++        ERNode* page = er_node_create(ER_NODE_VIEW);
++        ERProps pgp = props_default();
++        pgp.flex_direction = ER_FLEX_COL;
++        pgp.align_items = ER_ALIGN_FLEX_START;
++        er_node_set_props(page, &pgp);
++        er_tree_append_child(row, box);
++        er_tree_append_child(row, t_flex);
++        er_tree_append_child(page, col);
++        er_tree_append_child(page, row);
++        er_tree_set_root(page);
++        er_commit();
++
++        const int line = r_short.h;
++        if (line <= 0)
++            return fail("wrap: one-line text has no height");
++        if (r_free.h < 4 * line || r_free.h % line != 0)
++            return fail("wrap: unlimited text is not a whole number of at least four lines at 120 px");
++        if (r_capped.h != 3 * line)
++            return fail("wrap: numberOfLines = 3 does not cap the height at three lines");
++        if (r_flex.w != 100 || r_flex.h <= 2 * line)
++            return fail("wrap: a flex: 1 text in a row does not wrap at the width it gets");
++        if (r_row.h != r_flex.h)
++            return fail("wrap: the row does not grow to hold its wrapped text");
++    }
++
+     /* -----------------------------------------------------------------------
+      * Test: aspectRatio — child derives height from explicit width.
+      * Container: row 200×200.  Child: width=100, aspect_ratio=2.0 → height=50.
+diff --git a/engine/text/text_renderer.c b/engine/text/text_renderer.c
+index 7e92d26..b3db90c 100644
+--- a/engine/text/text_renderer.c
++++ b/engine/text/text_renderer.c
+@@ -856,6 +856,47 @@ void er_text_measure_spans(const ERTextSpan* spans,
+         *out_height = (int)font->line_height;
+ }
+ 
++int er_text_wrap(const char* text,
++                 const ERTextSpan* spans,
++                 uint8_t span_count,
++                 uint8_t font_size,
++                 const char* font_family,
++                 int16_t letter_spacing,
++                 int max_w,
++                 int max_lines,
++                 int* out_width)
++{
++    s_text_measure_count++;
++    *out_width = 0;
++    const BitmapFont* font = font_registry_get(font_family, er_text_clamp_font_size(font_size));
++    if (!font)
++        return 1;
++
++    /* The same source er_text_render() breaks: span texts merged into one run, measured with the
++     * node's letter spacing. */
++    char merged[ER_TEXT_MAX_SPANS * (ER_SPAN_TEXT_MAX + 1) + 1];
++    const char* src = text;
++    if (span_count > 0U && spans)
++    {
++        size_t pos = 0;
++        for (uint8_t si = 0; si < span_count && pos < sizeof(merged) - 1U; si++)
++            for (const char* s = spans[si].text; *s && pos < sizeof(merged) - 1U;)
++                merged[pos++] = *s++;
++        merged[pos] = '\0';
++        src = merged;
++    }
++    if (!src || !src[0])
++        return 1;
++
++    LineSpan lines[TEXT_MAX_LINES];
++    bool truncated = false;
++    const int n = break_lines(src, font, max_w, (int)letter_spacing, max_lines, lines, TEXT_MAX_LINES, &truncated);
++    for (int i = 0; i < n; i++)
++        if (lines[i].px_width > *out_width)
++            *out_width = lines[i].px_width;
++    return n > 0 ? n : 1;
++}
++
+ uint32_t er_text_measure_count(void)
+ {
+     return s_text_measure_count;
+diff --git a/engine/text/text_renderer.h b/engine/text/text_renderer.h
+index b7b8ff4..d0eaeb0 100644
+--- a/engine/text/text_renderer.h
++++ b/engine/text/text_renderer.h
+@@ -137,4 +137,29 @@ void er_text_measure_spans(const ERTextSpan* spans,
+                            int* out_width,
+                            int* out_height);
+ 
++/**
++ * @brief Breaks text into lines the way er_text_render() does, to size a wrapping Text node.
++ *
++ * @param[in]  text            Null-terminated UTF-8 string (ignored when span_count > 0).
++ * @param[in]  spans           Span array, merged into one run as the renderer merges it.
++ * @param[in]  span_count      Number of spans; 0 measures `text`.
++ * @param[in]  font_size       Font size in pixels (clamped to [8, 96]).
++ * @param[in]  font_family     Font family name, or NULL for the built-in default.
++ * @param[in]  letter_spacing  Extra pixels per glyph advance.
++ * @param[in]  max_w           Line width in pixels; 0 breaks only at newlines.
++ * @param[in]  max_lines       Most lines kept, as numberOfLines; 0 = unlimited.
++ * @param[out] out_width       Receives the widest line's width in pixels.
++ *
++ * @return The number of lines, at least 1.
++ */
++int er_text_wrap(const char* text,
++                 const ERTextSpan* spans,
++                 uint8_t span_count,
++                 uint8_t font_size,
++                 const char* font_family,
++                 int16_t letter_spacing,
++                 int max_w,
++                 int max_lines,
++                 int* out_width);
++
+ #endif

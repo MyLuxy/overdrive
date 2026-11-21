@@ -1,0 +1,64 @@
+Embedded React: export unstable_batchedUpdates.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, after the patches listed before this
+one there. Changed files: bridges/quickjs/js/src/renderer.js,
+bridges/quickjs/js/src/embedded-react/index.js and
+bridges/quickjs/js/src/embedded-react/index.d.ts.
+Not proposed upstream: PS5 React maintains this change here.
+
+The bridge runs its frame pump and native events inside React's batchedUpdates,
+but a host's own per-frame JavaScript callback runs outside it, where every
+setState renders on its own: PS5 React's frame callback delivering ten images
+and stepping a virtualized list rendered eleven times. The package now exports
+the reconciler's batchedUpdates as unstable_batchedUpdates, the name React
+Native gives it.
+
+diff --git a/bridges/quickjs/js/src/embedded-react/index.d.ts b/bridges/quickjs/js/src/embedded-react/index.d.ts
+index 1bbd547..ba01ef5 100644
+--- a/bridges/quickjs/js/src/embedded-react/index.d.ts
++++ b/bridges/quickjs/js/src/embedded-react/index.d.ts
+@@ -828,6 +828,10 @@ export const Platform: {
+   select<T>(specifics: Record<string, T>): T | undefined;
+ };
+ 
++// --- Batching ----------------------------------------------------------------
++/** Runs `fn` in one React batch: its state updates render once, when it returns. */
++export function unstable_batchedUpdates<T>(fn: () => T): T;
++
+ // --- AppRegistry -----------------------------------------------------------
+ export const AppRegistry: {
+   registerComponent(
+diff --git a/bridges/quickjs/js/src/embedded-react/index.js b/bridges/quickjs/js/src/embedded-react/index.js
+index 576874d..bbdd21e 100644
+--- a/bridges/quickjs/js/src/embedded-react/index.js
++++ b/bridges/quickjs/js/src/embedded-react/index.js
+@@ -50,6 +50,7 @@ export {updateVector, updateText, setKeyboardConfig} from './imperative.js';
+ export {StyleSheet} from './StyleSheet.js';
+ export {Platform} from './Platform.js';
+ export {AppRegistry} from './AppRegistry.js';
++export {batchedUpdates as unstable_batchedUpdates} from '../renderer.js';
+ export {Animated, useAnimatedValue} from './Animated.js';
+ export {PanResponder} from './PanResponder.js';
+ export {usePersistentState} from './usePersistentState.js';
+diff --git a/bridges/quickjs/js/src/renderer.js b/bridges/quickjs/js/src/renderer.js
+index 485c28b..bfd731a 100644
+--- a/bridges/quickjs/js/src/renderer.js
++++ b/bridges/quickjs/js/src/renderer.js
+@@ -58,6 +58,16 @@ NativeUI.setBatcher?.(
+     : (fn, a, b) => reconciler.batchedUpdates(() => fn(a, b)),
+ );
+ 
++/**
++ * Runs `fn` in one React batch, as React Native's unstable_batchedUpdates does: its state updates
++ * render once, when it returns, instead of once each. For callbacks the host makes outside the
++ * batcher above, such as a per-frame callback that several components update from.
++ * @template T @param {() => T} fn @returns {T}
++ */
++export function batchedUpdates(fn) {
++  return reconciler.batchedUpdates(fn);
++}
++
+ /**
+  * Creates a root bound to a screen-sized container node.
+  *

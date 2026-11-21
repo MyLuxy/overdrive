@@ -1,0 +1,34 @@
+{
+  "name": "ps5-react",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "GPL-3.0-or-later",
+  "scripts": {
+    "doctor": "python3 tools/cli.py doctor",
+    "preview": "python3 tools/cli.py preview",
+    "dev": "python3 tools/cli.py preview --watch",
+    "build": "python3 tools/cli.py build",
+    "test": "python3 tools/cli.py test",
+    "create": "python3 tools/cli.py create",
+    "doctor:mac": "sh tools/mac-run.sh doctor",
+    "preview:mac": "sh tools/mac-run.sh preview",
+    "dev:mac": "sh tools/mac-run.sh preview --watch"
+  },
+  "dependencies": {
+    "react": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.12"
+  },
+  "description": "React and JSX for standalone fullscreen PS5 homebrew, with a native macOS preview.",
+  "author": "half144",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/half144/ps5-react.git"
+  },
+  "homepage": "https://github.com/half144/ps5-react#readme",
+  "bugs": {
+    "url": "https://github.com/half144/ps5-react/issues"
+  }
+}

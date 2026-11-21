@@ -1,0 +1,31 @@
+Embedded React: centre text in a line height taller than the font's.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, after the patches listed before this
+one there. Changed file: engine/text/text_renderer.c.
+Not proposed upstream: PS5 React maintains this change here.
+
+Each line's glyphs were drawn from the top of its line box, so all of a
+lineHeight beyond the font's own line height ended up below the text: an 18 px
+Inter label in a 27 px line sat 2.5 px above the centre of a button whose icon
+was centred. CSS and React Native put half of that leading above the line and
+half below; the bitmap renderer now does the same. A line height smaller than
+the font's moves the glyphs up by half the difference, as in CSS.
+
+--- a/engine/text/text_renderer.c
++++ b/engine/text/text_renderer.c
+@@ -617,9 +617,12 @@
+     /* ---- Render each line. ---- */
+     for (int i = 0; i < n_lines; i++)
+     {
+-        const int cursor_y = params->clip.y + i * lh;
+-        if (cursor_y >= params->clip.y + params->clip.h)
++        const int box_y = params->clip.y + i * lh;
++        if (box_y >= params->clip.y + params->clip.h)
+             break;
++        /* Half the leading above the line, as in CSS and React Native: a lineHeight taller than the
++         * font's own centres the text in it instead of leaving all the extra space below. */
++        const int cursor_y = box_y + (lh - (int)font->line_height) / 2;
+ 
+         const bool is_last = (i == n_lines - 1);
+         const bool apply_ellip = (do_ellipsis && is_last);

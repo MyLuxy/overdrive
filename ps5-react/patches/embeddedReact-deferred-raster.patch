@@ -1,0 +1,374 @@
+Embedded React: let a host defer the paint of commits made during JavaScript.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, in the patch order listed there.
+Changed files: engine/include/er_scene.h, engine/scene/compositor.c and
+engine/tests/rendering/CMakeLists.txt; new file
+engine/tests/rendering/test_deferred_raster.c.
+Not proposed upstream: PS5 React maintains this change here.
+
+The reconciler calls NativeUI.commit() after each React commit, and the bridge
+runs a full er_commit() for it: layout and a paint. A host that commits once per
+frame after the app's JavaScript then paints again for whatever the frame
+callbacks advanced. When both touch the same region, as a focus move that
+re-renders a row and starts its scroll does, that region is painted twice and
+only the second paint reaches the screen.
+
+er_set_raster_deferred(true) makes er_commit() return after layout and layout
+events. onLayout handlers therefore still run inside the React commit that
+caused them. The dirty flags, vacated footprints and pending scroll moves are
+left for the next commit made with deferral off.
+
+test_deferred_raster runs deferred commits that move a box twice, recolour one,
+destroy one and scroll a ScrollView in two steps. They must write no pixels and
+fire onLayout for each move; the next commit must match a full repaint and
+scroll by one copy of the combined offset.
+
+diff --git a/engine/include/er_scene.h b/engine/include/er_scene.h
+--- a/engine/include/er_scene.h
++++ b/engine/include/er_scene.h
+@@ -1125,6 +1125,19 @@
+     void er_commit(void);
+ 
+     /**
++     * @brief Makes er_commit() stop after layout and layout events, leaving the paint to a later commit.
++     *
++     * For a host that commits once per frame after running the app's JavaScript: the reconciler commits
++     * through NativeUI.commit() during that phase, and each of those commits otherwise paints, often the
++     * same region the host's commit then repaints for animations and scrolls the frame advanced. Layout
++     * still runs at each one, so onLayout handlers see the same rects at the same time. Damage carries
++     * over to the next commit made with deferral off.
++     *
++     * @param[in] deferred  true while commits should skip painting; false before the commit that paints.
++     */
++    void er_set_raster_deferred(bool deferred);
++
++    /**
+      * @brief Resets the engine to an empty scene: frees every node, clears the root, and resets the
+      *        animation, layout-animation, vector, and input subsystems.
+      *
+diff --git a/engine/scene/compositor.c b/engine/scene/compositor.c
+--- a/engine/scene/compositor.c
++++ b/engine/scene/compositor.c
+@@ -206,6 +206,8 @@
+ static uint16_t s_scroll_pending[ER_SCROLL_PENDING_MAX];
+ static uint8_t s_scroll_pending_count = 0U;
+ 
++static bool s_raster_deferred = false; /**< er_set_raster_deferred(): commits stop after layout. */
++
+ /* Layout-dirty gate: er_commit() re-runs the flex + text-measure layout pass only when
+  * something that can change a computed rect has happened since the last commit (a prop set,
+  * a tree mutation, or a node destroy). Animations mutate render-only props and never set this,
+@@ -5691,6 +5693,9 @@
+      * are ERUI_MAX_NODES-proportional floors paid even by an idle commit, while composite and blit
+      * scale with the damage — the split is what tells a "the pool walk dominates" frame from a "the
+      * framebuffer writes dominate" one. */
++    if (s_raster_deferred)
++        return; /* the dirty flags, vacated footprints and pending scrolls wait for the commit that paints */
++
+     ER_PERF_BEGIN(ER_PERF_PHASE_RASTER);
+     ER_PERF_BLIT_RESET();
+     ER_PERF_RASTER_BEGIN(ER_PERF_RASTER_PREPASS);
+@@ -6603,6 +6608,11 @@
+         data.scroll_y = y;
+         h->fn(node, &data, h->user_data);
+     }
++}
++
++void er_set_raster_deferred(bool deferred)
++{
++    s_raster_deferred = deferred;
+ }
+ 
+ uint32_t er_parallel_frames(void)
+diff --git a/engine/tests/rendering/CMakeLists.txt b/engine/tests/rendering/CMakeLists.txt
+--- a/engine/tests/rendering/CMakeLists.txt
++++ b/engine/tests/rendering/CMakeLists.txt
+@@ -217,3 +217,7 @@
+ # test_transform_cache needs engine/core for renderer_internal.h (er_render_worker_exec and the worker build cap).
+ target_include_directories(test_transform_cache PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../core)
+ add_test(NAME rendering_transform_cache COMMAND test_transform_cache)
++
++add_executable(test_deferred_raster test_deferred_raster.c)
++target_link_libraries(test_deferred_raster PRIVATE embedded-react)
++add_test(NAME rendering_deferred_raster COMMAND test_deferred_raster)
+diff --git a/engine/tests/rendering/test_deferred_raster.c b/engine/tests/rendering/test_deferred_raster.c
+new file mode 100644
+--- /dev/null
++++ b/engine/tests/rendering/test_deferred_raster.c
+@@ -0,0 +1,275 @@
++/*
++ * Copyright 2026 PS5 React contributors
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++/*
++ * Deferred raster (er_set_raster_deferred): commits made while deferred lay out and fire onLayout but write
++ * no pixels, and the next commit with deferral off paints everything they accumulated.
++ *
++ * Several deferred commits move a box twice, recolour another, destroy a third and scroll a ScrollView in
++ * two steps, the way a reconciler commits more than once per frame. The painting commit must match a full
++ * repaint of the same scene pixel for pixel, and must still scroll by one copy of the combined offset.
++ */
++
++#include "er_scene.h"
++#include "native_renderer.h"
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++#define FB_W 200
++#define FB_H 160
++#define ROWS 24
++
++typedef struct
++{
++    uint32_t fb[FB_W * FB_H];
++    int moves;
++    long painted_px;
++} TestCtx;
++
++static TestCtx g_ctx;
++static EmbeddedRenderBackend g_be;
++static int g_failures = 0;
++static int g_layout_events = 0;
++
++static void fill_cb(uint32_t argb, int x, int y, int w, int h, void* ctx)
++{
++    TestCtx* t = ctx;
++    const uint32_t a = argb >> 24;
++    for (int row = y; row < y + h; row++)
++        for (int col = x; col < x + w; col++)
++        {
++            if (col < 0 || row < 0 || col >= FB_W || row >= FB_H)
++                continue;
++            uint32_t* d = &t->fb[row * FB_W + col];
++            if (a == 255U)
++                *d = argb;
++            else if (a != 0U)
++            {
++                uint32_t out = 0xFF000000U;
++                for (int sh = 0; sh < 24; sh += 8)
++                {
++                    const uint32_t s = (argb >> sh) & 0xFFU, dd = (*d >> sh) & 0xFFU;
++                    out |= ((s * a + dd * (255U - a)) / 255U) << sh;
++                }
++                *d = out;
++            }
++            t->painted_px++;
++        }
++}
++
++static void copy_cb(const void* src, int stride, int x, int y, int w, int h, void* ctx)
++{
++    TestCtx* t = ctx;
++    for (int row = 0; row < h; row++)
++        for (int col = 0; col < w; col++)
++        {
++            const uint32_t p = ((const uint32_t*)((const uint8_t*)src + (size_t)row * stride))[col];
++            if (x + col >= 0 && y + row >= 0 && x + col < FB_W && y + row < FB_H && (p >> 24) != 0U)
++                t->fb[(y + row) * FB_W + x + col] = p;
++            t->painted_px++;
++        }
++}
++
++static void blend_cb(const void* src, int stride, uint8_t alpha, int x, int y, int w, int h, void* ctx)
++{
++    (void)alpha;
++    copy_cb(src, stride, x, y, w, h, ctx);
++}
++
++static void move_cb(int sx, int sy, int w, int h, int dx, int dy, void* ctx)
++{
++    TestCtx* t = ctx;
++    t->moves++;
++    static uint32_t tmp[FB_W * FB_H];
++    for (int row = 0; row < h; row++)
++        memcpy(&tmp[row * w], &t->fb[(sy + row) * FB_W + sx], (size_t)w * 4U);
++    for (int row = 0; row < h; row++)
++        memcpy(&t->fb[(dy + row) * FB_W + dx], &tmp[row * w], (size_t)w * 4U);
++}
++
++static void install(void)
++{
++    memset(&g_be, 0, sizeof(g_be));
++    g_be.fill_rect = fill_cb;
++    g_be.copy_rect = copy_cb;
++    g_be.blend_rect = blend_cb;
++    g_be.move_rect = move_cb;
++    g_be.ctx = &g_ctx;
++    embedded_renderer_set_backend(&g_be); /* also forces the next commit to repaint in full */
++}
++
++static void fail(const char* what)
++{
++    fprintf(stderr, "FAIL %s\n", what);
++    g_failures++;
++}
++
++static void on_layout(ERNode* node, const EREventData* data, void* user_data)
++{
++    (void)node;
++    (void)data;
++    (void)user_data;
++    g_layout_events++;
++}
++
++static ERNode* view(ERNode* parent, int w, int h, uint32_t bg)
++{
++    ERNode* n = er_node_create(ER_NODE_VIEW);
++    ERProps p;
++    er_props_default(&p);
++    p.width = (int16_t)w;
++    p.height = (int16_t)h;
++    p.background_color = bg;
++    er_node_set_props(n, &p);
++    if (parent)
++        er_tree_append_child(parent, n);
++    return n;
++}
++
++static ERProps absolute(int left, int top, int w, int h, uint32_t bg)
++{
++    ERProps p;
++    er_props_default(&p);
++    p.position = ER_POS_ABSOLUTE;
++    p.left = (int16_t)left;
++    p.top = (int16_t)top;
++    p.width = (int16_t)w;
++    p.height = (int16_t)h;
++    p.background_color = bg;
++    return p;
++}
++
++static ERNode* absolute_view(ERNode* parent, int left, int top, int w, int h, uint32_t bg)
++{
++    ERNode* n = er_node_create(ER_NODE_VIEW);
++    ERProps p = absolute(left, top, w, h, bg);
++    er_node_set_props(n, &p);
++    er_tree_append_child(parent, n);
++    return n;
++}
++
++/** @brief Compares the framebuffer with a full repaint of the same scene, pixel for pixel. */
++static void check_full_repaint(const char* what)
++{
++    static uint32_t painted[FB_W * FB_H];
++    memcpy(painted, g_ctx.fb, sizeof(painted));
++    memset(g_ctx.fb, 0, sizeof(g_ctx.fb));
++    install();
++    er_commit();
++    int diffs = 0, first = -1;
++    for (int i = 0; i < FB_W * FB_H; i++)
++        if (painted[i] != g_ctx.fb[i] && diffs++ == 0)
++            first = i;
++    if (diffs)
++    {
++        fprintf(stderr,
++                "FAIL %s: %d pixels differ from a full repaint, first at (%d,%d) %08x vs %08x\n",
++                what,
++                diffs,
++                first % FB_W,
++                first / FB_W,
++                painted[first],
++                g_ctx.fb[first]);
++        g_failures++;
++    }
++}
++
++int main(void)
++{
++    static uint32_t before[FB_W * FB_H];
++
++    install();
++    er_reset();
++
++    /* The boxes sit right of the ScrollView, so nothing foreign overlaps its viewport and it can scroll
++     * by copy. */
++    ERNode* root = view(NULL, FB_W, FB_H, 0xFF102030U);
++    ERNode* sv = er_node_create(ER_NODE_SCROLL_VIEW);
++    ERProps sp = absolute(10, 20, 100, 120, 0);
++    er_node_set_props(sv, &sp);
++    er_tree_append_child(root, sv);
++    ERNode* content = view(sv, 100, ROWS * 12, 0);
++    for (int i = 0; i < ROWS; i++)
++        view(content, 100, 12, 0xFF000000U | (uint32_t)(i * 2654435761U >> 8));
++    ERNode* mover = absolute_view(root, 120, 10, 30, 20, 0xFFE0C020U);
++    ERNode* recolored = absolute_view(root, 120, 60, 40, 30, 0xFF2050A0U);
++    ERNode* doomed = absolute_view(root, 130, 110, 50, 30, 0xC0FF8000U);
++    er_event_set(mover, ER_EVENT_LAYOUT, on_layout, NULL);
++    er_tree_set_root(root);
++    er_commit();
++    memcpy(before, g_ctx.fb, sizeof(before));
++    g_layout_events = 0;
++    g_ctx.moves = 0;
++    g_ctx.painted_px = 0;
++
++    er_set_raster_deferred(true);
++    ERProps mp = absolute(150, 10, 30, 20, 0xFFE0C020U);
++    er_node_set_props(mover, &mp);
++    er_commit();
++    er_scroll_view_set_offset(sv, 0.0f, 7.0f);
++    er_commit();
++    mp.top = 40;
++    er_node_set_props(mover, &mp);
++    ERProps rp = absolute(120, 60, 40, 30, 0xFF30D0D0U);
++    er_node_set_props(recolored, &rp);
++    er_commit();
++    er_tree_remove_child(root, doomed);
++    er_node_destroy(doomed);
++    er_scroll_view_set_offset(sv, 0.0f, 19.0f);
++    er_commit();
++
++    if (g_ctx.painted_px != 0 || g_ctx.moves != 0 || memcmp(before, g_ctx.fb, sizeof(before)) != 0)
++        fail("deferred commits wrote to the framebuffer");
++    if (g_layout_events != 2)
++    {
++        fprintf(stderr, "FAIL deferred commits fired %d onLayout events for two moves\n", g_layout_events);
++        g_failures++;
++    }
++
++    er_set_raster_deferred(false);
++    er_commit();
++    if (g_ctx.painted_px == 0)
++        fail("the commit after deferral painted nothing");
++    if (g_ctx.moves != 1)
++    {
++        fprintf(stderr, "FAIL expected one copy for the combined 19 px scroll, got %d\n", g_ctx.moves);
++        g_failures++;
++    }
++    check_full_repaint("painting commit after deferral");
++
++    /* A box that moves away and back within the deferred commits has nothing left to paint. */
++    g_ctx.painted_px = 0;
++    er_commit();
++    if (g_ctx.painted_px != 0)
++        fail("an idle commit painted");
++    er_set_raster_deferred(true);
++    mp.left = 10;
++    er_node_set_props(mover, &mp);
++    er_commit();
++    mp.left = 150;
++    er_node_set_props(mover, &mp);
++    er_commit();
++    er_set_raster_deferred(false);
++    er_commit();
++    check_full_repaint("move and return while deferred");
++
++    if (g_failures)
++        return EXIT_FAILURE;
++    printf("PASS: deferred commits paint nothing and the next commit paints what they changed\n");
++    return EXIT_SUCCESS;
++}

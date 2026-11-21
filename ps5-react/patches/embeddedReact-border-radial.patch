@@ -1,0 +1,232 @@
+Embedded React: a radial gradient seen through a View's border ring.
+
+Modified from Embedded React (Apache-2.0, Copyright 2026 Cory Lamming) at the
+revision pinned in dependencies.lock.json, after the patches listed before this
+one there. Changed files: engine/include/er_scene.h,
+engine/scene/er_node_internal.h, engine/scene/compositor.c,
+engine/rendering/border_sweep.c, engine/rendering/border_sweep.h,
+bridges/quickjs/native_ui_bridge.c and
+bridges/quickjs/js/src/embedded-react/index.d.ts. Proposed upstream, with the
+other border ring patches, as pull request #325.
+
+Magic UI's ShineBorder is a CSS radial-gradient on a background several times
+the box, its position looping corner to corner, masked to the border. The View
+style borderGradient {type: 'radial', width, size, stops} draws it in the same
+ring as the conic border gradient: an ellipse farthest-corner gradient on a
+background `size` times the box. borderGradientAngle drives the loop on the
+native driver: one 360-degree turn takes background-position from 0% 0% to
+100% 100% at 180 and back, so a linear Animated loop of 0 to 360 is the CSS
+keyframes.
+
+diff --git a/bridges/quickjs/js/src/embedded-react/index.d.ts b/bridges/quickjs/js/src/embedded-react/index.d.ts
+--- a/bridges/quickjs/js/src/embedded-react/index.d.ts
++++ b/bridges/quickjs/js/src/embedded-react/index.d.ts
+@@ -190,7 +190,11 @@
+   /** Head position, 0–1 clockwise from the top edge's left end; wraps. Animate it with the native driver. */
+   borderSweepPhase?: number | AnimatedValue;
+   /** A conic gradient seen through the border ring: the rotating-gradient border. Up to 6 stops. */
+-  borderGradient?: {type: 'conic'; width: number; angle?: number; stops: {color: string; offset?: number}[]};
++  borderGradient?:
++    | {type: 'conic'; width: number; angle?: number; stops: {color: string; offset?: number}[]}
++    /** CSS radial-gradient (ellipse farthest-corner) on a background `size` times the box (default 1): the
++     *  moving shine border. One 360° turn of the angle moves background-position 0% 0% → 100% 100% → 0% 0%. */
++    | {type: 'radial'; width: number; size?: number; angle?: number; stops: {color: string; offset?: number}[]};
+   /** The conic border gradient's start angle in degrees (0 = up, clockwise); animate it to rotate the light. */
+   borderGradientAngle?: number | AnimatedValue;
+ 
+diff --git a/bridges/quickjs/native_ui_bridge.c b/bridges/quickjs/native_ui_bridge.c
+--- a/bridges/quickjs/native_ui_bridge.c
++++ b/bridges/quickjs/native_ui_bridge.c
+@@ -2132,7 +2132,8 @@
+ 
+ /**
+  * @brief Reads a View `borderGradient` ({type: 'conic', width, angle?, stops: [{color, offset?}]}): a conic
+- * gradient seen through the border ring. `angle` is the start in degrees (0 = up, clockwise);
++ * gradient seen through the border ring. {type: 'radial', width, size?, angle?, stops} is instead a CSS
++ * radial-gradient on a background `size` times the box, moved by the angle (see er_border_radial_render). `angle` is the start in degrees (0 = up, clockwise);
+  * `borderGradientAngle` overrides it and can be animated.
+  *
+  * @param[in]     ctx  QuickJS context.
+@@ -2147,10 +2148,21 @@
+     const char* ts = JS_ToCString(ctx, t);
+     JS_FreeValue(ctx, t);
+     const bool conic = ts && strcmp(ts, "conic") == 0;
++    const bool radial = ts && strcmp(ts, "radial") == 0;
+     if (ts)
+         JS_FreeCString(ctx, ts);
+-    if (!conic)
++    if (!conic && !radial)
+         return;
++    p->border_gradient_size = 0.0f;
++    if (radial)
++    {
++        JSValue sv = JS_GetPropertyStr(ctx, v, "size");
++        double size = 1.0;
++        if (JS_IsNumber(sv))
++            JS_ToFloat64(ctx, &size, sv);
++        p->border_gradient_size = size > 0.0 ? (float)size : 1.0f;
++        JS_FreeValue(ctx, sv);
++    }
+     JSValue wv = JS_GetPropertyStr(ctx, v, "width");
+     int16_t width = 0;
+     if (to_dim(ctx, wv, &width))
+diff --git a/engine/include/er_scene.h b/engine/include/er_scene.h
+--- a/engine/include/er_scene.h
++++ b/engine/include/er_scene.h
+@@ -775,6 +775,7 @@
+         /* --- Border gradient (View-family): a conic gradient seen through the border ring --- */
+         int16_t border_gradient_width;     /**< Ring thickness in pixels, inside the box; 0 = none. */
+         float border_gradient_angle;       /**< Start angle in degrees: 0 = up, clockwise (CSS conic `from`). */
++        float border_gradient_size;        /**< Radial: background-size as a multiple of the box; 0 = conic. */
+         uint8_t border_gradient_stop_count; /**< Valid entries in border_gradient_stops. */
+         ERGradientStop border_gradient_stops[ER_BORDER_GRADIENT_MAX_STOPS]; /**< Ascending positions 0–1. */
+ 
+diff --git a/engine/rendering/border_sweep.c b/engine/rendering/border_sweep.c
+--- a/engine/rendering/border_sweep.c
++++ b/engine/rendering/border_sweep.c
+@@ -19,6 +19,7 @@
+ #include <math.h>
+ 
+ #define SWEEP_ROW_MAX 512
++#define SWEEP_SQRT2 1.41421356f
+ #define SWEEP_PI 3.14159265f
+ /* The head fades in over this much of the perimeter ahead of it, so it has no hard front edge. */
+ #define SWEEP_LEAD 0.01f
+@@ -120,23 +121,44 @@
+     return out;
+ }
+ 
+-static uint32_t conic_shade(float px, float py, const void* ctx)
++/** The colour at `t` along ascending stops, held flat before the first and after the last. */
++static uint32_t stops_at(const ERGradientStop* stops, int count, float t)
+ {
+-    const ConicShader* s = ctx;
+-    float t = (atan2f(px, -py) * (180.0f / SWEEP_PI) - s->from) / 360.0f;
+-    t -= floorf(t);
+-    if (t <= s->stops[0].position)
+-        return s->stops[0].color;
+-    for (int i = 1; i < s->count; i++)
++    if (t <= stops[0].position)
++        return stops[0].color;
++    for (int i = 1; i < count; i++)
+     {
+-        if (t <= s->stops[i].position)
++        if (t <= stops[i].position)
+         {
+-            const float span = s->stops[i].position - s->stops[i - 1].position;
+-            return lerp_argb(s->stops[i - 1].color, s->stops[i].color,
+-                             span > 0.0f ? (t - s->stops[i - 1].position) / span : 1.0f);
++            const float span = stops[i].position - stops[i - 1].position;
++            return lerp_argb(stops[i - 1].color, stops[i].color,
++                             span > 0.0f ? (t - stops[i - 1].position) / span : 1.0f);
+         }
+     }
+-    return s->stops[s->count - 1].color;
++    return stops[count - 1].color;
++}
++
++static uint32_t conic_shade(float px, float py, const void* ctx)
++{
++    const ConicShader* s = ctx;
++    float t = (atan2f(px, -py) * (180.0f / SWEEP_PI) - s->from) / 360.0f;
++    t -= floorf(t);
++    return stops_at(s->stops, s->count, t);
++}
++
++typedef struct
++{
++    float cx, cy;   /* gradient centre, relative to the box centre */
++    float irx, iry; /* reciprocal ellipse radii */
++    const ERGradientStop* stops;
++    int count;
++} RadialShader;
++
++static uint32_t radial_shade(float px, float py, const void* ctx)
++{
++    const RadialShader* s = ctx;
++    const float dx = (px - s->cx) * s->irx, dy = (py - s->cy) * s->iry;
++    return stops_at(s->stops, s->count, sqrtf(dx * dx + dy * dy));
+ }
+ 
+ /** Rasterises the anti-aliased ring `width` px inside the rounded box, coloured by `shade`. */
+@@ -237,3 +259,19 @@
+     const ConicShader s = {from, stops, count};
+     ring_render(x, y, w, h, radius, width, conic_shade, &s);
+ }
++
++void er_border_radial_render(int x, int y, int w, int h, int radius, int width, float size, float angle,
++                             const ERGradientStop* stops, int count)
++{
++    if (w <= 0 || h <= 0 || width <= 0 || count < 1 || size <= 0.0f)
++        return;
++    const float turn = angle / 360.0f - floorf(angle / 360.0f);
++    const float pos = turn < 0.5f ? turn * 2.0f : 2.0f - turn * 2.0f;
++    const float bw = (float)w * size, bh = (float)h * size;
++    /* background-position p puts the background's origin at (box - background) * p; farthest-corner of an
++       ellipse centred in its box has radii half the box times sqrt 2. */
++    const RadialShader s = {((float)w - bw) * pos + bw * 0.5f - (float)w * 0.5f,
++                            ((float)h - bh) * pos + bh * 0.5f - (float)h * 0.5f,
++                            1.0f / (bw * 0.5f * SWEEP_SQRT2), 1.0f / (bh * 0.5f * SWEEP_SQRT2), stops, count};
++    ring_render(x, y, w, h, radius, width, radial_shade, &s);
++}
+diff --git a/engine/rendering/border_sweep.h b/engine/rendering/border_sweep.h
+--- a/engine/rendering/border_sweep.h
++++ b/engine/rendering/border_sweep.h
+@@ -50,6 +50,22 @@
+                             const ERGradientStop* stops, int count);
+ 
+ /**
++ * @brief Draws a CSS radial-gradient (ellipse farthest-corner) on a background `size` times the box, seen only
++ * through the ring: the moving shine border. `angle` places the background as a keyframe loop does: one
++ * 360-degree turn takes background-position from 0% 0% to 100% 100% at 180 and back.
++ *
++ * @param[in] x, y, w, h  The node's box in screen pixels.
++ * @param[in] radius      Corner radius of the box.
++ * @param[in] width       Ring thickness in pixels.
++ * @param[in] size        Background size as a multiple of the box (CSS background-size 300% = 3).
++ * @param[in] angle       Loop position in degrees, 0–360.
++ * @param[in] stops       Straight-alpha colour stops at positions 0–1 from the centre out, ascending.
++ * @param[in] count       Number of stops.
++ */
++void er_border_radial_render(int x, int y, int w, int h, int radius, int width, float size, float angle,
++                             const ERGradientStop* stops, int count);
++
++/**
+  * @brief How far the sweep reaches in from each edge of the box: the bands a phase change repaints.
+  *
+  * @param[in] radius  Corner radius.
+diff --git a/engine/scene/compositor.c b/engine/scene/compositor.c
+--- a/engine/scene/compositor.c
++++ b/engine/scene/compositor.c
+@@ -2892,7 +2892,11 @@
+     {
+         const ERViewProps* vp = &n->props.view;
+         const int radius = vp->border_tl_radius > 0 ? vp->border_tl_radius : vp->border_radius;
+-        if (vp->border_gradient_width > 0)
++        if (vp->border_gradient_width > 0 && vp->border_gradient_size > 0.0f)
++            er_border_radial_render(px, py, w, h, radius, vp->border_gradient_width, vp->border_gradient_size,
++                                    vp->border_gradient_angle, vp->border_gradient_stops,
++                                    vp->border_gradient_stop_count);
++        else if (vp->border_gradient_width > 0)
+             er_border_conic_render(px, py, w, h, radius, vp->border_gradient_width, vp->border_gradient_angle,
+                                    vp->border_gradient_stops, vp->border_gradient_stop_count);
+         if (vp->border_sweep_width > 0)
+@@ -3364,6 +3368,7 @@
+     node->props.view.border_sweep_length = props->border_sweep_length;
+     node->props.view.border_gradient_width = props->border_gradient_width;
+     node->props.view.border_gradient_angle = props->border_gradient_angle;
++    node->props.view.border_gradient_size = props->border_gradient_size;
+     node->props.view.border_gradient_stop_count = props->border_gradient_stop_count;
+     for (int bi = 0; bi < ER_BORDER_GRADIENT_MAX_STOPS; bi++)
+         node->props.view.border_gradient_stops[bi] = props->border_gradient_stops[bi];
+diff --git a/engine/scene/er_node_internal.h b/engine/scene/er_node_internal.h
+--- a/engine/scene/er_node_internal.h
++++ b/engine/scene/er_node_internal.h
+@@ -230,6 +230,7 @@
+     /* Conic border gradient */
+     int16_t border_gradient_width;
+     float border_gradient_angle;
++    float border_gradient_size;
+     uint8_t border_gradient_stop_count;
+     ERGradientStop border_gradient_stops[ER_BORDER_GRADIENT_MAX_STOPS];
+ 
