@@ -13,11 +13,6 @@
 </div>
 
 <div align="center" dir="ltr">
-  <a href="https://gitlab.com/myluxy/overdrive/-/releases"><img src="https://img.shields.io/gitlab/v/release/myluxy/overdrive?style=for-the-badge&label=release&labelColor=0b0b0d&color=2a2a2f" alt="Последний релиз" width="236"></a>
-  <a href="https://gitlab.com/myluxy/overdrive/-/releases"><img src="https://img.shields.io/gitlab/stars/myluxy/overdrive?style=for-the-badge&label=stars&labelColor=0b0b0d&color=2a2a2f" alt="Скачивания" width="220"></a>
-</div>
-
-<div align="center" dir="ltr">
   <a href="#установка-в-четыре-шага">Установка</a> ·
   <a href="#возможности">Возможности</a> ·
   <a href="#обновления">Обновления</a> ·
@@ -25,10 +20,6 @@
   <a href="#сборка-своими-руками">Сборка своими руками</a>
 </div>
 
-> [!NOTE]
-> Оригинальный проект Overdrive был закрыт, поэтому я декомпилировал последнюю выпущенную сборку,
-> восстановил полный исходный код и собрал его заново.
->
 > [!NOTE]
 > Аккаунт автора на GitHub больше не существует, поэтому исходники и релизы Overdrive живут теперь
 > на GitLab: [gitlab.com/myluxy/overdrive](https://gitlab.com/myluxy/overdrive). Все ссылки в этом
