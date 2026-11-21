@@ -50,7 +50,7 @@ TorBox, Real-Debrid и Premiumize скачивают ссылку или маг�
 У каждого свой ключ аккаунта: вводится один раз и хранится на консоли.
 
 <div align="center" dir="ltr">
-  <img src=".github/readme/debrid.webp" alt="Окно «Debrid-сервисы» на странице загрузок: TorBox, Real-Debrid и Premiumize, каждому нужен свой ключ" width="70%">
+  <img src=".github/readme/debrid.ru.jpg" alt="Окно «Debrid-сервисы» на странице загрузок: TorBox, Real-Debrid и Premiumize, каждому нужен свой ключ" width="70%">
 </div>
 
 ## Возможности
