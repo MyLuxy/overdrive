@@ -1,7 +1,7 @@
 {
   "name": "overdrive",
   "private": true,
-  "description": "Overdrive, a PS5 game store. The scripts wrap the ps5-react build for this app.",
+  "description": "Overdrive, a PS5 game store; this repository carries the PS4 port of it. The scripts wrap the ps5-react build for this app.",
   "//": [
     "JSON has no comments; npm ignores this key.",
     "",
@@ -12,6 +12,8 @@
     "           GitHub workflow. Needs LLVM 18, cmake, ninja, nasm, exfatprogs; asks for sudo",
     "           to mount the image while filling it. See packaging/build.sh.",
     "build:app  The PS5 build only, into ps5-react/dist/PPSA99058. No sudo.",
+    "build:ps4  The PS4 staging tree (eboot.elf and app data) with the Open Orbis toolchain.",
+    "           Needs OO_PS4_TOOLCHAIN; see docs/PS4.md. Console testing pending.",
     "preview    Opens the app in the desktop preview window on this PC. No PS5 toolchain needed.",
     "dev        Same window, rebuilt and restarted on every save under app/. State resets.",
     "test       The framework's checks; run after changing rendering or input in ps5-react/.",
@@ -31,6 +33,7 @@
     "setup": "bash packaging/setup.sh",
     "build": "bash packaging/build.sh",
     "build:app": "bash packaging/build.sh --no-package",
+    "build:ps4": "bash packaging/build-ps4.sh",
     "preview": "cd ps5-react && CC=clang CXX=clang++ python3 tools/cli.py preview --app-dir ../app",
     "dev": "cd ps5-react && CC=clang CXX=clang++ python3 tools/cli.py preview --app-dir ../app --watch",
     "test": "cd ps5-react && CC=clang CXX=clang++ npm test",
