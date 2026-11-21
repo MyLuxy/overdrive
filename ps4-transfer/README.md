@@ -13,18 +13,30 @@ PS4 build pipeline (`ps5-react/tools/build_ps4.py`, `packaging/build-ps4.sh`,
 checklist) + the finished `README.md` / `README.ru.md` / `AGENTS.md` / `package.json`
 + the GPL-3.0 `LICENSE`.
 
-## Step 1 — take the source branch
+## Step 1 — take the source state
 
-```sh
-git clone https://github.com/Stintik-123/Overdrive-PS4
-cd Overdrive-PS4
-git fetch https://github.com/Stintik-123/Overdrive.git vibe/overdrive-ps4-port-fd5b99
-```
+Two valid sources exist. Pick the one that matches reality:
+
+- **PR #3 is still open** → transfer from its branch:
+  ```sh
+  git clone https://github.com/Stintik-123/Overdrive-PS4
+  cd Overdrive-PS4
+  git fetch https://github.com/Stintik-123/Overdrive.git vibe/overdrive-ps4-port-fd5b99
+  ```
+- **PR #3 was merged into this repository's main** → transfer from `main` directly:
+  ```sh
+  git clone https://github.com/Stintik-123/Overdrive-PS4
+  cd Overdrive-PS4
+  git fetch https://github.com/Stintik-123/Overdrive.git main
+  ```
+
+…then run the same `git reset --hard FETCH_HEAD && git push origin main` as Step 2
+regardless of which source you took.
 
 ## Step 2 — replace Overdrive-PS4 main with that state
 
 The placeholder commit in Overdrive-PS4 (Initial commit, LICENSE + README stub) is
-superseded: the branch carries its own `LICENSE` and finished READMEs. Rewriting the
+superseded: the source carries its own `LICENSE` and finished READMEs. Rewriting the
 local main before any push is expected here.
 
 ```sh
@@ -44,10 +56,9 @@ git push origin FETCH_HEAD:refs/heads/ps4-port-base
 
 - `ls` shows the full tree: `app/`, `ps5-react/`, `packaging/`, `tools/`, `docs/PS4.md`,
   `docs/archive-passwords.json`, `covers/`, `README.md`, `README.ru.md`, `LICENSE`.
-- `ls ps5-react/native/ps4/` shows: `CMakeLists.txt`, `README.md`, `browser_capture.cpp`,
-  `host_platform.cpp`, `package_installer.py`, `toolchain-openorbis.cmake`,
-  `rar_worker_process.cpp` (note: `package_installer.cpp`, not `.py`; both next to
-  `host_platform.cpp`).
+- `ls ps5-react/native/ps4/` shows exactly: `CMakeLists.txt`, `README.md`,
+  `browser_capture.cpp`, `host_platform.cpp`, `package_installer.cpp`,
+  `rar_worker_process.cpp`, `toolchain-openorbis.cmake`.
 - `package.json` has the `build:ps4` script; `docs/PS4.md` exists at the root of docs/.
 - `git log --oneline -3` on Overdrive-PS4 shows history ending in the merge commit
   "merge: seed the PS4 port repository from Overdrive main" and
@@ -57,9 +68,9 @@ git push origin FETCH_HEAD:refs/heads/ps4-port-base
 
 1. Delete the `ps4-transfer/` folder (this file included) with a commit like
    `transfer: remove the ps4-transfer hand-off note (applied to Overdrive-PS4)` on `main`.
-2. Close PR #3 without merging (its branch `vibe/overdrive-ps4-port-fd5b99` was the
-   transfer source; after Step 2 it is disposable) and delete the branch if the UI allows
-   (do not delete if the PR was merged instead of closed).
+2. If PR #3 is still open and its content is already in Overdrive-PS4, close it (the branch
+   `vibe/overdrive-ps4-port-fd5b99` is disposable); if it was merged instead, just delete
+   the branch or leave it as history.
 
 ## Context, in one paragraph
 
