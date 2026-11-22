@@ -141,6 +141,7 @@ def clean_title(raw):
 
 
 def store_trailers(game_id, region, language):
+    fallback = None
     for store in [region] + [store for store in STORES if store != region]:
         body = fetch(CHIHIRO.format(store=store, lang=language, title=game_id))
         try:
@@ -156,8 +157,11 @@ def store_trailers(game_id, region, language):
                                      if url.lower().endswith((".mp4", ".m4v"))):
             name = names[position] if position < len(names) else (names[0] if names else "")
             entries.append({**({"title": name} if name else {}), "url": url})
-        return entries
-    return []
+        if entries:
+            return entries
+        if fallback is None:
+            fallback = entries
+    return fallback or []
 
 
 def steam_trailers(appid, cc, language):

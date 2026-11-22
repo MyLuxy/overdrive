@@ -1,10 +1,13 @@
 import '../assets/Inter-Regular.ttf';
 import { jsx, jsxs } from 'react/jsx-runtime';
+import { useEffect, useState } from 'react';
+import { onThemeChange, activeTheme } from '../state/themes.js';
 import { Image, View } from '@ps5-react/core';
-import { activeTheme } from '../state/themes.js';
 import { colors } from './colors.js';
 
 function ThemeBackdrop() {
+  const [, setTick] = useState(0);
+  useEffect(() => onThemeChange(() => setTick((value) => value + 1)), []);
   const theme = activeTheme();
   if (!theme.background) return null;
   return /* @__PURE__ */ (0, jsxs)(View, { style: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }, children: [

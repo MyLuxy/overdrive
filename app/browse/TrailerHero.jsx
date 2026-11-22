@@ -1,7 +1,8 @@
 import '../assets/Inter-Regular.ttf';
 import { jsx, jsxs } from 'react/jsx-runtime';
 import { games } from '../data/catalog.js';
-import { trailersFor } from '../state/trailers.js';
+import { trailers as bundled } from '../data/trailers.js';
+import { TRAILERS_DIR, trailersFor } from '../state/trailers.js';
 import { LATIN_IN_RTL, useLocale, useT } from '../i18n/index.js';
 import { useNavActions } from '../state/nav.jsx';
 import { FAMOUS, picked } from './picks.js';
@@ -9,21 +10,30 @@ import { FIRST_POPULAR } from './PopularRail.jsx';
 import { Button2 } from '../ui/Button.jsx';
 import { GameLogo } from '../ui/GameLogo.jsx';
 import { colors } from '../ui/colors.js';
-import { Text, Video, View } from '@ps5-react/core';
+import { FileSystem, Text, Video, View } from '@ps5-react/core';
 
-var MAX_LOOKUPS = 400;
 var VIDEO_W = 1280;
 var VIDEO_H = 520;
 var LOGO = [320, 112, 48 * 256];
 
-function pickHero() {
-  for (const game of picked(games, FAMOUS)) {
-    const trailers = trailersFor(game.id);
-    if (trailers.length) return { game, trailer: trailers[0] };
+function userTrailerIds() {
+  try {
+    return FileSystem.readDir(TRAILERS_DIR)
+      .filter((entry) => entry.isFile && entry.name.toLowerCase().endsWith(".json"))
+      .map((entry) => entry.name.slice(0, -5));
+  } catch {
+    return [];
   }
-  const start = Math.floor(Date.now() / 86400000) % games.length;
-  for (let at = 0; at < Math.min(MAX_LOOKUPS, games.length); at++) {
-    const game = games[(start + at) % games.length];
+}
+
+function pickHero() {
+  const known = new Set(Object.keys(bundled).filter((id) => Array.isArray(bundled[id]) && bundled[id].length > 0));
+  for (const id of userTrailerIds()) known.add(id);
+  if (!known.size) return null;
+  const seen = new Set();
+  for (const game of [...picked(games, FAMOUS), ...games]) {
+    if (seen.has(game.id) || !known.has(game.id)) continue;
+    seen.add(game.id);
     const trailers = trailersFor(game.id);
     if (trailers.length) return { game, trailer: trailers[0] };
   }
@@ -43,7 +53,7 @@ function TrailerHero() {
     (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, letterSpacing: 2, color: colors.subtle, textTransform: "uppercase" }, children: t2("game.trailer") }),
     (0, jsxs)(View, { style: { flexDirection: "row", gap: 24, alignItems: "center" }, children: [
       (0, jsx)(View, { style: { width: VIDEO_W, height: VIDEO_H, borderRadius: 18, overflow: "hidden", backgroundColor: "#000000" }, children:
-        (0, jsx)(Video, { source: { uri: trailer.url }, muted: true, loop: true, resizeMode: "cover", style: { width: "100%", height: "100%" } })
+        (0, jsx)(Video, { source: { uri: trailer.url }, muted: true, repeat: true, resizeMode: "cover", style: { width: "100%", height: "100%" } })
       }),
       (0, jsxs)(View, { style: { flex: 1, gap: 18, alignItems: "flex-start" }, children: [
         (0, jsx)(GameLogo, { game, width: LOGO[0], height: LOGO[1], area: LOGO[2] }),

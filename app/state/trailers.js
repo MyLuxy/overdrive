@@ -2,7 +2,7 @@ import { FileSystem } from '@ps5-react/core';
 import { readJSON } from './read-json.js';
 import { trailers as bundled } from '../data/trailers.js';
 
-var TRAILERS_DIR = `${FileSystem.dataDir}/overdrive/trailers`;
+export var TRAILERS_DIR = `${FileSystem.dataDir}/overdrive/trailers`;
 var MAX_TRAILERS = 8;
 var URL_TEST = /^https?:\/\//i;
 

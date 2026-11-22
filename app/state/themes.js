@@ -27,6 +27,7 @@ var USER_TTL_MS = 2000;
 var userThemes = [];
 var userAt = 0;
 var chosen = null;
+var listeners = new Set();
 
 export var DEFAULT_THEME = {
   id: "builtin:default",
@@ -66,6 +67,11 @@ export function safeBackdrop(value, baseDir = "") {
     return baseDir ? `${baseDir}/${text}` : text;
   }
   return "";
+}
+
+export function onThemeChange(listener) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }
 
 export function normalizeDim(value) {
@@ -112,7 +118,7 @@ function readUserThemes() {
       builtin: false,
       colors: normalizeTheme(record),
       background: safeBackdrop(record.background, THEMES_DIR),
-      backgroundDim: record.background === undefined ? 0.28 : normalizeDim(record.backgroundDim)
+      backgroundDim: record.backgroundDim === undefined ? (record.background === undefined || record.background === "" ? DEFAULT_THEME.backgroundDim : 0.28) : normalizeDim(record.backgroundDim)
     });
   }
   return themes;
@@ -137,6 +143,11 @@ export function activeTheme() {
 function applyTheme(theme) {
   chosen = theme;
   Object.assign(colors, theme.colors);
+  for (const listener of listeners) {
+    try {
+      listener();
+    } catch {}
+  }
 }
 
 export function selectTheme(id) {
