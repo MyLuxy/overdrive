@@ -45,10 +45,14 @@ know yet: the key in both places is the exact catalog id (`CUSA09267`, `PPSA0375
 ## Hero section on the Browse page
 
 When at least one game has trailers, the Browse page shows, right under the spotlight: a video
-window on one side (autoplaying, muted, looping) and the game's title, the trailer's name and a
-*View game* button on the other. The game it shows is picked once per launch: a hand-picked famous
-game with a trailer if there is one, otherwise the day's rotation over the catalog. With no trailer
-anywhere the section simply does not render.
+window on one side (autoplaying, muted, repeating) and the current game's title, the trailer's name
+and a *View game* button on the other. Up to six games rotate through the window, one every 30
+seconds, with a small position counter by the heading. The line-up opens with the most cinematic
+blockbusters (`EPIC` in `app/browse/TrailerHero.jsx`: God of War Ragnarök, Elden Ring, Spider-Man 2,
+Cyberpunk 2077, Ghost of Yotei, Ghost of Tsushima, PRAGMATA, Black Myth: Wukong, Crimson Desert,
+Marvel's Wolverine), continues with the hand-picked famous games (`FAMOUS` in `app/browse/picks.js`)
+and then fills with the rest of the catalog in its own order. To lead the rotation differently,
+reorder or edit those two lists. With no trailer anywhere the section simply does not render.
 
 ## Filling the bundled file: tools/fetch-trailers.py
 
@@ -62,7 +66,6 @@ change or leave games out; run it without `--write` first to see what it would d
    place Hydra Launcher takes its details from. Steam is keyed by appid; the tool reads each game's
    `*/steam/apps/<appid>/*` art URL from the catalog, so games with Steam art are covered even when
    the PlayStation Store has nothing.
-do.
 
 ```
 python -P tools/fetch-trailers.py [--limit N] [--chunk N] [--region US] [--language en] [--refresh] [--write]

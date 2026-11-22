@@ -107,6 +107,15 @@ transparent values and let the wallpaper show through cards instead of only behi
 
 ## Sharing
 
-A theme is one `.json` file plus, optionally, its image files. Share the `.json` (and the images)
-as a set and have the recipient drop everything into `/data/overdrive/themes/`; keep image names
-unique (`mytheme-wall.jpg`, not `wall.jpg`) so themes cannot shadow each other's files.
+A wallpaper by URL makes a theme a **single `.json` file**: share it, the recipient drops it into
+`/data/overdrive/themes/` (FTP or file browser) and it appears in Settings → Appearance → Themes.
+With local image files, share the `.json` plus the images as a set; keep image names unique
+(`mytheme-wall.jpg`, not `wall.jpg`) so themes cannot shadow each other's files.
+
+For publishing, a static gallery site (for example on GitHub Pages) is the natural home: a page per
+theme with a screenshot, a description and a direct link to the `.json` file, so a theme is one
+click to download and one file to install. A curated `themes.json` index could later let the app
+listed themes page link out to it. Loading a theme from a URL straight inside Overdrive needs text
+input, which the current ps5-react engine does not offer yet (no on-screen keyboard, see
+`ps5-react/docs/NATIVE-API.md`); once the engine adds it, "add theme by URL" can read an entry from
+such an index without leaving the console.

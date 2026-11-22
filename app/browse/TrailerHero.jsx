@@ -1,5 +1,6 @@
 import '../assets/Inter-Regular.ttf';
 import { jsx, jsxs } from 'react/jsx-runtime';
+import { useEffect, useState } from 'react';
 import { games } from '../data/catalog.js';
 import { trailers as bundled } from '../data/trailers.js';
 import { TRAILERS_DIR, trailersFor } from '../state/trailers.js';
@@ -12,6 +13,9 @@ import { GameLogo } from '../ui/GameLogo.jsx';
 import { colors } from '../ui/colors.js';
 import { FileSystem, Text, Video, View } from '@ps5-react/core';
 
+var EPIC = ["PPSA08330", "PPSA04609", "PPSA03016", "PPSA04029", "PPSA26344", "PPSA02225", "PPSA02530", "PPSA23226", "PPSA25286", "PPSA03671"];
+var ROTATE_MS = 30000;
+var MAX_SLIDES = 6;
 var VIDEO_W = 1280;
 var VIDEO_H = 520;
 var LOGO = [320, 112, 48 * 256];
@@ -26,34 +30,50 @@ function userTrailerIds() {
   }
 }
 
-function pickHero() {
+function pickPlaylist() {
   const known = new Set(Object.keys(bundled).filter((id) => Array.isArray(bundled[id]) && bundled[id].length > 0));
   for (const id of userTrailerIds()) known.add(id);
   if (!known.size) return null;
-  const seen = new Set();
-  for (const game of [...picked(games, FAMOUS), ...games]) {
-    if (seen.has(game.id) || !known.has(game.id)) continue;
-    seen.add(game.id);
-    const trailers = trailersFor(game.id);
-    if (trailers.length) return { game, trailer: trailers[0] };
+  const byId = new Map(games.map((game) => [game.id, game]));
+  const order = [];
+  for (const id of EPIC) {
+    const game = byId.get(id);
+    if (game && known.has(id)) order.push(game);
   }
-  return null;
+  for (const game of picked(games, FAMOUS)) if (known.has(game.id) && !order.includes(game)) order.push(game);
+  for (const game of games) if (known.has(game.id) && !order.includes(game)) order.push(game);
+  const playlist = [];
+  for (const game of order) {
+    if (playlist.length >= MAX_SLIDES) break;
+    const trailers = trailersFor(game.id);
+    if (trailers.length) playlist.push({ game, trailer: trailers[0] });
+  }
+  return playlist.length ? playlist : null;
 }
 
-var hero = pickHero();
-var hasTrailerHero = hero != null;
+var playlist = pickPlaylist();
+var hasTrailerHero = playlist != null;
 
 function TrailerHero() {
   const t2 = useT();
   const { rtl } = useLocale();
   const { openGame } = useNavActions();
-  if (!hero) return null;
-  const { game, trailer } = hero;
+  const [active, setActive] = useState(0);
+  useEffect(() => {
+    if (!playlist || playlist.length < 2) return void 0;
+    const id = setInterval(() => setActive((value) => value + 1), ROTATE_MS);
+    return () => clearInterval(id);
+  }, []);
+  if (!playlist) return null;
+  const { game, trailer } = playlist[active % playlist.length];
   return (0, jsxs)(View, { style: { gap: 24 }, children: [
-    (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, letterSpacing: 2, color: colors.subtle, textTransform: "uppercase" }, children: t2("game.trailer") }),
+    (0, jsxs)(View, { style: { flexDirection: "row", alignItems: "center", gap: 14 }, children: [
+      (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, letterSpacing: 2, color: colors.subtle, textTransform: "uppercase" }, children: t2("game.trailer") }),
+      playlist.length > 1 ? (0, jsx)(Text, { style: { fontFamily: "JetBrainsMono-Regular", fontSize: 19, color: colors.subtle }, children: `${(active % playlist.length) + 1} / ${playlist.length}` }) : null
+    ] }),
     (0, jsxs)(View, { style: { flexDirection: "row", gap: 24, alignItems: "center" }, children: [
       (0, jsx)(View, { style: { width: VIDEO_W, height: VIDEO_H, borderRadius: 18, overflow: "hidden", backgroundColor: "#000000" }, children:
-        (0, jsx)(Video, { source: { uri: trailer.url }, muted: true, repeat: true, resizeMode: "cover", style: { width: "100%", height: "100%" } })
+        (0, jsx)(Video, { key: trailer.url, source: { uri: trailer.url }, muted: true, repeat: true, resizeMode: "cover", style: { width: "100%", height: "100%" } })
       }),
       (0, jsxs)(View, { style: { flex: 1, gap: 18, alignItems: "flex-start" }, children: [
         (0, jsx)(GameLogo, { game, width: LOGO[0], height: LOGO[1], area: LOGO[2] }),
