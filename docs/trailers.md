@@ -42,21 +42,38 @@ Two places, merged per game, deduplicated by URL, at most 8 per game:
 There is no way to point the button at a video for a game Overdrive lists under an id you do not
 know yet: the key in both places is the exact catalog id (`CUSA09267`, `PPSA03753`).
 
+## Hero section on the Browse page
+
+When at least one game has trailers, the Browse page shows, right under the spotlight: a video
+window on one side (autoplaying, muted, looping) and the game's title, the trailer's name and a
+*View game* button on the other. The game it shows is picked once per launch: a hand-picked famous
+game with a trailer if there is one, otherwise the day's rotation over the catalog. With no trailer
+anywhere the section simply does not render.
+
 ## Filling the bundled file: tools/fetch-trailers.py
 
-A helper asks the same PlayStation Store API `tools/enrich-catalog.py` uses and bundles what it
-finds. It is **experimental**: the store answers this API without authentication today, but it is
-undocumented and may change or leave games out; run it without `--write` first to see what it would
+A helper asks two sources, in this order per game, and bundles what it finds. It is
+**experimental**: both answer without authentication today, but they are undocumented and may
+change or leave games out; run it without `--write` first to see what it would do.
+
+1. The **PlayStation Store** -- the same chihiro API `tools/enrich-catalog.py` uses, which lists a
+   product's videos with their names.
+2. **Steam** -- the public `appdetails` endpoint (`filters=movies`, direct mp4s included), the same
+   place Hydra Launcher takes its details from. Steam is keyed by appid; the tool reads each game's
+   `*/steam/apps/<appid>/*` art URL from the catalog, so games with Steam art are covered even when
+   the PlayStation Store has nothing.
 do.
 
 ```
-python -P tools/fetch-trailers.py [--limit N] [--chunk N] [--region US] [--language en] [--write]
+python -P tools/fetch-trailers.py [--limit N] [--chunk N] [--region US] [--language en] [--refresh] [--write]
 ```
 
 - `--limit N` — only the first N catalog games (a cheap way to try it).
 - `--chunk N` — progress line every N games.
+- `--refresh` — ask the sources again for games that already have a trailer (default: skip them,
+  so reruns only fill the holes).
 - `--write` — save the merged result to `app/data/trailers.js`; without it the tool only prints.
-- Entries already in the file are never touched; the store only fills the gaps.
+- Entries already in the file are never touched; the sources only fill the gaps.
 
 ## In the player
 

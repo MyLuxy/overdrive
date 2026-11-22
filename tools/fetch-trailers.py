@@ -1,21 +1,33 @@
 #!/usr/bin/env python3
-"""Find trailers on the PlayStation Store and bundle them into app/data/trailers.js.
+"""Find trailers on the PlayStation Store and Steam, and bundle them into app/data/trailers.js.
 
-    python -P tools/fetch-trailers.py [--limit N] [--chunk N] [--region US] [--language en] [--write]
+    python -P tools/fetch-trailers.py [--limit N] [--chunk N] [--region US] [--language en]
+                                      [--refresh] [--write]
 
-This uses the same store API enrich-catalog.py already talks to: the chihiro title container
-(https://store.playstation.com/store/api/chihiro/00_09_000/titlecontainer/{store}/{lang}/999/{title}_00),
-which answers, without authentication, with the product's media list -- for many games a top-level
-"videos" list of direct mp4 links and their names. For every game in app/data/catalog.js the tool
-asks the store of --region first, then the others; what it finds is merged with what
-app/data/trailers.js already bundles: entries already in the file stay untouched, the store fills
-the gaps (at most 8 per game, as the app reads them), and the result keeps the catalog's order.
+Two sources, in this order per game:
+
+1. The PlayStation Store: the chihiro title container
+   (https://store.playstation.com/store/api/chihiro/00_09_000/titlecontainer/{store}/{lang}/999/{title}_00),
+   the same API enrich-catalog.py talks to. Without authentication it answers with the product's
+   media list -- for many games a top-level "videos" list of direct mp4 links and their names.
+2. Steam: the public appdetails endpoint (store.steampowered.com/api/appdetails, filters=movies),
+   the same place Hydra Launcher takes its details from. It answers with each film's direct mp4.
+   Steam only knows an appid: every catalog game whose art points at cdn.cloudflare.steamstatic.com
+   (or any other */steam/apps/<appid>/* URL) carries one in app/data/catalog.js, and the tool reads
+   it from there.
+
+What it finds is merged with what app/data/trailers.js already bundles: entries already in the file
+stay untouched, the sources fill the gaps (at most 8 per game, as the app reads them), and the
+result keeps the catalog's order. Without --refresh a game that already has at least one trailer is
+not asked again, so reruns only fill the holes.
 
 Without --write nothing in the repository changes: the tool prints what it found and would save.
-EXPERIMENTAL: the store answers this API today, but it is undocumented and may change or leave out
-games; a game the store refuses is skipped without any other game or file being touched.
+EXPERIMENTAL: both APIs answer without authentication today, but they are undocumented and may
+change or leave games out; a game both refuse is skipped without any other game or file being
+touched.
 """
 import argparse
+import html
 import json
 import os
 import re
@@ -29,33 +41,17 @@ CATALOG = os.path.join(HERE, os.pardir, "app", "data", "catalog.js")
 TRAILERS = os.path.join(HERE, os.pardir, "app", "data", "trailers.js")
 
 CHIHIRO = "https://store.playstation.com/store/api/chihiro/00_09_000/titlecontainer/{store}/{lang}/999/{title}_00"
+STEAM = "https://store.steampowered.com/api/appdetails?appids={appid}&filters=movies&cc={cc}&l={lang}"
 STORES = ["US", "GB", "DE", "FR", "ES", "IT", "RU", "JP", "BR", "HK"]
-GAME = re.compile(r'\{ "id": "([A-Z]{4}[0-9]{5})", "title": "((?:[^"\\]|\\.)*)"')
+GAME = re.compile(r'\{ "id": "([A-Z]{4}[0-9]{5})"[^\n]*')
+TITLE = re.compile(r'"title": "((?:[^"\\]|\\.)*)"')
+APPID = re.compile(r"steam/apps/(\d{4,9})")
 URL_OK = re.compile(r"^https?://", re.I)
 MAX_TRAILERS = 8
 MAX_URL = 2048
 MAX_TITLE = 80
 SLEEP = 1.0
 USER_AGENT = "Mozilla/5.0 (Overdrive catalog tool)"
-
-
-def fetch(url, timeout=15, attempts=2):
-    for attempt in range(attempts):
-        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-        try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                return response.read()
-        except urllib.error.HTTPError as error:
-            if error.code in (404, 410):
-                return None
-            if error.code not in (429, 500, 502, 503, 504) or attempt + 1 == attempts:
-                return None
-        except (urllib.error.URLError, TimeoutError, OSError):
-            if attempt + 1 == attempts:
-                return None
-        time.sleep(SLEEP * (attempt + 1))
-    return None
-
 
 ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "b": "\b", "f": "\f", "'": "'", '"': '"', "\\": "\\", "/": "/"}
 
@@ -81,9 +77,32 @@ def unescape_js(raw):
     return "".join(out)
 
 
+def fetch(url, timeout=15, attempts=2):
+    for attempt in range(attempts):
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return response.read()
+        except urllib.error.HTTPError as error:
+            if error.code in (404, 410):
+                return None
+            if error.code not in (429, 500, 502, 503, 504) or attempt + 1 == attempts:
+                return None
+        except (urllib.error.URLError, TimeoutError, OSError):
+            if attempt + 1 == attempts:
+                return None
+        time.sleep(SLEEP * (attempt + 1))
+    return None
+
+
 def load_catalog(limit):
     text = open(CATALOG, encoding="utf-8").read()
-    games = [(match.group(1), unescape_js(match.group(2))) for match in GAME.finditer(text)]
+    games = []
+    for match in GAME.finditer(text):
+        line = match.group(0)
+        title = TITLE.search(line)
+        appid = APPID.search(line)
+        games.append((match.group(1), unescape_js(title.group(1)) if title else "", appid.group(1) if appid else ""))
     return games[:limit] if limit else games
 
 
@@ -118,52 +137,91 @@ def video_urls(node):
 def clean_title(raw):
     if not isinstance(raw, str):
         return ""
-    return raw.strip().replace("\n", " ")[:MAX_TITLE]
+    return html.unescape(raw).strip().replace("\n", " ")[:MAX_TITLE]
+
+
+def store_trailers(game_id, region, language):
+    for store in [region] + [store for store in STORES if store != region]:
+        body = fetch(CHIHIRO.format(store=store, lang=language, title=game_id))
+        try:
+            data = json.loads(body) if body else {}
+        except ValueError:
+            data = {}
+        if not data.get("name"):
+            continue
+        videos = data.get("videos") or []
+        names = [clean_title(v.get("name")) for v in videos if isinstance(v, dict)]
+        entries = []
+        for position, url in enumerate(url for url in dict.fromkeys(video_urls(data))
+                                     if url.lower().endswith((".mp4", ".m4v"))):
+            name = names[position] if position < len(names) else (names[0] if names else "")
+            entries.append({**({"title": name} if name else {}), "url": url})
+        return entries
+    return []
+
+
+def steam_trailers(appid, cc, language):
+    body = fetch(STEAM.format(appid=appid, cc=cc.lower(), lang=language))
+    try:
+        data = json.loads(body) if body else {}
+    except ValueError:
+        data = {}
+    entry = data.get(appid) or {}
+    if not entry.get("success"):
+        return []
+    entries = []
+    for movie in (entry.get("data") or {}).get("movies") or []:
+        if not isinstance(movie, dict):
+            continue
+        formats = movie.get("mp4") or {}
+        url = (formats.get("480") or formats.get("max") or "").strip()
+        if url and URL_OK.match(url) and len(url) <= MAX_URL:
+            title = clean_title(movie.get("name"))
+            entries.append({**({"title": title} if title else {}), "url": url})
+    return entries
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Bundle PlayStation Store trailers into app/data/trailers.js")
+    parser = argparse.ArgumentParser(description="Bundle PlayStation Store and Steam trailers into app/data/trailers.js")
     parser.add_argument("--limit", type=int, default=0, help="only the first N catalog games (0: all)")
     parser.add_argument("--chunk", type=int, default=100, help="print a progress line every N games")
-    parser.add_argument("--region", default="US", help="store to ask first (default US)")
+    parser.add_argument("--region", default="US", help="store to ask first, also Steam's country (default US)")
     parser.add_argument("--language", default="en", help="store language (default en)")
+    parser.add_argument("--refresh", action="store_true", help="ask the sources again for games that already have a trailer")
     parser.add_argument("--write", action="store_true", help="save the merged file (default: print only)")
     args = parser.parse_args()
 
     games = load_catalog(args.limit)
     bundled = read_bundled()
-    merged = {game_id: [entry for entry in (bundled.get(game_id) or []) if isinstance(entry, dict)][:MAX_TRAILERS] for game_id, _title in games}
+    merged = {game_id: [entry for entry in (bundled.get(game_id) or []) if isinstance(entry, dict)][:MAX_TRAILERS] for game_id, _title, _appid in games}
     merged.update({key: value for key, value in bundled.items() if key not in merged})
 
-    found_new = 0
-    for index, (game_id, title) in enumerate(games, 1):
-        seen = {entry.get("url") for entry in merged[game_id] if isinstance(entry.get("url"), str)}
-        for store in [args.region] + [store for store in STORES if store != args.region]:
-            body = fetch(CHIHIRO.format(store=store, lang=args.language, title=game_id))
-            try:
-                data = json.loads(body) if body else {}
-            except ValueError:
-                data = {}
-            if not data.get("name"):
-                continue
-            store_urls = [url for url in dict.fromkeys(video_urls(data))
-                          if url.lower().endswith((".mp4", ".m4v")) and url not in seen]
-            if store_urls:
-                names = [clean_title(v.get("name")) for v in (data.get("videos") or []) if isinstance(v, dict)]
-                picked = []
-                for position, url in enumerate(store_urls):
-                    name = names[position] if position < len(names) else (names[0] if names else title)
-                    picked.append({**({"title": name} if name else {}), "url": url})
-                    seen.add(url)
-                merged[game_id] = (merged[game_id] + picked)[:MAX_TRAILERS]
-                found_new += len(picked)
-            break
+    found_new, skipped = 0, 0
+    for index, (game_id, title, appid) in enumerate(games, 1):
+        existing = merged[game_id]
+        if not args.refresh and existing:
+            skipped += 1
+            continue
+        seen = {entry.get("url") for entry in existing if isinstance(entry.get("url"), str)}
+        fresh = []
+        sources = [store_trailers(game_id, args.region, args.language)]
+        if appid:
+            sources.append(steam_trailers(appid, args.region, args.language))
+        for source in sources:
+            for entry in source:
+                if entry["url"] not in seen:
+                    seen.add(entry["url"])
+                    fresh.append(entry)
+        if fresh:
+            merged[game_id] = (existing + fresh)[:MAX_TRAILERS]
+            found_new += len(fresh)
         if args.chunk and index % args.chunk == 0:
             print(f"... {index}/{len(games)} games, {found_new} new trailer links so far")
-        time.sleep(SLEEP)
+        if index < len(games):
+            time.sleep(SLEEP)
 
     kept = {game_id: entries for game_id, entries in merged.items() if entries}
-    print(f"catalog: {len(games)} games | new links from the store: {found_new} | games with trailers: {len(kept)}")
+    print(f"catalog: {len(games)} games | already had a trailer: {skipped} | new links: {found_new} | games with trailers: {len(kept)}")
 
     if args.write:
         payload = json.dumps(kept, ensure_ascii=False, indent=2)

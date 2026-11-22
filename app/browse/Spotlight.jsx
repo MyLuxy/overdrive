@@ -7,6 +7,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { FIRST_POPULAR } from './PopularRail.jsx';
 import { FAMOUS, picked, shuffle } from './picks.js';
 import { SpotlightList } from './SpotlightList.jsx';
+import { hasTrailerHero } from './TrailerHero.jsx';
 import { useSlides } from './useSlides.js';
 import { games } from '../data/catalog.js';
 import { LATIN_IN_RTL, focusEnd, useLocale, useT } from '../i18n/index.js';
@@ -108,7 +109,7 @@ import { AnimatePresence, Image, Text, View, motion } from '@ps5-react/core';
         label: wished ? t2("browse.favorited") : t2("browse.addToFavorites"),
         focusKey: "spotlight:wish",
         nextFocusUp: "nav:current",
-        nextFocusDown: FIRST_POPULAR,
+        nextFocusDown: hasTrailerHero ? "trailhero:cta" : FIRST_POPULAR,
         ...focusEnd(rtl, toList),
         onPress: () => toggleWish(id),
         children: /* @__PURE__ */ (0, jsx)(WishHeart, { active: wished })
@@ -146,7 +147,7 @@ import { AnimatePresence, Image, Text, View, motion } from '@ps5-react/core';
                 halo: false,
                 focusKey: "spotlight:cta",
                 nextFocusUp: "nav:current",
-                nextFocusDown: FIRST_POPULAR,
+                nextFocusDown: hasTrailerHero ? "trailhero:cta" : FIRST_POPULAR,
                 onPress: () => openGame(game.id, "spotlight:cta")
               }
             ),

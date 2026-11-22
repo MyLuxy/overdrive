@@ -16,6 +16,7 @@ import { FocusedSection, NearSection } from './near.js';
 import { PopularRail } from './PopularRail.jsx';
 import { RecentRow } from './RecentRow.jsx';
 import { Spotlight } from './Spotlight.jsx';
+import { TrailerHero } from './TrailerHero.jsx';
 import { TopCharts } from './TopCharts.jsx';
 import { useT } from '../i18n/index.js';
 import { StoreFreeze } from '../state/store.jsx';
@@ -52,7 +53,8 @@ import { FocusScope, ScrollView, Text, View } from '@ps5-react/core';
       // Each section keeps its images in use only while focus is in it or the next one (near.js).
       /* @__PURE__ */ (0, jsx)(NearSection, { index: 0, children: /* @__PURE__ */ (0, jsxs)(View, { scrollAnchor: true, style: { gap: 24, paddingTop: 36 }, children: [
         /* @__PURE__ */ (0, jsx)(FolderInstallNotice, {}),
-        /* @__PURE__ */ (0, jsx)(Spotlight, {})
+        /* @__PURE__ */ (0, jsx)(Spotlight, {}),
+        /* @__PURE__ */ (0, jsx)(TrailerHero, {})
       ] }) }),
       /* @__PURE__ */ (0, jsx)(NearSection, { index: 1, children: /* @__PURE__ */ (0, jsx)(PopularRail, {}) }),
       /* @__PURE__ */ (0, jsx)(NearSection, { index: 2, children: /* @__PURE__ */ (0, jsx)(AddedRail, {}) }),
