@@ -1,0 +1,3 @@
+var trailers = {};
+
+export { trailers };

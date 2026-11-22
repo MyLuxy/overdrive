@@ -215,7 +215,9 @@ import { activeTheme, activeThemeId, listThemes, themeDisplayName } from '../sta
       return {
         eyebrow: t2("themes.sideEyebrow"),
         big: themeDisplayName(theme, t2),
-        rows: THEME_PREVIEW_KEYS.map((key) => ({ label: t2(`themes.color.${key}`), value: theme.colors[key], on: false })),
+        rows: THEME_PREVIEW_KEYS.map((key) => ({ label: t2(`themes.color.${key}`), value: theme.colors[key], on: false })).concat([
+          { label: t2("themes.background"), value: theme.background ? theme.background : t2("themes.backgroundOff") }
+        ]),
         small: t2("themes.sideNote")
       };
     }

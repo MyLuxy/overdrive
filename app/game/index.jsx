@@ -16,6 +16,7 @@ import { MediaGallery } from './MediaGallery.jsx';
 import { OptionsSheet } from './OptionsSheet.jsx';
 import { ShotViewer } from './ShotViewer.jsx';
 import { SourcePicker } from './SourcePicker.jsx';
+import { TrailerPlayer } from './TrailerPlayer.jsx';
 import { VersionSheet } from './VersionSheet.jsx';
 import { useT } from '../i18n/index.js';
 import { featureLabel, relatedGames } from '../state/catalog.js';
@@ -52,7 +53,7 @@ import { AnimatePresence, FocusScope, ScrollView, Text, View } from '@ps5-react/
     const [toast, setToast] = (0, useState)(null);
     const [viewing, setViewing] = (0, useState)(null);
     const { focusLater } = useNavActions();
-    const Dialog = { source: SourcePicker, options: OptionsSheet, version: VersionSheet, tips: DownloadTipsDialog, stream: StreamChoiceDialog }[dialog?.kind] ?? URLDialog;
+    const Dialog = { source: SourcePicker, options: OptionsSheet, version: VersionSheet, tips: DownloadTipsDialog, stream: StreamChoiceDialog, trailer: TrailerPlayer }[dialog?.kind] ?? URLDialog;
     const related = relatedGames(game);
     const about = game.about.filter((text) => text.trim());
     (0, useEffect)(() => {

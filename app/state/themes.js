@@ -18,95 +18,24 @@ export var BASE_COLORS = {
   info: "#a5f3fc"
 };
 
-var PRESET_COLORS = {
-  default: BASE_COLORS,
-  midnight: {
-    canvas: "#04060f",
-    surface: "#0b1122",
-    surface2: "#141b33",
-    surface3: "#1e2748",
-    line: "#1a2240",
-    fg: "#e7ecff",
-    muted: "#9aa7d8",
-    subtle: "#7481b3",
-    accentFg: "#04060f",
-    ok: "#a7f3d0",
-    warn: "#fde68a",
-    info: "#a5f3fc"
-  },
-  ember: {
-    canvas: "#0c0405",
-    surface: "#1d0a0d",
-    surface2: "#2b1218",
-    surface3: "#3c1c24",
-    line: "#341620",
-    fg: "#ffeef2",
-    muted: "#d8a4b3",
-    subtle: "#a87385",
-    accentFg: "#0c0405",
-    ok: "#a7f3d0",
-    warn: "#fde68a",
-    info: "#fcd9e2"
-  },
-  forest: {
-    canvas: "#030805",
-    surface: "#0a1710",
-    surface2: "#122418",
-    surface3: "#1b3524",
-    line: "#162c1e",
-    fg: "#eafff3",
-    muted: "#a0d0b4",
-    subtle: "#71a184",
-    accentFg: "#030805",
-    ok: "#d5f7e0",
-    warn: "#fde68a",
-    info: "#a5f3fc"
-  },
-  sakura: {
-    canvas: "#0b040c",
-    surface: "#190d1d",
-    surface2: "#26142c",
-    surface3: "#371e40",
-    line: "#301938",
-    fg: "#fdf0fa",
-    muted: "#d3a8d9",
-    subtle: "#a675b0",
-    accentFg: "#0b040c",
-    ok: "#a7f3d0",
-    warn: "#fde68a",
-    info: "#e6c8f5"
-  },
-  graphite: {
-    canvas: "#050506",
-    surface: "#131315",
-    surface2: "#1e1e21",
-    surface3: "#2b2b30",
-    line: "#242428",
-    fg: "#f4f4f5",
-    muted: "#b3b3b8",
-    subtle: "#82828a",
-    accentFg: "#050506",
-    ok: "#dcdce0",
-    warn: "#dcdce0",
-    info: "#dcdce0"
-  }
-};
-
-export var PRESETS = Object.entries(PRESET_COLORS).map(([id, palette]) => ({
-  id: `builtin:${id}`,
-  nameKey: `themes.preset.${id}`,
-  builtin: true,
-  colors: { ...palette }
-}));
-
-var THEMES_DIR = `${FileSystem.dataDir}/overdrive/themes`;
+export var THEMES_DIR = `${FileSystem.dataDir}/overdrive/themes`;
 var CHOICE_FILE = `${FileSystem.dataDir}/overdrive/theme.json`;
 var HEX = /^#[0-9a-f]{8}$|^#[0-9a-f]{6}$|^#[0-9a-f]{4}$|^#[0-9a-f]{3}$/i;
+var BACKDROP_FILE = /\.(png|jpe?g|webp|gif)$/i;
 var NAME_BAD = /[\\/:*?"<>|\u0000-\u001f]/g;
 var USER_TTL_MS = 2000;
 var userThemes = [];
 var userAt = 0;
 var chosen = null;
+
+export var DEFAULT_THEME = {
+  id: "builtin:default",
+  nameKey: "themes.preset.default",
+  builtin: true,
+  colors: { ...BASE_COLORS },
+  background: "",
+  backgroundDim: 0.5
+};
 
 function expandHex(value) {
   const digits = value.slice(1);
@@ -129,8 +58,29 @@ export function safeName(name, fallback) {
   return clean || fallback;
 }
 
+export function safeBackdrop(value, baseDir = "") {
+  if (typeof value !== "string") return "";
+  const text = value.trim();
+  if (/^https?:\/\//i.test(text) && text.length <= 2048) return text;
+  if (BACKDROP_FILE.test(text) && !text.includes("/") && !text.includes("\\") && text.length <= 128) {
+    return baseDir ? `${baseDir}/${text}` : text;
+  }
+  return "";
+}
+
+export function normalizeDim(value) {
+  if (value === null || value === undefined || value === "") return DEFAULT_THEME.backgroundDim;
+  const number = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(number)) return DEFAULT_THEME.backgroundDim;
+  return Math.min(1, Math.max(0, Math.round(number * 100) / 100));
+}
+
 export function themeDisplayName(theme, t) {
   return theme.builtin ? t(theme.nameKey) : theme.name;
+}
+
+export function themeBackdrop(theme) {
+  return theme.background || "";
 }
 
 export function listThemes() {
@@ -139,7 +89,7 @@ export function listThemes() {
     userThemes = readUserThemes();
     userAt = now;
   }
-  return [...PRESETS, ...userThemes];
+  return [DEFAULT_THEME, ...userThemes];
 }
 
 function readUserThemes() {
@@ -160,14 +110,16 @@ function readUserThemes() {
       id: `user:${name}`,
       name: safeName(record.name, name),
       builtin: false,
-      colors: normalizeTheme(record)
+      colors: normalizeTheme(record),
+      background: safeBackdrop(record.background, THEMES_DIR),
+      backgroundDim: record.background === undefined ? 0.28 : normalizeDim(record.backgroundDim)
     });
   }
   return themes;
 }
 
 export function findTheme(id) {
-  return listThemes().find((theme) => theme.id === id) ?? PRESETS[0];
+  return listThemes().find((theme) => theme.id === id) ?? DEFAULT_THEME;
 }
 
 function readChoice() {
@@ -175,11 +127,11 @@ function readChoice() {
 }
 
 export function activeThemeId() {
-  return chosen?.id ?? "builtin:default";
+  return chosen?.id ?? DEFAULT_THEME.id;
 }
 
 export function activeTheme() {
-  return chosen ?? PRESETS[0];
+  return chosen ?? DEFAULT_THEME;
 }
 
 function applyTheme(theme) {

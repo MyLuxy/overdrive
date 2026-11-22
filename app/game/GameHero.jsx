@@ -10,6 +10,7 @@ import { COVER, HERO, LOGO } from './art.js';
 import { canDownload } from './releases.js';
 import { SPAN_MAX, fitBytes } from '../i18n/fit.js';
 import { latin, useLocale, useT } from '../i18n/index.js';
+import { trailersFor } from '../state/trailers.js';
 import { genreLabel, listedId } from '../state/catalog.js';
 import { useStoreActions, useWishlist } from '../state/store.jsx';
 import { Button2 } from '../ui/Button.jsx';
@@ -58,6 +59,7 @@ import { Image, Text, View, motion } from '@ps5-react/core';
     const { rtl } = useLocale();
     const { toggleWish } = useStoreActions();
     const wished = useWishlist().includes(listedId(game.id));
+    const trailers = trailersFor(game.id);
     // Down from the buttons goes to the screenshots, or else to the description's Show more: without
     // either named, focus took the nearest card of "More like this" past the description.
     const nextDown = game.shots.length > 0 ? "game:shots" : game.about.some((text) => text.trim()) ? "game:about" : void 0;
@@ -86,7 +88,18 @@ import { Image, Text, View, motion } from '@ps5-react/core';
                   focusKey: `favorite:${game.id}`,
                   children: /* @__PURE__ */ (0, jsx)(WishHeart, { active: wished })
                 }
-              )
+              ),
+              trailers.length > 0 ? /* @__PURE__ */ (0, jsx)(
+                Button2,
+                {
+                  variant: "outline",
+                  size: "lg",
+                  label: t2("game.trailer"),
+                  onPress: () => onRequestDialog({ kind: "trailer", game, trailer: trailers[0] }),
+                  nextFocusDown: nextDown,
+                  focusKey: `trailer:${game.id}`
+                }
+              ) : null
             ] })
           ] })
         ] })
