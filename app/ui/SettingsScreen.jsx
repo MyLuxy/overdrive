@@ -14,6 +14,7 @@ import { chooseLanguage, languageChoice, systemLocale, useT } from '../i18n/inde
 import en from '../i18n/locales/en.json';
 import { useNavActions } from '../state/nav.jsx';
 import { setService, useServices } from '../state/download-services.js';
+import { useThemeSetting } from '../state/themes.js';
 import { setSpeedLimit, useSpeedLimit } from '../state/speed-limit.js';
 import { setDeletePackages, useDeletePackages } from '../state/package-cleanup.js';
 import { setDownloadRoot, useDownloadRoot } from '../state/download-root.js';
@@ -261,6 +262,7 @@ import { FileSystem, FocusScope, ScrollView, Text, View, useIsFocused } from '@p
     const values = useSettingsValues();
     const { focusLater } = useNavActions();
     const [page, setPage] = useState(null);
+    const pickTheme = useThemeSetting()[1];
     const [dialog, setDialog] = useState(null);
     useHints(page ? PAGE_HINTS : HOME_HINTS);
     const ctx = { values, drives: values.drives, system: systemLocale(), titleIn };
@@ -286,6 +288,7 @@ import { FileSystem, FocusScope, ScrollView, Text, View, useIsFocused } from '@p
         else if (id === "disk") setDownloadRoot(row.value === "auto" ? null : row.value);
         else if (id === "pkg") setPkgMode(row.value);
         else if (id === "cleanup") setDeletePackages(row.value);
+        else if (id === "themes") pickTheme(row.value);
         return;
       }
       if (row.phone) return setDialog({ type: "phone", service: row.phone, index });

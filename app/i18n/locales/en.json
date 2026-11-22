@@ -689,5 +689,23 @@
     "settings.licensesValue": "Open source",
     "settings.licensesLead": "Overdrive is free software: these are the licenses of the app and of the projects it builds on.",
     "settings.licensesSide": "Included notices",
-    "settings.licensesEmpty": "The notices aren't in this build."
-  }
+    "settings.licensesEmpty": "The notices aren't in this build.",
+    "settings.group.appearance": "Appearance",
+    "themes.title": "Themes",
+    "themes.lead": "How Overdrive looks. Pick one of the presets, or drop your own theme into the console's themes folder.",
+    "themes.preset.default": "Default",
+    "themes.preset.midnight": "Midnight",
+    "themes.preset.ember": "Ember",
+    "themes.preset.forest": "Forest",
+    "themes.preset.sakura": "Sakura",
+    "themes.preset.graphite": "Graphite",
+    "themes.userDetail": "From your themes folder",
+    "themes.sideEyebrow": "Palette",
+    "themes.color.canvas": "Canvas",
+    "themes.color.surface": "Cards",
+    "themes.color.fg": "Text",
+    "themes.color.muted": "Secondary text",
+    "themes.color.subtle": "Tertiary text",
+    "themes.color.line": "Lines",
+    "themes.sideNote": "Custom themes are .json files kept in /data/overdrive/themes on the console. Make one on any PC: open theme-editor/index.html from the project in a browser, tune the palette, and save the file it hands you."
+}
