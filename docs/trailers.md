@@ -60,12 +60,17 @@ A helper asks two sources, in this order per game, and bundles what it finds. It
 **experimental**: both answer without authentication today, but they are undocumented and may
 change or leave games out; run it without `--write` first to see what it would do.
 
-1. The **PlayStation Store** -- the same chihiro API `tools/enrich-catalog.py` uses, which lists a
-   product's videos with their names.
-2. **Steam** -- the public `appdetails` endpoint (`filters=movies`, direct mp4s included), the same
-   place Hydra Launcher takes its details from. Steam is keyed by appid; the tool reads each game's
-   `*/steam/apps/<appid>/*` art URL from the catalog, so games with Steam art are covered even when
-   the PlayStation Store has nothing.
+1. The **PlayStation Store**: the old chihiro title container is gone, so the tool resolves a game
+   through the store's GraphQL API instead -- search, product, concept, then the concept's media,
+   which carries direct mp4 previews (with their names). Anonymous, no keys. The persisted-query
+   hashes live in `PRODUCT_HASH`/`MEDIA_HASH` in the tool; if Sony ever rejects them (HTTP 400/403),
+   copy the fresh hash from browser devtools on any store page.
+2. **Steam** -- the public `appdetails` endpoint (`filters=movies`), the same place Hydra Launcher
+   takes its details from. Steam retired direct mp4s in late 2026 and serves HLS/DASH only; the
+   tool takes the HLS playlist (`hls_h264`), which the engine's FFmpeg build can demux -- this one
+   is untested on the console, so PS Store mp4s always come first. Steam is keyed by appid; the
+   tool reads each game's `*/steam/apps/<appid>/*` art URL from the catalog, so games with Steam
+   art are covered even when the PlayStation Store has nothing.
 
 ```
 python -P tools/fetch-trailers.py [--limit N] [--chunk N] [--region US] [--language en] [--refresh] [--write]

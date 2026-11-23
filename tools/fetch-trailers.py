@@ -6,15 +6,20 @@
 
 Two sources, in this order per game:
 
-1. The PlayStation Store: the chihiro title container
-   (https://store.playstation.com/store/api/chihiro/00_09_000/titlecontainer/{store}/{lang}/999/{title}_00),
-   the same API enrich-catalog.py talks to. Without authentication it answers with the product's
-   media list -- for many games a top-level "videos" list of direct mp4 links and their names.
-2. Steam: the public appdetails endpoint (store.steampowered.com/api/appdetails, filters=movies),
-   the same place Hydra Launcher takes its details from. It answers with each film's direct mp4.
-   Steam only knows an appid: every catalog game whose art points at cdn.cloudflare.steamstatic.com
-   (or any other */steam/apps/<appid>/* URL) carries one in app/data/catalog.js, and the tool reads
-   it from there.
+1. The PlayStation Store: the old chihiro title container is gone (it now answers 204/404), but
+   the chihiro *search* still lives, and the storefront's GraphQL API answers anonymously with
+   persisted-query hashes: search a title, keep the link whose id carries the title id, resolve
+   it to a concept, then ask conceptRetrieveForMedia -- direct mp4 previews from
+   vulcan.dl.playstation.net. The two hashes live in PRODUCT_HASH/MEDIA_HASH below; if Sony ever
+   returns HTTP 400/403 for them, grab the fresh extensions.persistedQuery.sha256Hash from any
+   store.playstation.com page (browser devtools, Network tab) and drop it in.
+2. Steam: the public appdetails endpoint (store.steampowered.com/api/appdetails, filters=movies).
+   Steam retired its direct mp4 links in late 2026 and now serves HLS and DASH only; the engine
+   builds FFmpeg with --enable-demuxer=hls, so the tool takes hls_h264 (an .m3u8 playlist, h264)
+   and falls back to mp4/"max" if an answer still carries them. This one is the most experimental:
+   HLS playback on the console is untested -- ship it last in a game's list, which is what the
+   merging below does. Steam is keyed by appid; every catalog game whose art points at
+   */steam/apps/<appid>/* carries one in app/data/catalog.js, and the tool reads it from there.
 
 What it finds is merged with what app/data/trailers.js already bundles: entries already in the file
 stay untouched, the sources fill the gaps (at most 8 per game, as the app reads them), and the
@@ -34,13 +39,19 @@ import re
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CATALOG = os.path.join(HERE, os.pardir, "app", "data", "catalog.js")
 TRAILERS = os.path.join(HERE, os.pardir, "app", "data", "trailers.js")
 
-CHIHIRO = "https://store.playstation.com/store/api/chihiro/00_09_000/titlecontainer/{store}/{lang}/999/{title}_00"
+SEARCH = "https://store.playstation.com/store/api/chihiro/00_09_000/search/{store}/{lang}/24/{query}?size=30"
+GRAPHQL = "https://web.np.playstation.com/api/graphql/v1/op"
+PRODUCT_OP = "productRetrieveForCtasWithPrice"
+PRODUCT_HASH = "8532da7eda369efdad054ca8f885394a2d0c22d03c5259a422ae2bb3b98c5c99"
+MEDIA_OP = "conceptRetrieveForMedia"
+MEDIA_HASH = "615a2c4618229aa2f11c10fe497eaf4fdc151e4dcc0b6b82e154aeacb0123c2d"
 STEAM = "https://store.steampowered.com/api/appdetails?appids={appid}&filters=movies&cc={cc}&l={lang}"
 STORES = ["US", "GB", "DE", "FR", "ES", "IT", "RU", "JP", "BR", "HK"]
 GAME = re.compile(r'\{ "id": "([A-Z]{4}[0-9]{5})"[^\n]*')
@@ -140,27 +151,47 @@ def clean_title(raw):
     return html.unescape(raw).strip().replace("\n", " ")[:MAX_TITLE]
 
 
-def store_trailers(game_id, region, language):
+def graphql(operation, variables, sha, locale):
+    query = (GRAPHQL + "?operationName=" + operation
+             + "&variables=" + urllib.parse.quote(json.dumps(variables))
+             + "&extensions=" + urllib.parse.quote(json.dumps({"persistedQuery": {"version": 1, "sha256Hash": sha}})))
+    body = fetch(query, timeout=20)
+    try:
+        return json.loads(body) if body else {}
+    except ValueError:
+        return {}
+
+
+def concept_videos(product, store, language):
+    locale = f"{language}-{store.lower()}"
+    product_info = graphql(PRODUCT_OP, {"productId": product}, PRODUCT_HASH, locale)
+    retrieved = (product_info.get("data") or {}).get("productRetrieve") or {}
+    concept = (retrieved.get("concept") or {}).get("id")
+    if not concept:
+        return []
+    media_info = graphql(MEDIA_OP, {"conceptId": str(concept)}, MEDIA_HASH, locale)
+    node = (media_info.get("data") or {}).get("conceptRetrieve") or {}
+    return [{"url": url} for url in dict.fromkeys(video_urls(node))
+            if url.lower().endswith((".mp4", ".m4v"))]
+
+
+def store_trailers(game_id, title, region, language):
     fallback = None
     for store in [region] + [store for store in STORES if store != region]:
-        body = fetch(CHIHIRO.format(store=store, lang=language, title=game_id))
+        body = fetch(SEARCH.format(store=store, lang=language, query=urllib.parse.quote(title or game_id)))
         try:
             data = json.loads(body) if body else {}
         except ValueError:
             data = {}
-        if not data.get("name"):
+        product = next((link.get("id") for link in (data.get("links") or [])
+                        if isinstance(link, dict) and f"{game_id}_00" in link.get("id", "")), None)
+        if not product:
             continue
-        videos = data.get("videos") or []
-        names = [clean_title(v.get("name")) for v in videos if isinstance(v, dict)]
-        entries = []
-        for position, url in enumerate(url for url in dict.fromkeys(video_urls(data))
-                                     if url.lower().endswith((".mp4", ".m4v"))):
-            name = names[position] if position < len(names) else (names[0] if names else "")
-            entries.append({**({"title": name} if name else {}), "url": url})
-        if entries:
-            return entries
+        videos = concept_videos(product, store, language)
+        if videos:
+            return videos
         if fallback is None:
-            fallback = entries
+            fallback = videos
     return fallback or []
 
 
@@ -178,7 +209,7 @@ def steam_trailers(appid, cc, language):
         if not isinstance(movie, dict):
             continue
         formats = movie.get("mp4") or {}
-        url = (formats.get("480") or formats.get("max") or "").strip()
+        url = (movie.get("hls_h264") or formats.get("480") or formats.get("max") or "").strip()
         if url and URL_OK.match(url) and len(url) <= MAX_URL:
             title = clean_title(movie.get("name"))
             entries.append({**({"title": title} if title else {}), "url": url})
@@ -208,7 +239,7 @@ def main():
             continue
         seen = {entry.get("url") for entry in existing if isinstance(entry.get("url"), str)}
         fresh = []
-        sources = [store_trailers(game_id, args.region, args.language)]
+        sources = [store_trailers(game_id, title, args.region, args.language)]
         if appid:
             sources.append(steam_trailers(appid, args.region, args.language))
         for source in sources:
