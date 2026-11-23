@@ -632,5 +632,21 @@
   "trailer.play": "Продолжить",
   "trailer.restart": "Сначала",
   "trailer.error": "Этот трейлер не воспроизвёлся: {error}",
-  "trailer.hint": "⭘ Закрыть"
+  "trailer.hint": "⭘ Закрыть",
+  "game.ratingCount": "{count} оценок игроков",
+  "game.reviews": "Отзывы игроков",
+  "reviews.score1": "Крайне отрицательные",
+  "reviews.score2": "Очень отрицательные",
+  "reviews.score3": "Отрицательные",
+  "reviews.score4": "Скорее отрицательные",
+  "reviews.score5": "Смешанные",
+  "reviews.score6": "Скорее положительные",
+  "reviews.score7": "Положительные",
+  "reviews.score8": "Очень положительные",
+  "reviews.score9": "Крайне положительные",
+  "reviews.of": "{percent}% положительных",
+  "reviews.hours": "{hours} ч в игре",
+  "reviews.good": "Рекомендую",
+  "reviews.bad": "Не рекомендую",
+  "reviews.votes": "+{votes} нашли полезным"
 }

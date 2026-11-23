@@ -13,6 +13,7 @@ import { GameFacts } from './GameFacts.jsx';
 import { GameHero } from './GameHero.jsx';
 import { InstallToast, TOAST_MS } from './InstallToast.jsx';
 import { MediaGallery } from './MediaGallery.jsx';
+import { Reviews } from './Reviews.jsx';
 import { OptionsSheet } from './OptionsSheet.jsx';
 import { ShotViewer } from './ShotViewer.jsx';
 import { SourcePicker } from './SourcePicker.jsx';
@@ -96,7 +97,8 @@ import { AnimatePresence, FocusScope, ScrollView, Text, View } from '@ps5-react/
               about.length > 0 ? /* @__PURE__ */ (0, jsx)(About, { paragraphs: about }) : null,
               game.features.length > 0 ? /* @__PURE__ */ (0, jsx)(Features, { features: game.features }) : null
             ] }),
-            /* @__PURE__ */ (0, jsx)(GameFacts, { game })
+            /* @__PURE__ */ (0, jsx)(GameFacts, { game }),
+            /* @__PURE__ */ (0, jsx)(Reviews, { game })
           ] }),
           related.length > 0 ? /* @__PURE__ */ (0, jsx)(Related, { games: related, onOpenGame }) : null
         ] })

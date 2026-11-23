@@ -88,9 +88,9 @@ def unescape_js(raw):
     return "".join(out)
 
 
-def fetch(url, timeout=15, attempts=2):
+def fetch(url, timeout=15, attempts=2, headers=None):
     for attempt in range(attempts):
-        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, **(headers or {})})
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 return response.read()
@@ -155,7 +155,7 @@ def graphql(operation, variables, sha, locale):
     query = (GRAPHQL + "?operationName=" + operation
              + "&variables=" + urllib.parse.quote(json.dumps(variables))
              + "&extensions=" + urllib.parse.quote(json.dumps({"persistedQuery": {"version": 1, "sha256Hash": sha}})))
-    body = fetch(query, timeout=20)
+    body = fetch(query, timeout=20, headers={"x-psn-store-locale-override": locale, "content-type": "application/json"})
     try:
         return json.loads(body) if body else {}
     except ValueError:

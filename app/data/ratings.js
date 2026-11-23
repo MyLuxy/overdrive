@@ -1,0 +1,3 @@
+var ratings = {};
+
+export { ratings };
