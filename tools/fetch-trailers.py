@@ -26,6 +26,10 @@ stay untouched, the sources fill the gaps (at most three per game, as the app re
 result keeps the catalog's order. Without --refresh a game that already has at least one trailer is
 not asked again, so reruns only fill the holes.
 
+Progress is cached in the system temp dir (per region and language): every chunk the answers so far land
+on disk, so if a run dies or is stopped, the next one picks up where it left off without re-asking the
+sources. --fresh throws that cache away and asks every source again.
+
 Without --write nothing in the repository changes: the tool prints what it found and would save.
 EXPERIMENTAL: both APIs answer without authentication today, but they are undocumented and may
 change or leave games out; a game both refuse is skipped without any other game or file being
@@ -37,6 +41,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -223,6 +228,8 @@ def main():
     parser.add_argument("--region", default="US", help="store to ask first, also Steam's country (default US)")
     parser.add_argument("--language", default="en", help="store language (default en)")
     parser.add_argument("--jobs", type=int, default=1, help="games asked in parallel (default 1; 4-8 is gentle)")
+    parser.add_argument("--sleep", type=float, default=SLEEP, help="pause between single-job games in seconds (default 1; use 0 with high --jobs)")
+    parser.add_argument("--fresh", action="store_true", help="ignore the resume cache and ask the sources for every game again")
     parser.add_argument("--refresh", action="store_true", help="ask the sources again for games that already have a trailer")
     parser.add_argument("--write", action="store_true", help="save the merged file (default: print only)")
     args = parser.parse_args()
@@ -232,10 +239,38 @@ def main():
     merged = {game_id: [entry for entry in (bundled.get(game_id) or []) if isinstance(entry, dict)][:MAX_TRAILERS] for game_id, _title, _appid in games}
     merged.update({key: value for key, value in bundled.items() if key not in merged})
 
+    cache = {"asked": {}}
+    cache_file = os.path.join(tempfile.gettempdir(), f"overdrive-trailers-{args.region.lower()}-{args.language.lower()}.json")
+    if not args.fresh:
+        try:
+            loaded = json.load(open(cache_file, encoding="utf-8"))
+        except (OSError, ValueError):
+            loaded = None
+        if isinstance(loaded, dict) and isinstance(loaded.get("asked"), dict):
+            cache["asked"] = {game_id: [entry for entry in entries if isinstance(entry, dict) and isinstance(entry.get("url"), str) and URL_OK.match(entry["url"])]
+                              for game_id, entries in loaded["asked"].items()
+                              if isinstance(game_id, str) and isinstance(entries, list)}
+    for game_id, entries in list(cache["asked"].items()):
+        if game_id not in merged or not entries or args.refresh:
+            continue
+        fresh = [entry for entry in entries if entry not in merged[game_id]]
+        if fresh:
+            merged[game_id] = (merged[game_id] + fresh)[:MAX_TRAILERS]
+    asked = set(cache["asked"])
+
+    def save_cache():
+        try:
+            tmp = f"{cache_file}.tmp"
+            with open(tmp, "w", encoding="utf-8") as handle:
+                json.dump(cache, handle, ensure_ascii=False)
+            os.replace(tmp, cache_file)
+        except OSError:
+            pass
+
     def collect(game):
         game_id, title, appid = game
         existing = merged[game_id]
-        if not args.refresh and existing:
+        if not args.refresh and (existing or game_id in asked):
             return existing, None
         seen = {entry.get("url") for entry in existing if isinstance(entry.get("url"), str)}
         names = {(entry.get("title") or "").strip().lower() for entry in existing if entry.get("title")}
@@ -258,9 +293,10 @@ def main():
     if jobs == 1:
         def walk():
             for index, game in enumerate(games, 1):
+                quiet = not args.refresh and (merged[game[0]] or game[0] in asked)
                 yield index, collect(game)
-                if index < len(games):
-                    time.sleep(SLEEP)
+                if index < len(games) and not quiet:
+                    time.sleep(args.sleep)
         stream = walk()
     else:
         from concurrent.futures import ThreadPoolExecutor
@@ -270,13 +306,17 @@ def main():
         game_id = games[index - 1][0]
         if fresh is None:
             skipped += 1
-        elif fresh:
-            merged[game_id] = (merged[game_id] + fresh)[:MAX_TRAILERS]
-            found_new += len(fresh)
+        else:
+            cache["asked"][game_id] = fresh
+            if fresh:
+                merged[game_id] = (merged[game_id] + fresh)[:MAX_TRAILERS]
+                found_new += len(fresh)
         if args.chunk and index % args.chunk == 0:
+            save_cache()
             print(f"... {index}/{len(games)} games, {found_new} new trailer links so far")
     if jobs > 1:
         pool.shutdown(wait=True)
+    save_cache()
 
     kept = {game_id: entries for game_id, entries in merged.items() if entries}
     print(f"catalog: {len(games)} games | already had a trailer: {skipped} | new links: {found_new} | games with trailers: {len(kept)}")

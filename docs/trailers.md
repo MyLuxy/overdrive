@@ -84,10 +84,14 @@ sources are anonymous and gentle at that pace, but if a store starts replying 42
 - `--limit N` — only the first N catalog games (a cheap way to try it).
 - `--chunk N` — progress line every N games.
 - `--jobs N` — N games in parallel, roughly N times faster than one by one.
+- `--sleep S` — pause between single-job games in seconds (default 1; use `0` with high `--jobs`).
+- `--fresh` — ignore the resume cache (see below) and ask the sources for every game again.
 - `--refresh` — ask the sources again for games that already have a trailer (default: skip them,
   so reruns only fill the holes).
 - `--write` — save the merged result to `app/data/trailers.js`; without it the tool only prints.
 - Entries already in the file are never touched; the sources only fill the gaps.
+- Progress is cached in the system temp dir (per region and language) every chunk: if a run dies or
+  is stopped, the next one picks up where it left off without re-asking the sources.
 
 ## In the player
 
