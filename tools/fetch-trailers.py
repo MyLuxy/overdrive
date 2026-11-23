@@ -2,7 +2,8 @@
 """Find trailers on the PlayStation Store and Steam, and bundle them into app/data/trailers.js.
 
     python -P tools/fetch-trailers.py [--limit N] [--chunk N] [--region US] [--language en]
-                                      [--jobs N] [--refresh] [--write]
+                                      [--jobs N] [--sleep S] [--stores US,GB,DE,JP] [--ps-only]
+                                      [--fresh] [--refresh] [--write]
 
 Two sources, in this order per game:
 
@@ -180,9 +181,9 @@ def concept_videos(product, store, language):
             if url.lower().endswith((".mp4", ".m4v"))]
 
 
-def store_trailers(game_id, title, region, language):
+def store_trailers(game_id, title, stores, language):
     fallback = None
-    for store in [region] + [store for store in STORES if store != region]:
+    for store in stores:
         body = fetch(SEARCH.format(store=store, lang=language, query=urllib.parse.quote(title or game_id)))
         try:
             data = json.loads(body) if body else {}
@@ -230,9 +231,12 @@ def main():
     parser.add_argument("--jobs", type=int, default=1, help="games asked in parallel (default 1; 4-8 is gentle)")
     parser.add_argument("--sleep", type=float, default=SLEEP, help="pause between single-job games in seconds (default 1; use 0 with high --jobs)")
     parser.add_argument("--fresh", action="store_true", help="ignore the resume cache and ask the sources for every game again")
+    parser.add_argument("--stores", default=",".join(STORES), help="store fallbacks tried after --region misses, comma-separated (default: the built-in ten; empty means only --region)")
+    parser.add_argument("--ps-only", action="store_true", help="ask only the PlayStation Store and skip Steam")
     parser.add_argument("--refresh", action="store_true", help="ask the sources again for games that already have a trailer")
     parser.add_argument("--write", action="store_true", help="save the merged file (default: print only)")
     args = parser.parse_args()
+    stores = [args.region] + [store.strip().upper() for store in args.stores.split(",") if store.strip() and store.strip().upper() != args.region]
 
     games = load_catalog(args.limit)
     bundled = read_bundled()
@@ -275,8 +279,8 @@ def main():
         seen = {entry.get("url") for entry in existing if isinstance(entry.get("url"), str)}
         names = {(entry.get("title") or "").strip().lower() for entry in existing if entry.get("title")}
         fresh = []
-        sources = [store_trailers(game_id, title, args.region, args.language)]
-        if appid:
+        sources = [store_trailers(game_id, title, stores, args.language)]
+        if appid and not args.ps_only:
             sources.append(steam_trailers(appid, args.region, args.language))
         for source in sources:
             for entry in source:

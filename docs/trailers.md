@@ -85,6 +85,9 @@ sources are anonymous and gentle at that pace, but if a store starts replying 42
 - `--chunk N` — progress line every N games.
 - `--jobs N` — N games in parallel, roughly N times faster than one by one.
 - `--sleep S` — pause between single-job games in seconds (default 1; use `0` with high `--jobs`).
+- `--stores` — store fallbacks tried after `--region` misses, comma-separated (default: the built-in
+  ten; a miss on the region's store costs a request per store, so a short list is much faster).
+- `--ps-only` — skip Steam and ask only the PlayStation Store.
 - `--fresh` — ignore the resume cache (see below) and ask the sources for every game again.
 - `--refresh` — ask the sources again for games that already have a trailer (default: skip them,
   so reruns only fill the holes).
