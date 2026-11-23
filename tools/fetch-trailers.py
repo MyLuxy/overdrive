@@ -2,7 +2,7 @@
 """Find trailers on the PlayStation Store and Steam, and bundle them into app/data/trailers.js.
 
     python -P tools/fetch-trailers.py [--limit N] [--chunk N] [--region US] [--language en]
-                                      [--refresh] [--write]
+                                      [--jobs N] [--refresh] [--write]
 
 Two sources, in this order per game:
 
@@ -222,6 +222,7 @@ def main():
     parser.add_argument("--chunk", type=int, default=100, help="print a progress line every N games")
     parser.add_argument("--region", default="US", help="store to ask first, also Steam's country (default US)")
     parser.add_argument("--language", default="en", help="store language (default en)")
+    parser.add_argument("--jobs", type=int, default=1, help="games asked in parallel (default 1; 4-8 is gentle)")
     parser.add_argument("--refresh", action="store_true", help="ask the sources again for games that already have a trailer")
     parser.add_argument("--write", action="store_true", help="save the merged file (default: print only)")
     args = parser.parse_args()
@@ -231,12 +232,11 @@ def main():
     merged = {game_id: [entry for entry in (bundled.get(game_id) or []) if isinstance(entry, dict)][:MAX_TRAILERS] for game_id, _title, _appid in games}
     merged.update({key: value for key, value in bundled.items() if key not in merged})
 
-    found_new, skipped = 0, 0
-    for index, (game_id, title, appid) in enumerate(games, 1):
+    def collect(game):
+        game_id, title, appid = game
         existing = merged[game_id]
         if not args.refresh and existing:
-            skipped += 1
-            continue
+            return existing, None
         seen = {entry.get("url") for entry in existing if isinstance(entry.get("url"), str)}
         fresh = []
         sources = [store_trailers(game_id, title, args.region, args.language)]
@@ -247,13 +247,32 @@ def main():
                 if entry["url"] not in seen:
                     seen.add(entry["url"])
                     fresh.append(entry)
-        if fresh:
-            merged[game_id] = (existing + fresh)[:MAX_TRAILERS]
+        return existing, fresh
+
+    jobs = max(1, args.jobs)
+    found_new, skipped = 0, 0
+    if jobs == 1:
+        def walk():
+            for index, game in enumerate(games, 1):
+                yield index, collect(game)
+                if index < len(games):
+                    time.sleep(SLEEP)
+        stream = walk()
+    else:
+        from concurrent.futures import ThreadPoolExecutor
+        pool = ThreadPoolExecutor(max_workers=jobs)
+        stream = enumerate(pool.map(collect, games), 1)
+    for index, (existing, fresh) in stream:
+        game_id = games[index - 1][0]
+        if fresh is None:
+            skipped += 1
+        elif fresh:
+            merged[game_id] = (merged[game_id] + fresh)[:MAX_TRAILERS]
             found_new += len(fresh)
         if args.chunk and index % args.chunk == 0:
             print(f"... {index}/{len(games)} games, {found_new} new trailer links so far")
-        if index < len(games):
-            time.sleep(SLEEP)
+    if jobs > 1:
+        pool.shutdown(wait=True)
 
     kept = {game_id: entries for game_id, entries in merged.items() if entries}
     print(f"catalog: {len(games)} games | already had a trailer: {skipped} | new links: {found_new} | games with trailers: {len(kept)}")

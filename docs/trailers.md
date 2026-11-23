@@ -73,11 +73,16 @@ change or leave games out; run it without `--write` first to see what it would d
    art are covered even when the PlayStation Store has nothing.
 
 ```
-python -P tools/fetch-trailers.py [--limit N] [--chunk N] [--region US] [--language en] [--refresh] [--write]
+python -P tools/fetch-trailers.py [--limit N] [--chunk N] [--region US] [--language en]
+                                  [--jobs N] [--refresh] [--write]
 ```
+
+`--jobs N` asks N games in parallel (4\u20138 covers the whole 4,000-game catalog in about an hour;
+sources are anonymous and gentle at that pace, but if a store starts replying 429, lower it).
 
 - `--limit N` — only the first N catalog games (a cheap way to try it).
 - `--chunk N` — progress line every N games.
+- `--jobs N` — N games in parallel, roughly N times faster than one by one.
 - `--refresh` — ask the sources again for games that already have a trailer (default: skip them,
   so reruns only fill the holes).
 - `--write` — save the merged result to `app/data/trailers.js`; without it the tool only prints.
