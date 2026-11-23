@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { games } from '../data/catalog.js';
 import { trailers as bundled } from '../data/trailers.js';
 import { TRAILERS_DIR, trailersFor } from '../state/trailers.js';
+import { ratingFor } from '../state/ratings.js';
 import { LATIN_IN_RTL, useLocale, useT } from '../i18n/index.js';
 import { useNavActions } from '../state/nav.jsx';
 import { FAMOUS, picked } from './picks.js';
@@ -66,6 +67,7 @@ function TrailerHero() {
   }, []);
   if (!playlist) return null;
   const { game, trailer } = playlist[active % playlist.length];
+  const rating = ratingFor(game.id);
   return (0, jsxs)(View, { style: { gap: 24 }, children: [
     (0, jsxs)(View, { style: { flexDirection: "row", alignItems: "center", gap: 14 }, children: [
       (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, letterSpacing: 2, color: colors.subtle, textTransform: "uppercase" }, children: t2("game.trailer") }),
@@ -78,6 +80,10 @@ function TrailerHero() {
       (0, jsxs)(View, { style: { flex: 1, gap: 18, alignItems: "flex-start" }, children: [
         (0, jsx)(GameLogo, { game, width: LOGO[0], height: LOGO[1], area: LOGO[2] }),
         trailer.title ? (0, jsx)(Text, { style: [{ fontFamily: "Inter-Regular", fontSize: 21, color: colors.muted, lineHeight: 30 }, rtl ? LATIN_IN_RTL : void 0], children: trailer.title }) : null,
+        rating ? (0, jsxs)(View, { style: { flexDirection: "row", alignItems: "center", gap: 12 }, children: [
+          (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, fontWeight: 700, color: colors.fg, lineHeight: 30 }, children: `${Math.round(rating.average * 10) / 10}/5` }),
+          (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, color: colors.muted, lineHeight: 30 }, children: t2("game.ratingCount", { count: String(rating.count) }) })
+        ] }) : null,
         (0, jsx)(Button2, { variant: "primary", size: "lg", label: t2("browse.viewGame"), halo: false, focusKey: "trailhero:cta", nextFocusUp: "nav:current", nextFocusDown: FIRST_POPULAR, onPress: () => openGame(game.id, "trailhero:cta") })
       ] })
     ] })
