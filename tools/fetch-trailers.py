@@ -145,6 +145,8 @@ def video_urls(node):
                     found.append(candidate)
         found.extend(video_urls(node.get("videos")))
         found.extend(video_urls(node.get("ubyte")))
+        found.extend(video_urls(node.get("media")))
+        found.extend(video_urls(node.get("defaultProduct")))
     elif isinstance(node, list):
         for item in node:
             found.extend(video_urls(item))
