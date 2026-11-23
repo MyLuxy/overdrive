@@ -15,7 +15,6 @@ import { PageHints } from './PageHints.jsx';
 import { FocusedSection, NearSection } from './near.js';
 import { PopularRail } from './PopularRail.jsx';
 import { RecentRow } from './RecentRow.jsx';
-import { Spotlight } from './Spotlight.jsx';
 import { TrailerHero } from './TrailerHero.jsx';
 import { TopCharts } from './TopCharts.jsx';
 import { useT } from '../i18n/index.js';
@@ -51,9 +50,8 @@ import { FocusScope, ScrollView, Text, View } from '@ps5-react/core';
     return /* @__PURE__ */ (0, jsx)(FocusScope, { trap: true, onAction, children: /* @__PURE__ */ (0, jsxs)(ScrollView, { style: { flex: 1, gap: 60, paddingHorizontal: 48 }, children: [
       /* @__PURE__ */ (0, jsx)(FocusedSection, {}),
       // Each section keeps its images in use only while focus is in it or the next one (near.js).
-      /* @__PURE__ */ (0, jsx)(NearSection, { index: 0, children: /* @__PURE__ */ (0, jsxs)(View, { scrollAnchor: true, style: { gap: 24, paddingTop: 36 }, children: [
+      /* @__PURE__ */ (0, jsx)(NearSection, { index: 0, children: /* @__PURE__ */ (0, jsxs)(View, { scrollAnchor: true, style: { gap: 24, paddingTop: 60 }, children: [
         /* @__PURE__ */ (0, jsx)(FolderInstallNotice, {}),
-        /* @__PURE__ */ (0, jsx)(Spotlight, {}),
         /* @__PURE__ */ (0, jsx)(TrailerHero, {})
       ] }) }),
       /* @__PURE__ */ (0, jsx)(NearSection, { index: 1, children: /* @__PURE__ */ (0, jsx)(PopularRail, {}) }),

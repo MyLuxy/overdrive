@@ -2,6 +2,7 @@ import '../assets/Inter-Regular.ttf';
 import { jsx, jsxs } from 'react/jsx-runtime';
 import { useEffect, useState } from 'react';
 import { games } from '../data/catalog.js';
+import { summaryOf } from '../state/catalog.js';
 import { trailers as bundled } from '../data/trailers.js';
 import { TRAILERS_DIR, trailersFor } from '../state/trailers.js';
 import { ratingFor } from '../state/ratings.js';
@@ -17,8 +18,6 @@ import { FileSystem, Text, Video, View } from '@ps5-react/core';
 var EPIC = ["PPSA08330", "PPSA04609", "PPSA03016", "PPSA04029", "PPSA26344", "PPSA02225", "PPSA02530", "PPSA23226", "PPSA25286", "PPSA03671"];
 var ROTATE_MS = 30000;
 var MAX_SLIDES = 6;
-var VIDEO_W = 1280;
-var VIDEO_H = 520;
 var LOGO = [320, 112, 48 * 256];
 
 function userTrailerIds() {
@@ -68,24 +67,22 @@ function TrailerHero() {
   if (!playlist) return null;
   const { game, trailer } = playlist[active % playlist.length];
   const rating = ratingFor(game.id);
-  return (0, jsxs)(View, { style: { gap: 24 }, children: [
-    (0, jsxs)(View, { style: { flexDirection: "row", alignItems: "center", gap: 14 }, children: [
-      (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, letterSpacing: 2, color: colors.subtle, textTransform: "uppercase" }, children: t2("game.trailer") }),
-      playlist.length > 1 ? (0, jsx)(Text, { style: { fontFamily: "JetBrainsMono-Regular", fontSize: 19, color: colors.subtle }, children: `${(active % playlist.length) + 1} / ${playlist.length}` }) : null
-    ] }),
-    (0, jsxs)(View, { style: { flexDirection: "row", gap: 24, alignItems: "center" }, children: [
-      (0, jsx)(View, { style: { width: VIDEO_W, height: VIDEO_H, borderRadius: 18, overflow: "hidden", backgroundColor: "#000000" }, children:
-        (0, jsx)(Video, { key: trailer.url, source: { uri: trailer.url }, muted: true, repeat: true, resizeMode: "cover", style: { width: "100%", height: "100%" } })
-      }),
-      (0, jsxs)(View, { style: { flex: 1, gap: 18, alignItems: "flex-start" }, children: [
-        (0, jsx)(GameLogo, { game, width: LOGO[0], height: LOGO[1], area: LOGO[2] }),
-        trailer.title ? (0, jsx)(Text, { style: [{ fontFamily: "Inter-Regular", fontSize: 21, color: colors.muted, lineHeight: 30 }, rtl ? LATIN_IN_RTL : void 0], children: trailer.title }) : null,
-        rating ? (0, jsxs)(View, { style: { flexDirection: "row", alignItems: "center", gap: 12 }, children: [
-          (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, fontWeight: 700, color: colors.fg, lineHeight: 30 }, children: `${Math.round(rating.average * 10) / 10}/5` }),
-          (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, color: colors.muted, lineHeight: 30 }, children: t2("game.ratingCount", { count: String(rating.count) }) })
-        ] }) : null,
-        (0, jsx)(Button2, { variant: "primary", size: "lg", label: t2("browse.viewGame"), halo: false, focusKey: "trailhero:cta", nextFocusUp: "nav:current", nextFocusDown: FIRST_POPULAR, onPress: () => openGame(game.id, "trailhero:cta") })
-      ] })
+  return (0, jsxs)(View, { style: { flexDirection: "row", height: 600, borderRadius: 18, overflow: "hidden", backgroundColor: "#141417" }, children: [
+    (0, jsx)(View, { style: { width: "50%", backgroundColor: "#000000" }, children:
+      (0, jsx)(Video, { key: trailer.url, source: { uri: trailer.url }, muted: true, repeat: true, resizeMode: "cover", style: { width: "100%", height: "100%" } })
+    }),
+    (0, jsxs)(View, { style: { flex: 1, justifyContent: "center", gap: 22, padding: 60 }, children: [
+      (0, jsxs)(View, { style: { flexDirection: "row", alignItems: "center", gap: 14 }, children: [
+        (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, letterSpacing: 2, color: colors.subtle, textTransform: "uppercase" }, children: t2("game.trailer") }),
+        playlist.length > 1 ? (0, jsx)(Text, { style: { fontFamily: "JetBrainsMono-Regular", fontSize: 19, color: colors.subtle }, children: `${(active % playlist.length) + 1} / ${playlist.length}` }) : null
+      ] }),
+      (0, jsx)(GameLogo, { game, width: LOGO[0], height: LOGO[1], area: LOGO[2] }),
+      rating ? (0, jsxs)(View, { style: { flexDirection: "row", alignItems: "center", gap: 12 }, children: [
+        (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 26, fontWeight: 700, color: colors.fg, lineHeight: 34 }, children: `${Math.round(rating.average * 10) / 10}/5` }),
+        (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, color: colors.muted, lineHeight: 30 }, children: t2("game.ratingCount", { count: String(rating.count) }) })
+      ] }) : null,
+      (0, jsx)(Text, { style: [{ width: 640, fontFamily: "Inter-Regular", fontSize: 23, color: "#f2f2f3d9", numberOfLines: 3, ellipsizeMode: "tail", lineHeight: 37 }, rtl ? LATIN_IN_RTL : void 0], children: summaryOf(game) }),
+      (0, jsx)(Button2, { variant: "primary", size: "lg", label: t2("browse.viewGame"), halo: false, focusKey: "spotlight:cta", nextFocusUp: "nav:current", nextFocusDown: FIRST_POPULAR, onPress: () => openGame(game.id, "spotlight:cta") })
     ] })
   ] });
 }
