@@ -22,7 +22,7 @@ Two sources, in this order per game:
    */steam/apps/<appid>/* carries one in app/data/catalog.js, and the tool reads it from there.
 
 What it finds is merged with what app/data/trailers.js already bundles: entries already in the file
-stay untouched, the sources fill the gaps (at most 8 per game, as the app reads them), and the
+stay untouched, the sources fill the gaps (at most three per game, as the app reads them), and the
 result keeps the catalog's order. Without --refresh a game that already has at least one trailer is
 not asked again, so reruns only fill the holes.
 
@@ -58,7 +58,7 @@ GAME = re.compile(r'\{ "id": "([A-Z]{4}[0-9]{5})"[^\n]*')
 TITLE = re.compile(r'"title": "((?:[^"\\]|\\.)*)"')
 APPID = re.compile(r"steam/apps/(\d{4,9})")
 URL_OK = re.compile(r"^https?://", re.I)
-MAX_TRAILERS = 8
+MAX_TRAILERS = 3
 MAX_URL = 2048
 MAX_TITLE = 80
 SLEEP = 1.0
@@ -238,14 +238,18 @@ def main():
         if not args.refresh and existing:
             return existing, None
         seen = {entry.get("url") for entry in existing if isinstance(entry.get("url"), str)}
+        names = {(entry.get("title") or "").strip().lower() for entry in existing if entry.get("title")}
         fresh = []
         sources = [store_trailers(game_id, title, args.region, args.language)]
         if appid:
             sources.append(steam_trailers(appid, args.region, args.language))
         for source in sources:
             for entry in source:
-                if entry["url"] not in seen:
+                name = (entry.get("title") or "").strip().lower()
+                if entry["url"] not in seen and not (name and name in names):
                     seen.add(entry["url"])
+                    if name:
+                        names.add(name)
                     fresh.append(entry)
         return existing, fresh
 

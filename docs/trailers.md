@@ -7,7 +7,8 @@ the build.
 
 ## Where trailers come from
 
-Two places, merged per game, deduplicated by URL, at most 8 per game:
+Two places, merged per game up to three each (the app reads three at most), deduplicated by URL
+and by name -- two videos carrying the same title count as one:
 
 1. **Bundled** with the app: `app/data/trailers.js`, an object keyed by the catalog's game id:
 

@@ -3,7 +3,7 @@ import { readJSON } from './read-json.js';
 import { trailers as bundled } from '../data/trailers.js';
 
 export var TRAILERS_DIR = `${FileSystem.dataDir}/overdrive/trailers`;
-var MAX_TRAILERS = 8;
+var MAX_TRAILERS = 3;
 var URL_TEST = /^https?:\/\//i;
 
 export function normalizeTrailer(entry) {
@@ -21,8 +21,10 @@ export function trailersFor(gameId) {
   const seen = new Set();
   for (const entry of [...(Array.isArray(bundled[gameId]) ? bundled[gameId] : []), ...readUserTrailers(gameId)]) {
     const trailer = normalizeTrailer(entry);
-    if (trailer && !seen.has(trailer.url)) {
+    const name = trailer && trailer.title ? trailer.title.toLowerCase() : null;
+    if (trailer && !seen.has(trailer.url) && !(name && seen.has(name))) {
       seen.add(trailer.url);
+      if (name) seen.add(name);
       found.push(trailer);
     }
   }
