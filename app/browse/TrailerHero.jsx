@@ -68,7 +68,7 @@ function TrailerHero() {
   if (!playlist) return null;
   const { game, trailer } = playlist[active % playlist.length];
   const rating = ratingFor(game.id);
-  return (0, jsxs)(View, { style: { flexDirection: "row", height: 640, borderRadius: 18, overflow: "hidden", backgroundColor: "#141417" }, children: [
+  return (0, jsxs)(View, { style: { flexDirection: "row", height: 640, borderRadius: 18, overflow: "hidden", backgroundColor: colors.canvas }, children: [
     (0, jsx)(View, { style: { width: "50%", backgroundColor: "#000000" }, children:
       (0, jsx)(Video, { key: trailer.url, source: { uri: trailer.url }, muted: true, repeat: true, resizeMode: "cover", style: { width: "100%", height: "100%" } })
     }),
@@ -83,7 +83,7 @@ function TrailerHero() {
         (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 26, fontWeight: 700, color: colors.fg, lineHeight: 34 }, children: `${Math.round(rating.average * 10) / 10}/5` }),
         (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, color: colors.muted, lineHeight: 30 }, children: t2("game.ratingCount", { count: String(rating.count) }) })
       ] }) : null,
-      (0, jsx)(Text, { style: [{ width: 640, fontFamily: "Inter-Regular", fontSize: 23, color: "#f2f2f3d9", numberOfLines: 4, ellipsizeMode: "tail", lineHeight: 37 }, rtl ? LATIN_IN_RTL : void 0], children: summaryOf(game) }),
+      (0, jsx)(Text, { style: [{ fontFamily: "Inter-Regular", fontSize: 23, color: "#f2f2f3d9", numberOfLines: 6, ellipsizeMode: "tail", lineHeight: 37 }, rtl ? LATIN_IN_RTL : void 0], children: summaryOf(game) }),
       (0, jsx)(Button2, { variant: "primary", size: "lg", label: t2("browse.viewGame"), halo: false, focusKey: "spotlight:cta", nextFocusUp: "nav:current", nextFocusDown: FIRST_POPULAR, onPress: () => openGame(game.id, "spotlight:cta") })
     ] })
   ] });

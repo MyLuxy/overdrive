@@ -302,7 +302,7 @@ import { FileSystem, Image } from '@ps5-react/core';
     }
     return { total, counts };
   }
-  var summaryOf = (game) => game.about.find((text) => text.length > 80 && text !== text.toUpperCase()) ?? game.shortDescription;
+  var summaryOf = (game) => game.about.find((text) => text.length > 80 && text !== text.toUpperCase() && !/^note: /i.test(text)) ?? game.shortDescription;
   function relatedGames(game, limit = 6) {
     if (game.homebrew) return relatedHomebrew(game, limit);
     const shared = (other) => other.genres.filter((genre) => game.genres.includes(genre)).length;
