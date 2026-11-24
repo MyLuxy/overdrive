@@ -2,6 +2,6 @@
 // reconstructed from the esbuild bundle in eboot.bin
 
 
-  var VERSION = "1.1.1";
+  var VERSION = "1.2.0";
 
 export { VERSION };
