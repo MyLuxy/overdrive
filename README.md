@@ -30,8 +30,10 @@
   <img src=".github/readme/discover.jpg" alt="Overdrive's Discover page: a featured game with its description, the picks beside it, and the You might like row" width="100%">
 </div>
 <div align="center" dir="ltr">
-  <img src=".github/readme/browse.jpg" alt="Browse library: 4,100+ games with filters, sorting, scores and sizes" width="49.5%">
-  <img src=".github/readme/downloads.jpg" alt="Downloads page with the From a link, From a torrent and Debrid services cards, activity and storage for internal storage and a USB drive" width="49.5%">
+  <img src=".github/readme/browse.jpg" alt="Browse library: 4,100+ games with filters, sorting, scores and sizes" width="100%">
+</div>
+<div align="center" dir="ltr">
+  <img src=".github/readme/downloads.jpg" alt="Downloads page with the From a link, From a torrent and Debrid services cards, activity and storage for internal storage and a USB drive" width="100%">
 </div>
 
 ## Debrid services
@@ -417,44 +419,6 @@ npm run image:mac      # both, in one go
 `npm run package:mac` overwrites `Overdrive.exfat` in the repository root, so keep a copy of the
 image you had before. It checks the filesystem with `fsck_exfat` and that every file of the app is
 in the image; `fsck_exfat -n Overdrive.exfat` checks it again afterwards. The image keeps the same
-64 KiB clusters and `OVERDRIVE` label as the Linux one.
-
-The image is a plain exFAT volume whose root is the app folder, with 64 KiB clusters and the
-label `OVERDRIVE`. To release a new version, raise the version in `app/version.js` and
-`app/app.json`, run the workflow, test the draft's image on a console, then publish the draft:
-that creates its tag, and installed apps offer exactly the tested files on their next start.
+64 KiB clusters and `OVERDRIVE` label as the upstream one.
 
 </details>
-
-<details>
-<summary><b>Fixes over upstream ps5-react</b></summary>
-<br>
-
-Two fixes in the vendored framework, both in the build tooling and both reported by a Linux build:
-
-- `ps5-react/tools/common.py` read the `git apply --summary` line with a fixed space count, which
-  glued the file mode onto the path (`100644 <path>`) and made every fresh dependency checkout
-  fail on the first patch that creates a file. It now splits on whitespace.
-- `ps5-react/tools/build_ps5.py` opened the pinned LLVM package's `data.tar.zst` with `tarfile`,
-  which reads zstd only from Python 3.14 while the documented minimum is 3.12. It now falls back
-  to the `zstd` command.
-
-Nothing else in the framework is changed.
-
-</details>
-
-## Credits
-
-- **[MyLuxy](https://gitlab.com/myluxy)**, current maintainer, who decompiled Overdrive, recovered its source and rebuilt it.
-- **[ps5-react](https://github.com/half144/ps5-react)**, the framework it runs on.
-- **[ShadowMount+](https://github.com/drakmor/ShadowMountPlus)** by drakmor, which installs it.
-- **[kstuff](https://github.com/EchoStretch/kstuff-lite)** by EchoStretch, the kernel payload that lets the console run homebrew and the games it installs.
-- **[PS5 Homebrew Catalog](https://github.com/darkxex/ps5-homebrew-catalog)** by darkxex, the store API behind the Homebrew section, and every developer listed in it.
-- **[QR Code generator](https://github.com/nayuki/QR-Code-generator)** by Project Nayuki (MIT), which draws the QR codes of the phone login; its notice ships in the app as `third_party/qrcodegen-LICENSE.txt`.
-
-`ps5-react/` is GPL-3.0-or-later and carries its own `LICENSE`, `LICENSE-ATTRIBUTION` and
-`NOTICE`. Every dependency notice is copied into `notices/` inside the built app, and
-`ps5-react/docs/DEPENDENCIES.md` lists them with their sources.
-
-<sub>Overdrive is an unofficial homebrew project and is not affiliated with or endorsed by Sony
-Interactive Entertainment. PlayStation and PS5 are trademarks of Sony Interactive Entertainment.</sub>
