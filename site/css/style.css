@@ -217,11 +217,8 @@ footer img{height:18px;opacity:.9}
   .menu-btn{margin-left:0;order:3}
 }
 
-/* hero title row with the logo on the right (desktop/tablet only) */
-.hero-row{display:flex;align-items:center;justify-content:space-between;gap:48px}
-.hero-row h1{margin-bottom:24px}
-.hero-logo{width:min(340px,30vw);height:auto;flex:none;opacity:.92}
-@media (max-width:760px){ .hero-logo{display:none!important} }
+/* hero avatar at the top of the page */
+.hero-avatar{display:block;width:88px;height:88px;border-radius:22px;box-shadow:var(--shadow-shot);margin-bottom:28px}
 
 /* ---------- redesign: technical catalogue ---------- */
 #features .grid{gap:0 56px;grid-template-columns:repeat(2,1fr)}
