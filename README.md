@@ -21,10 +21,10 @@
 </div>
 
 > [!NOTE]
-> The upstream project lives on GitLab now: [gitlab.com/myluxy/overdrive](https://gitlab.com/myluxy/overdrive).
-> The author's GitHub account is gone, so every release and every source link points at GitLab
-> instead. This repository is the mirror of it: the same code, the same catalog,
-> the same releases, with the interface in Russian.
+> Overdrive was created by MyLuxy, whose GitHub account is gone, so the upstream project now
+> lives on [GitLab](https://gitlab.com/myluxy/overdrive). This repository is a fork of it, not
+> a mirror: it carries the upstream code and catalog and continues development with changes
+> of its own. Release and source links still point at the GitLab originals.
 
 <div align="center" dir="ltr">
   <img src=".github/readme/discover.jpg" alt="Overdrive's Discover page: a featured game with its description, the picks beside it, and the You might like row" width="100%">
