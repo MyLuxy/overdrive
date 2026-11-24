@@ -1,20 +1,33 @@
 <!DOCTYPE html>
-<html lang="en">
+
+<html data-page="editor" lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="utf-8"/>
+<script>(function(){var d=document.documentElement,q=new URLSearchParams(location.search),l=null;
+try{l=localStorage.getItem('od-lang')}catch(e){}
+l=q.get('lang')||l;
+d.setAttribute('lang',l==='ru'?'ru':'en');})();</script>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
 <title>Overdrive Theme Editor</title>
+<meta content="#0b0b0e" name="theme-color"/>
+<link href="assets/img/icon0.png" rel="icon"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
 <style>
   :root { --ui-bg: #0b0b0e; --ui-card: #17171a; --ui-line: #2a2a2f; --ui-fg: #f2f2f3; --ui-muted: #a3a3ab; --ui-accent: #f2f2f3; }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--ui-bg); color: var(--ui-fg); font: 15px/1.5 system-ui, sans-serif; }
+  body { margin: 0; background: var(--ui-bg); color: var(--ui-fg); font: 15px/1.5 "IBM Plex Sans", system-ui, sans-serif; }
   header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--ui-line); position: sticky; top: 0; background: var(--ui-bg); z-index: 5; }
-  header h1 { font-size: 18px; margin: 0 auto 0 0; letter-spacing: -0.3px; }
-  header h1 span { color: var(--ui-muted); font-weight: 400; }
+  header h1 { font-size: 18px; margin: 0 auto 0 12px; letter-spacing: -0.3px; }
+  header h1 .tagline { color: var(--ui-muted); font-weight: 400; }
+  .brand { display: flex; align-items: center; }
+  .brand img { display: block; }
   input[type=text], input[type=color], select, button { font: inherit; }
   button { background: var(--ui-card); color: var(--ui-fg); border: 1px solid var(--ui-line); border-radius: 10px; padding: 8px 16px; cursor: pointer; }
   button:hover { background: var(--ui-line); }
   button.primary { background: var(--ui-fg); color: #111; border-color: var(--ui-fg); font-weight: 600; }
+  button.langbtn { min-width: 52px; font-weight: 600; }
   main { display: grid; grid-template-columns: minmax(360px, 480px) 1fr; gap: 24px; padding: 24px; align-items: start; }
   @media (max-width: 1100px) { main { grid-template-columns: 1fr; } }
   .panel { background: var(--ui-card); border: 1px solid var(--ui-line); border-radius: 16px; padding: 18px; }
@@ -49,8 +62,6 @@
   a { color: var(--ui-accent); }
   footer { padding: 12px 24px 32px; color: var(--ui-muted); font-size: 13px; }
   .mono { font-family: ui-monospace, monospace; }
-
-  /* preset picker: styled to match the site */
   select#preset { appearance: none; -webkit-appearance: none; background-color: var(--ui-card);
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a3a3ab' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
     background-repeat: no-repeat; background-position: right 12px center; background-size: 16px;
@@ -65,54 +76,145 @@
 </head>
 <body>
 <header>
-  <h1>Overdrive Theme Editor <span>— make a theme for the PS5 store, right in your browser</span></h1>
+  <a aria-label="Overdrive" class="brand" href="themes.html"><img alt="Overdrive" height="22" src="assets/img/logo-dark.svg" width="110"/></a>
+  <h1><span data-i18n="h1">Overdrive Theme Editor</span> <span class="tagline" data-i18n="h1.sub">— make a theme for the PS5 store, right in your browser</span></h1>
   <select id="preset" title="Start from a preset"></select>
-  <button id="import">Import .json</button>
-  <button id="export" class="primary">Export theme</button>
-  <input type="file" id="file" accept=".json,application/json" hidden>
+  <button data-i18n="btn.import" id="import" type="button">Import .json</button>
+  <button class="primary" data-i18n="btn.export" id="export" type="button">Export theme</button>
+  <button aria-label="Switch language" class="langbtn" data-i18n-aria-label="aria.lang" id="lang" type="button"><span id="lang-label">RU</span></button>
+  <input accept=".json,application/json" hidden id="file" type="file">
 </header>
 <main>
   <section class="panel" id="editor">
-    <h2>Palette</h2>
+    <h2 data-i18n="sec.palette">Palette</h2>
     <div class="namefield">
-      <input type="text" id="name" placeholder="Theme name" maxlength="64" spellcheck="false">
+      <input data-i18n-placeholder="ph.name" id="name" maxlength="64" placeholder="Theme name" spellcheck="false" type="text">
     </div>
     <div id="rows"></div>
-    <h2 style="margin-top:18px;">Wallpaper</h2>
+    <h2 data-i18n="sec.wallpaper" style="margin-top:18px;">Wallpaper</h2>
     <div class="wallrow">
-      <input type="text" id="background" placeholder="Image URL, or a file name lying next to the theme json (e.g. wall.jpg)" spellcheck="false">
+      <input data-i18n-placeholder="ph.background" id="background" placeholder="Image URL, or a file name lying next to the theme json (e.g. wall.jpg)" spellcheck="false" type="text">
       <div class="dimrow">
-        <div><b>Dim</b><small>How much the palette color covers the wallpaper</small></div>
-        <input type="range" id="dim" min="0" max="100" step="1">
+        <div><b data-i18n="lbl.dim">Dim</b><small data-i18n="lbl.dim.hint">How much the palette color covers the wallpaper</small></div>
+        <input id="dim" max="100" min="0" step="1" type="range">
         <output id="dim-out">0%</output>
       </div>
     </div>
   </section>
   <section class="stage">
     <div class="frame" id="frame"><div class="frame-inner" id="preview"></div></div>
-    <p id="note">Hover rows to see where each color lands. The preview mirrors the app: a wallpaper behind the store front, a focused card, buttons and the download panel.<br>Export saves <code>&lt;name&gt;.json</code>. On the console put it — and the wallpaper file, if you used one — into <code>/data/overdrive/themes/</code>, then open Settings&nbsp;&rarr;&nbsp;Appearance&nbsp;&rarr;&nbsp;Themes in Overdrive and pick it.</p>
+    <p data-i18n="note" id="note">Hover rows to see where each color lands. The preview mirrors the app: a wallpaper behind the store front, a focused card, buttons and the download panel.<br>Export saves <code>&lt;name&gt;.json</code>. On the console put it — and the wallpaper file, if you used one — into <code>/data/overdrive/themes/</code>, then open Settings&nbsp;&rarr;&nbsp;Appearance&nbsp;&rarr;&nbsp;Themes in Overdrive and pick it.</p>
   </section>
 </main>
-<footer>
-  Contrast checks follow WCAG 2.1 for normal text (4.5:1) and large text (3:1). Keep <span class="mono">canvas</span>, <span class="mono">surface</span> and <span class="mono">surface2</span> dark: parts of the app still draw fixed light-on-dark text, so a light theme cannot be read everywhere yet.
-</footer>
+<footer data-i18n="foot">Contrast checks follow WCAG 2.1 for normal text (4.5:1) and large text (3:1). Keep <span class="mono">canvas</span>, <span class="mono">surface</span> and <span class="mono">surface2</span> dark: parts of the app still draw fixed light-on-dark text, so a light theme cannot be read everywhere yet.</footer>
 <div id="toast"></div>
 <script>
 "use strict";
 
+const STR = {
+  en: {
+    "title": "Overdrive Theme Editor",
+    "h1": "Overdrive Theme Editor",
+    "h1.sub": "— make a theme for the PS5 store, right in your browser",
+    "btn.import": "Import .json",
+    "btn.export": "Export theme",
+    "aria.lang": "Switch language",
+    "ph.preset": "Start from a preset…",
+    "title.preset": "Starting points only — Overdrive ships just the default and reads everything else from your files",
+    "ph.name": "Theme name",
+    "ph.background": "Image URL, or a file name lying next to the theme json (e.g. wall.jpg)",
+    "sec.palette": "Palette",
+    "sec.wallpaper": "Wallpaper",
+    "lbl.dim": "Dim",
+    "lbl.dim.hint": "How much the palette color covers the wallpaper",
+    "note": "Hover rows to see where each color lands. The preview mirrors the app: a wallpaper behind the store front, a focused card, buttons and the download panel.<br>Export saves <code>&lt;name&gt;.json</code>. On the console put it — and the wallpaper file, if you used one — into <code>/data/overdrive/themes/</code>, then open Settings&nbsp;&rarr;&nbsp;Appearance&nbsp;&rarr;&nbsp;Themes in Overdrive and pick it.",
+    "foot": "Contrast checks follow WCAG 2.1 for normal text (4.5:1) and large text (3:1). Keep <span class=\"mono\">canvas</span>, <span class=\"mono\">surface</span> and <span class=\"mono\">surface2</span> dark: parts of the app still draw fixed light-on-dark text, so a light theme cannot be read everywhere yet.",
+    "toast.saved": "Saved {name} — drop it into /data/overdrive/themes/ on the console",
+    "toast.imported": "Imported {name}",
+    "toast.badfile": "Could not read that file: {msg}",
+    "ui.contrast": "Contrast",
+    "ui.on": "on",
+    "desc.canvas": "The whole screen behind everything",
+    "desc.surface": "Cards, tiles, dialogs, the side panel",
+    "desc.surface2": "Focused rows and pressed tiles",
+    "desc.surface3": "Bars, wells, deeper chip backgrounds",
+    "desc.line": "Borders of dialogs and cards",
+    "desc.fg": "Main text, focus ring, progress fill",
+    "desc.muted": "Secondary labels and hints",
+    "desc.subtle": "Tertiary text, section headers",
+    "desc.accentFg": "Text drawn on top of fg (buttons)",
+    "desc.ok": "Success chips and statuses",
+    "desc.warn": "Attention chips and warnings",
+    "desc.info": "Neutral info chips",
+    "pv.popular": "Popular now",
+    "pv.count": "4,143 GAMES",
+    "pv.size": "34.2 GB",
+    "pv.download": "Download",
+    "pv.fav": "Add to favorites",
+    "pv.installed": "Installed",
+    "pv.disk": "9.4 GB left",
+    "pv.dl": "42% · 6 min left",
+    "pv.tabs": ["Discover", "Library", "Downloads", "Files", "Settings"]
+  },
+  ru: {
+    "title": "Редактор тем Overdrive",
+    "h1": "Редактор тем Overdrive",
+    "h1.sub": "— соберите тему для магазина PS5 прямо в браузере",
+    "btn.import": "Импорт .json",
+    "btn.export": "Экспорт темы",
+    "aria.lang": "Сменить язык",
+    "ph.preset": "Начните с пресета…",
+    "title.preset": "Только отправные точки — из коробки в Overdrive одна стандартная тема, остальные читаются из ваших файлов",
+    "ph.name": "Название темы",
+    "ph.background": "Ссылка на картинку или имя файла рядом с json темы (например, wall.jpg)",
+    "sec.palette": "Палитра",
+    "sec.wallpaper": "Обои",
+    "lbl.dim": "Затемнение",
+    "lbl.dim.hint": "Насколько цвет палитры прикрывает обои",
+    "note": "Наводите курсор на строки, чтобы увидеть, куда попадает каждый цвет. Превью повторяет приложение: обои за витриной, карточка в фокусе, кнопки и панель загрузки.<br>Экспорт сохраняет <code>&lt;name&gt;.json</code>. На консоли положите его — и файл обоев, если использовали, — в <code>/data/overdrive/themes/</code>, затем в Overdrive откройте Настройки&nbsp;&rarr;&nbsp;Оформление&nbsp;&rarr;&nbsp;Темы и выберите тему.",
+    "foot": "Проверки контраста следуют WCAG 2.1 для обычного текста (4.5:1) и крупного (3:1). Держите <span class=\"mono\">canvas</span>, <span class=\"mono\">surface</span> и <span class=\"mono\">surface2</span> тёмными: часть приложения всё ещё рисует светлый текст на тёмном, так что светлая тема читается не везде.",
+    "toast.saved": "Сохранено: {name} — положите файл в /data/overdrive/themes/ на консоли",
+    "toast.imported": "Импортировано: {name}",
+    "toast.badfile": "Не удалось прочитать файл: {msg}",
+    "ui.contrast": "Контраст",
+    "ui.on": "на",
+    "desc.canvas": "Весь экран позади всего",
+    "desc.surface": "Карточки, плитки, диалоги, боковая панель",
+    "desc.surface2": "Строки в фокусе и нажатые плитки",
+    "desc.surface3": "Панели, подложки, глубокие фоны чипов",
+    "desc.line": "Границы диалогов и карточек",
+    "desc.fg": "Основной текст, рамка фокуса, заливка прогресса",
+    "desc.muted": "Второстепенные подписи и подсказки",
+    "desc.subtle": "Третичный текст, заголовки разделов",
+    "desc.accentFg": "Текст поверх fg (кнопки)",
+    "desc.ok": "Чипы успеха и статусы",
+    "desc.warn": "Чипы внимания и предупреждения",
+    "desc.info": "Нейтральные инфо-чипы",
+    "pv.popular": "Популярное сейчас",
+    "pv.count": "4 143 ИГРЫ",
+    "pv.size": "34,2 ГБ",
+    "pv.download": "Скачать",
+    "pv.fav": "В избранное",
+    "pv.installed": "Установлено",
+    "pv.disk": "Осталось 9,4 ГБ",
+    "pv.dl": "42% · осталось 6 мин",
+    "pv.tabs": ["Обзор", "Библиотека", "Загрузки", "Файлы", "Настройки"]
+  }
+};
+
 const BASE = {
-  canvas:   { s: "#000000", d: "The whole screen behind everything" },
-  surface:  { s: "#17171a", d: "Cards, tiles, dialogs, the side panel" },
-  surface2: { s: "#212125", d: "Focused rows and pressed tiles" },
-  surface3: { s: "#2b2b30", d: "Bars, wells, deeper chip backgrounds" },
-  line:     { s: "#2a2a2f", d: "Borders of dialogs and cards" },
-  fg:       { s: "#f2f2f3", d: "Main text, focus ring, progress fill" },
-  muted:    { s: "#a3a3ab", d: "Secondary labels and hints" },
-  subtle:   { s: "#8a8a94", d: "Tertiary text, section headers" },
-  accentFg: { s: "#0d0d0f", d: "Text drawn on top of fg (buttons)" },
-  ok:       { s: "#a7f3d0", d: "Success chips and statuses" },
-  warn:     { s: "#fde68a", d: "Attention chips and warnings" },
-  info:     { s: "#a5f3fc", d: "Neutral info chips" }
+  canvas:   "#000000",
+  surface:  "#17171a",
+  surface2: "#212125",
+  surface3: "#2b2b30",
+  line:     "#2a2a2f",
+  fg:       "#f2f2f3",
+  muted:    "#a3a3ab",
+  subtle:   "#8a8a94",
+  accentFg: "#0d0d0f",
+  ok:       "#a7f3d0",
+  warn:     "#fde68a",
+  info:     "#a5f3fc"
 };
 
 const PRESETS = {
@@ -125,7 +227,32 @@ const PRESETS = {
 };
 
 const state = { name: localStorage.getItem("od-theme-name") || "", colors: Object.fromEntries(Object.keys(BASE).map(k => [k, PRESETS["Default"][k]])), background: "", dim: 0.28 };
-let edits = {};
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => [...document.querySelectorAll(s)];
+let lang = document.documentElement.getAttribute("lang") === "ru" ? "ru" : "en";
+
+function trt(key) {
+  return (STR[lang] && STR[lang][key]) ?? (STR.en && STR.en[key]) ?? key;
+}
+
+function applyLang(next, persist) {
+  lang = next === "ru" ? "ru" : "en";
+  document.documentElement.setAttribute("lang", lang);
+  document.title = trt("title");
+  $$("[data-i18n]").forEach((el) => { el.innerHTML = trt(el.getAttribute("data-i18n")); });
+  $$("[data-i18n-placeholder]").forEach((el) => el.setAttribute("placeholder", trt(el.getAttribute("data-i18n-placeholder"))));
+  $$("[data-i18n-aria-label]").forEach((el) => el.setAttribute("aria-label", trt(el.getAttribute("data-i18n-aria-label"))));
+  const label = $("#lang-label");
+  if (label) label.textContent = lang === "en" ? "RU" : "EN";
+  const preset = $("#preset");
+  if (preset) preset.title = trt("title.preset");
+  renderEditor();
+  renderWallpaper();
+  renderPreview();
+  if (persist) { try { localStorage.setItem("od-lang", lang); } catch {} }
+}
+
+$("#lang").addEventListener("click", () => applyLang(lang === "en" ? "ru" : "en", true));
 
 function contrast(a, b) {
   const lum = (hex) => {
@@ -143,17 +270,17 @@ function expandShort(hex) {
   return null;
 }
 function gamepad(hex) {
-  return `<label class="${cls(hex.key)}" title="Contrast ${hex.v}:1">${hex.t}<b>${hex.v}:1</b></label>`;
+  return `<label class="${cls(hex.v)}" title="${trt("ui.contrast")} ${hex.v}:1">${hex.t}<b>${hex.v}:1</b></label>`;
 }
 function cls(v) { return v >= 4.5 ? "good" : v >= 3 ? "ok" : "bad"; }
 
 function renderEditor() {
-  const rows = document.getElementById("rows");
+  const rows = $("#rows");
   rows.innerHTML = "";
   for (const key of Object.keys(BASE)) {
     const wrap = document.createElement("div");
     wrap.className = "row";
-    wrap.innerHTML = `<div><b>${key}</b><small>${BASE[key].d}</small></div>
+    wrap.innerHTML = `<div><b>${key}</b><small>${trt("desc." + key)}</small></div>
       <input type="color" data-key="${key}" value="${state.colors[key]}">
       <input type="text" class="hex" data-key="${key}" value="${state.colors[key]}" spellcheck="false">`;
     rows.appendChild(wrap);
@@ -165,14 +292,14 @@ function renderEditor() {
         ? [{ on: "fg" }, { on: "ok" }, { on: "warn" }]
         : [{ on: "surface" }, { on: "canvas" }];
       check.innerHTML = pairs.map(p =>
-        gamepad({ key, t: `${key} on ${p.on}`, v: contrast(fg, state.colors[p.on]) })
+        gamepad({ t: `${key} ${trt("ui.on")} ${p.on}`, v: contrast(fg, state.colors[p.on]) })
       ).join("");
       rows.appendChild(check);
     }
   }
   rows.querySelectorAll("input[type=color]").forEach(el => el.addEventListener("input", () => set(el.dataset.key, el.value)));
   rows.querySelectorAll("input.hex").forEach(el => el.addEventListener("change", () => set(el.dataset.key, el.value)));
-  document.getElementById("name").value = state.name;
+  $("#name").value = state.name;
 }
 
 function set(key, value) {
@@ -187,41 +314,42 @@ function set(key, value) {
 
 function renderPreview() {
   const c = state.colors;
-  const el = document.getElementById("preview");
+  const el = $("#preview");
   const card = (i, focus) => `<div style="position:relative;width:300px;height:400px;border-radius:26px;background:${c.surface};border:${focus ? `4px solid ${c.fg}` : "0"};overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;padding:18px;gap:6px;${focus ? "box-shadow:0 24px 60px #00000080;" : ""}">
     <div style="position:absolute;inset:0;background:linear-gradient(160deg,hsl(${i * 57},32%,46%) -20%,transparent 62%);"></div>
     <small style="color:${c.subtle};font-size:18px;letter-spacing:2px;">PS5</small>
     <b style="color:${c.fg};font-size:30px;letter-spacing:-0.5px;">${["Ridge Racer 5","Gravity Bay","Pixel Farm","Nightfall City","Drift Legends"][i]}</b>
-    <span style="color:${c.muted};font-size:21px;">34.2 GB${i % 2 ? "" : " · ★ 91"}</span>
+    <span style="color:${c.muted};font-size:21px;">${trt("pv.size")}${i % 2 ? "" : " · ★ 91"}</span>
   </div>`;
   const bg = state.background.trim().replace(/["']/g, "").slice(0, 2048);
+  const tabs = trt("pv.tabs");
   const layers = bg ? `<div style="position:absolute;inset:0;background-image:url('${bg}');background-size:cover;background-position:center;"></div><div style="position:absolute;inset:0;background:${c.canvas};opacity:${state.dim};"></div>` : "";
   el.innerHTML = `<div style="position:relative;width:100%;height:100%;background:${c.canvas};font-family:system-ui;overflow:hidden;">${layers}
     <div style="position:relative;display:flex;flex-direction:column;width:100%;height:100%;">
     <div style="display:flex;align-items:center;gap:26px;padding:28px 60px;">
       <b style="color:${c.fg};font-size:34px;letter-spacing:4px;">OVERDRIVE</b>
-      ${["Discover","Library","Downloads","Files","Settings"].map((n, i) =>
+      ${tabs.map((n, i) =>
         `<span style="padding:10px 24px;border-radius:999px;font-size:24px;${i === 0 ? `position:relative;background:${c.surface2};` : ""}color:${i === 0 ? c.fg : c.muted};${i === 0 ? `border:3px solid ${c.fg};` : ""}">${n}</span>`).join("")}
     </div>
-    <div style="padding:14px 60px;"><b style="color:${c.fg};font-size:40px;letter-spacing:-1px;">Popular now</b>
-      <div style="color:${c.subtle};font-size:22px;letter-spacing:2px;margin-top:6px;">4,143 GAMES</div>
+    <div style="padding:14px 60px;"><b style="color:${c.fg};font-size:40px;letter-spacing:-1px;">${trt("pv.popular")}</b>
+      <div style="color:${c.subtle};font-size:22px;letter-spacing:2px;margin-top:6px;">${trt("pv.count")}</div>
     </div>
     <div style="display:flex;gap:24px;padding:12px 60px;">${card(0, true)}${card(1, false)}${card(2, false)}${card(3, false)}</div>
     <div style="margin-top:auto;display:flex;align-items:center;gap:18px;padding:26px 60px;border-top:2px solid ${c.line};background:${c.surface};">
-      <span style="background:${c.fg};color:${c.accentFg};border-radius:14px;padding:14px 30px;font-weight:700;font-size:24px;">Download</span>
-      <span style="border:2px solid ${c.fg};color:${c.fg};border-radius:14px;padding:14px 30px;font-size:24px;">Add to favorites</span>
-      <span style="background:${c.ok};color:${c.accentFg};border-radius:999px;padding:8px 22px;font-weight:600;font-size:21px;">Installed</span>
-      <span style="background:${c.surface2};color:${c.warn};border-radius:999px;padding:8px 22px;font-size:21px;">9.4 GB left</span>
+      <span style="background:${c.fg};color:${c.accentFg};border-radius:14px;padding:14px 30px;font-weight:700;font-size:24px;">${trt("pv.download")}</span>
+      <span style="border:2px solid ${c.fg};color:${c.fg};border-radius:14px;padding:14px 30px;font-size:24px;">${trt("pv.fav")}</span>
+      <span style="background:${c.ok};color:${c.accentFg};border-radius:999px;padding:8px 22px;font-weight:600;font-size:21px;">${trt("pv.installed")}</span>
+      <span style="background:${c.surface2};color:${c.warn};border-radius:999px;padding:8px 22px;font-size:21px;">${trt("pv.disk")}</span>
       <div style="flex:1;height:14px;border-radius:7px;background:${c.surface3};overflow:hidden;"><div style="width:42%;height:100%;background:${c.fg};"></div></div>
-      <span style="color:${c.muted};font-size:21px;">42% · 6 min left</span>
+      <span style="color:${c.muted};font-size:21px;">${trt("pv.dl")}</span>
     </div>
     </div>
   </div>`;
-  document.getElementById("frame").style.setProperty("--frame-w", document.getElementById("frame").clientWidth + "px");
+  $("#frame").style.setProperty("--frame-w", $("#frame").clientWidth + "px");
 }
 
 function toast(text) {
-  const el = document.getElementById("toast");
+  const el = $("#toast");
   el.textContent = text;
   el.classList.add("show");
   clearTimeout(toast.id);
@@ -229,12 +357,9 @@ function toast(text) {
 }
 
 function renderWallpaper() {
-  const field = document.getElementById("background");
-  const slider = document.getElementById("dim");
-  const out = document.getElementById("dim-out");
-  field.value = state.background;
-  slider.value = String(Math.round(state.dim * 100));
-  out.textContent = `${Math.round(state.dim * 100)}%`;
+  $("#background").value = state.background;
+  $("#dim").value = String(Math.round(state.dim * 100));
+  $("#dim-out").textContent = `${Math.round(state.dim * 100)}%`;
 }
 
 function exportTheme() {
@@ -248,15 +373,13 @@ function exportTheme() {
   a.download = `${name}.json`;
   a.click();
   URL.revokeObjectURL(a.href);
-  toast(`Saved ${a.download} — drop it into /data/overdrive/themes/ on the console`);
+  toast(trt("toast.saved").replace("{name}", a.download));
 }
 
-document.getElementById("export").addEventListener("click", exportTheme);
-document.getElementById("preset").title = "Starting points only — Overdrive ships just the default and reads everything else from your files";
+$("#export").addEventListener("click", exportTheme);
+$("#import").addEventListener("click", () => $("#file").click());
 
-document.getElementById("import").addEventListener("click", () => document.getElementById("file").click());
-
-document.getElementById("file").addEventListener("change", (ev) => {
+$("#file").addEventListener("change", (ev) => {
   const file = ev.target.files[0];
   if (!file) return;
   file.text().then((text) => {
@@ -270,13 +393,15 @@ document.getElementById("file").addEventListener("change", (ev) => {
     renderEditor();
     renderWallpaper();
     renderPreview();
-    toast(`Imported ${file.name}`);
-  }).catch((e) => toast(`Could not read that file: ${e.message}`));
+    toast(trt("toast.imported").replace("{name}", file.name));
+  }).catch((e) => toast(trt("toast.badfile").replace("{msg}", e.message)));
   ev.target.value = "";
 });
 
-const presetSel = document.getElementById("preset");
-presetSel.innerHTML = `<option value="">Start from a preset…</option>` + Object.keys(PRESETS).map(p => `<option value="${p}">${p}</option>`).join("");
+const presetSel = $("#preset");
+function buildPresetOptions() {
+  presetSel.innerHTML = `<option value="">${trt("ph.preset")}</option>` + Object.keys(PRESETS).map(p => `<option value="${p}">${p}</option>`).join("");
+}
 presetSel.addEventListener("change", () => {
   if (!presetSel.value) return;
   state.colors = { ...PRESETS[presetSel.value] };
@@ -285,21 +410,21 @@ presetSel.addEventListener("change", () => {
   presetSel.value = "";
 });
 
-document.getElementById("name").addEventListener("input", (ev) => {
+$("#name").addEventListener("input", (ev) => {
   state.name = ev.target.value;
   localStorage.setItem("od-theme-name", state.name);
   localStorage.setItem("od-theme", JSON.stringify(state));
 });
 
-document.getElementById("background").addEventListener("input", (ev) => {
+$("#background").addEventListener("input", (ev) => {
   state.background = ev.target.value;
   localStorage.setItem("od-theme", JSON.stringify(state));
   renderPreview();
 });
 
-document.getElementById("dim").addEventListener("input", (ev) => {
+$("#dim").addEventListener("input", (ev) => {
   state.dim = Number(ev.target.value) / 100;
-  document.getElementById("dim-out").textContent = `${ev.target.value}%`;
+  $("#dim-out").textContent = `${ev.target.value}%`;
   localStorage.setItem("od-theme", JSON.stringify(state));
   renderPreview();
 });
@@ -307,9 +432,9 @@ document.getElementById("dim").addEventListener("input", (ev) => {
 const saved = localStorage.getItem("od-theme");
 if (saved) { try { const s = JSON.parse(saved); if (s && s.colors) { Object.assign(state.colors, s.colors); state.background = typeof s.background === "string" ? s.background : ""; const raw = Number(s.dim ?? s.backgroundDim); if (Number.isFinite(raw)) state.dim = Math.min(1, Math.max(0, raw)); } } catch {} }
 
-renderEditor();
-renderWallpaper();
-renderPreview();
+applyLang(lang, false);
+buildPresetOptions();
+presetSel.title = trt("title.preset");
 addEventListener("resize", renderPreview);
 </script>
 </body>

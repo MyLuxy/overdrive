@@ -9,7 +9,7 @@ everything. Raw colors in a few screens still stay fixed, so keep the dark parts
 
 ## Build a theme
 
-1. Open `theme-editor/index.html` in any browser, on any PC. It works offline from the file alone.
+1. Open `site/editor.html` from the repository (or the editor page on the site) in any browser, on any PC. It works offline from the file alone.
 2. Tune the twelve palette keys; the preview mirrors the store front, a focused card, buttons and
    the download panel. Contrast badges warn when text stops being readable (WCAG 4.5:1 for normal
    text, 3:1 for large).
