@@ -8,6 +8,10 @@ same as fetch-trailers.py up to the product, then wcaProductStarRatingRetrive an
 store's star rating: an average (0-5) and the total ratings count. Both go into app/data/ratings.js
 keyed by the catalog's game id.
 
+Progress is cached in the system temp dir (per region and language): every chunk the answers so far
+land in a cache file, so an interrupted run picks up where it stopped and already asked games are
+not asked again. --fresh throws that cache away and asks every game again.
+
 The two persisted-query hashes live in PRODUCT_HASH/RATING_HASH below; if Sony ever rejects them
 (HTTP 400/403), grab the fresh extensions.persistedQuery.sha256Hash from any store.playstation.com
 page (browser devtools, Network tab) and drop it in.
@@ -18,10 +22,12 @@ what it found. EXPERIMENTAL: undocumented API, may change or leave games out; a 
 skipped without any other game or file being touched.
 """
 import argparse
+import http.client
 import json
 import os
 import re
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -55,7 +61,7 @@ def fetch(url, timeout=15, attempts=2, headers=None):
                 return None
             if error.code not in (429, 500, 502, 503, 504) or attempt + 1 == attempts:
                 return None
-        except (urllib.error.URLError, TimeoutError, OSError):
+        except (http.client.HTTPException, urllib.error.URLError, TimeoutError, OSError):
             if attempt + 1 == attempts:
                 return None
         time.sleep(SLEEP * (attempt + 1))
@@ -138,6 +144,7 @@ def main():
     parser.add_argument("--language", default="en", help="store language (default en)")
     parser.add_argument("--jobs", type=int, default=1, help="games asked in parallel (default 1; 4-8 is gentle)")
     parser.add_argument("--refresh", action="store_true", help="ask again for games that already have a rating")
+    parser.add_argument("--fresh", action="store_true", help="ignore the resume cache and ask every game again")
     parser.add_argument("--write", action="store_true", help="save the merged file (default: print only)")
     args = parser.parse_args()
 
@@ -145,38 +152,71 @@ def main():
     bundled = read_bundled()
     merged = {game_id: value for game_id, value in bundled.items()}
 
+    cache = {"asked": {}}
+    cache_file = os.path.join(tempfile.gettempdir(), f"overdrive-ratings-{args.region.lower()}-{args.language.lower()}.json")
+    if not args.fresh:
+        try:
+            loaded = json.load(open(cache_file, encoding="utf-8"))
+        except (OSError, ValueError):
+            loaded = None
+        if isinstance(loaded, dict) and isinstance(loaded.get("asked"), dict):
+            cache["asked"] = {game_id: rating for game_id, rating in loaded["asked"].items()
+                              if isinstance(game_id, str) and isinstance(rating, dict)
+                              and (not rating or (isinstance(rating.get("average"), (int, float)) and isinstance(rating.get("count"), int)))}
+    for game_id, rating in list(cache["asked"].items()):
+        if not rating or game_id in merged or args.refresh:
+            continue
+        merged[game_id] = rating
+    asked = set(cache["asked"])
+
+    def save_cache():
+        try:
+            tmp = f"{cache_file}.tmp"
+            with open(tmp, "w", encoding="utf-8") as handle:
+                json.dump(cache, handle, ensure_ascii=False)
+            os.replace(tmp, cache_file)
+        except OSError:
+            pass
+
     def collect(game):
         game_id, title = game
-        if not args.refresh and merged.get(game_id):
-            return None
-        return store_rating(game_id, title, args.region, args.language)
+        existing = merged.get(game_id)
+        if not args.refresh and (existing or game_id in asked):
+            return existing, None
+        return existing, store_rating(game_id, title, args.region, args.language)
 
     jobs = max(1, args.jobs)
     found_new, skipped = 0, 0
     if jobs == 1:
         def walk():
             for index, game in enumerate(games, 1):
+                quiet = not args.refresh and (merged.get(game[0]) or game[0] in asked)
                 yield index, collect(game)
-                if index < len(games):
+                if index < len(games) and not quiet:
                     time.sleep(SLEEP)
         stream = walk()
     else:
         from concurrent.futures import ThreadPoolExecutor
         pool = ThreadPoolExecutor(max_workers=jobs)
         stream = enumerate(pool.map(collect, games), 1)
-    for index, rating in stream:
+    for index, (existing, rating) in stream:
         game_id = games[index - 1][0]
-        if rating is None and not merged.get(game_id):
-            continue
         if rating is None:
+            if existing is None:
+                cache["asked"][game_id] = {}
+                continue
             skipped += 1
         else:
+            cache["asked"][game_id] = rating
             merged[game_id] = rating
-            found_new += 1
+            if not existing:
+                found_new += 1
         if args.chunk and index % args.chunk == 0:
+            save_cache()
             print(f"... {index}/{len(games)} games, {found_new} new ratings so far")
     if jobs > 1:
         pool.shutdown(wait=True)
+    save_cache()
 
     kept = {game_id: value for game_id, value in merged.items() if value}
     print(f"catalog: {len(games)} games | already had a rating: {skipped} | new ratings: {found_new} | games with ratings: {len(kept)}")
