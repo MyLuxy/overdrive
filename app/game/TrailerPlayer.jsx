@@ -21,8 +21,11 @@ function TrailerPlayer({ game, trailer, onClose }) {
     children: /* @__PURE__ */ (0, jsxs)(View, { style: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, zIndex: 60, backgroundColor: "#000000" }, children: [
       /* @__PURE__ */ (0, jsx)(Video, {
         ref: video,
+        key: trailer.url,
         source: { uri: trailer.url },
         paused,
+        resizeMode: "cover",
+        style: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0 },
         onEnd: () => setPaused(true),
         onError: ({ error: message }) => setError(String(message || "unknown"))
       }),
