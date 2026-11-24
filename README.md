@@ -30,7 +30,7 @@
   <img src=".github/readme/discover.jpg" alt="Overdrive's Discover page: a featured game with its description, the picks beside it, and the You might like row" width="100%">
 </div>
 <div align="center" dir="ltr">
-  <img src=".github/readme/browse.jpg" alt="Browse library: 2,105 games with filters, sorting, scores and sizes" width="49.5%">
+  <img src=".github/readme/browse.jpg" alt="Browse library: 4,100+ games with filters, sorting, scores and sizes" width="49.5%">
   <img src=".github/readme/downloads.jpg" alt="Downloads page with the From a link, From a torrent and Debrid services cards, activity and storage for internal storage and a USB drive" width="49.5%">
 </div>
 
@@ -46,7 +46,7 @@ prepares. Each uses your own account key, typed once and kept on the console.
 
 ## Features
 
-- **3,426+ games** to discover, with **Top rated**, a hand-picked row and a featured spotlight
+- **4,100+ games** to discover, with **Top rated**, a hand-picked row and a featured spotlight
 - **Homebrew**: native PS5 apps and games from the community catalog at [prosperostore.net](https://prosperostore.net/), always up to date, installed from each developer's GitHub release
 - **Browse the whole library** with filters, sorting, scores and download sizes at a glance
 - **Downloads straight to the console**, to internal storage or any USB drive, with live speed and storage stats
