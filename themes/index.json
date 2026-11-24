@@ -1,0 +1,76 @@
+{
+  "themes": [
+    {
+      "id": "graphite",
+      "name": "Graphite",
+      "description": "Neutral graphite with almost no tint. Strict and calm.",
+      "file": "themes/graphite.json",
+      "accent": "#a5f3fc",
+      "canvas": "#0a0a0c",
+      "surface": "#16161a",
+      "fg": "#f2f2f3",
+      "muted": "#a9a9b2",
+      "description_ru": "Нейтральный графит, почти без оттенка. Строгий и спокойный."
+    },
+    {
+      "id": "ember",
+      "name": "Ember",
+      "description": "Warm dark brown with cream text. Cozy in the evening.",
+      "file": "themes/ember.json",
+      "accent": "#fcd9b6",
+      "canvas": "#0d0908",
+      "surface": "#1b1412",
+      "fg": "#fbf1e6",
+      "muted": "#c4ac9a",
+      "description_ru": "Тёплый тёмно-коричневый фон и кремовый текст. Уютно вечером."
+    },
+    {
+      "id": "arctic",
+      "name": "Arctic",
+      "description": "Cold steel-blue tone with an icy accent.",
+      "file": "themes/arctic.json",
+      "accent": "#7dd3fc",
+      "canvas": "#060a10",
+      "surface": "#111820",
+      "fg": "#eaf4ff",
+      "muted": "#9db3c9",
+      "description_ru": "Холодный сине-стальной тон и ледяной акцент."
+    },
+    {
+      "id": "violet-night",
+      "name": "Violet Night",
+      "description": "Deep violet background with soft lilac text.",
+      "file": "themes/violet-night.json",
+      "accent": "#d8b4fe",
+      "canvas": "#0b0812",
+      "surface": "#171224",
+      "fg": "#f3eefc",
+      "muted": "#b7a9d2",
+      "description_ru": "Глубокий фиолетовый фон с мягким сиреневым текстом."
+    },
+    {
+      "id": "forest",
+      "name": "Forest",
+      "description": "Dark forest green with a mint accent.",
+      "file": "themes/forest.json",
+      "accent": "#99f6e4",
+      "canvas": "#050a07",
+      "surface": "#0f1914",
+      "fg": "#eefaf2",
+      "muted": "#a3c2ae",
+      "description_ru": "Тёмно-зелёный лесной фон и мятный акцент."
+    },
+    {
+      "id": "mono-contrast",
+      "name": "Mono Contrast",
+      "description": "Pure black and white, maximum contrast for readability.",
+      "file": "themes/mono-contrast.json",
+      "accent": "#e5e5e5",
+      "canvas": "#000000",
+      "surface": "#121212",
+      "fg": "#ffffff",
+      "muted": "#d4d4d4",
+      "description_ru": "Чистый чёрно-белый, максимальный контраст для читаемости."
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "name": "Ember",
+  "colors": {
+    "canvas": "#0d0908",
+    "surface": "#1b1412",
+    "surface2": "#261c18",
+    "surface3": "#33251f",
+    "line": "#3a2a23",
+    "fg": "#fbf1e6",
+    "muted": "#c4ac9a",
+    "subtle": "#a68f80",
+    "accentFg": "#140d0a",
+    "ok": "#bbf7d0",
+    "warn": "#fdba74",
+    "info": "#fcd9b6"
+  },
+  "background": "",
+  "backgroundDim": 0.28,
+  "author": "Overdrive themes",
+  "description": "Warm dark brown with cream text. Cozy in the evening.",
+  "version": 1
+}

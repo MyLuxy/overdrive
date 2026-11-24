@@ -1,0 +1,22 @@
+{
+  "name": "Arctic",
+  "colors": {
+    "canvas": "#060a10",
+    "surface": "#111820",
+    "surface2": "#19222c",
+    "surface3": "#222e3b",
+    "line": "#243142",
+    "fg": "#eaf4ff",
+    "muted": "#9db3c9",
+    "subtle": "#8298ae",
+    "accentFg": "#06101a",
+    "ok": "#a7f3d0",
+    "warn": "#fde68a",
+    "info": "#7dd3fc"
+  },
+  "background": "",
+  "backgroundDim": 0.28,
+  "author": "Overdrive themes",
+  "description": "Cold steel-blue tone with an icy accent.",
+  "version": 1
+}

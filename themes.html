@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+
+<html data-page="themes" data-theme="dark" lang="en">
+<head>
+<meta charset="utf-8"/><script>(function(){var d=document.documentElement,q=new URLSearchParams(location.search),t=null,l=null;
+try{t=localStorage.getItem('od-theme');l=localStorage.getItem('od-lang')}catch(e){}
+t=q.get('theme')||t;l=q.get('lang')||l;
+if(t!=='light'&&t!=='dark')t=(window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';
+d.setAttribute('data-theme',t);d.setAttribute('lang',l==='ru'?'ru':'en');})();</script>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<title>Themes — Overdrive</title>
+<meta content="Ready-made themes for Overdrive: download a JSON file, put it on the console and pick it in settings. The theme editor runs in the browser." name="description"/>
+<meta content="#07070a" name="theme-color"/>
+<link href="assets/img/icon0.png" rel="icon"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="css/style.css" rel="stylesheet"/>
+</head>
+<body>
+<a class="skip" data-i18n="k0" href="#main">Skip to content</a>
+<header class="nav" role="banner">
+<div class="wrap">
+<a aria-label="Overdrive — home" class="brand" data-i18n-aria-label="k1" href="index.html"><img alt="Overdrive" class="logo-dark" height="22" src="assets/img/logo-dark.svg" width="110"/><img alt="Overdrive" class="logo-light" height="22" src="assets/img/logo-light.svg" width="110"/></a>
+<button aria-expanded="false" aria-label="Menu" class="menu-btn" data-i18n-aria-label="k2" type="button">
+<svg fill="none" height="20" stroke="currentColor" stroke-linecap="round" stroke-width="2" viewbox="0 0 24 24" width="20"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>
+</button>
+<ul>
+<li><a data-i18n="k3" href="index.html#features">Features</a></li>
+<li><a data-i18n="k4" href="index.html#install">Install</a></li>
+<li><a aria-current="page" data-i18n="k5" href="themes.html">Themes</a></li>
+<li><a data-i18n="k88" href="editor/index.html">Editor</a></li>
+<li><a data-i18n="k6" href="index.html#build">Build</a></li>
+</ul>
+<div class="controls">
+<button aria-label="Switch language" class="icon-btn" data-i18n-aria-label="ui.lang" id="lang-toggle" type="button"><span data-i18n="ui.lang.short">RU</span></button>
+<button aria-label="Toggle light and dark theme" class="icon-btn" data-i18n-aria-label="ui.theme" id="theme-toggle" type="button">
+<svg aria-hidden="true" class="icon-sun" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewbox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+<svg aria-hidden="true" class="icon-moon" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewbox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"></path></svg>
+</button>
+</div><a class="btn btn-primary" data-i18n="k8" href="https://gitlab.com/myluxy/overdrive/-/releases" rel="noopener" target="_blank">Download</a>
+</div>
+</header>
+<main id="main">
+<section style="padding-top:170px;padding-bottom:56px">
+<div class="wrap">
+<div class="section-head reveal" style="margin-bottom:0">
+<p class="kicker" data-i18n="k89">Theme gallery</p>
+<h1 data-i18n="k90" style="font-size:clamp(40px,6vw,76px);line-height:1;letter-spacing:-.035em;margin:0 0 18px;font-weight:700">Theming in a single file.</h1>
+<p class="sub" data-i18n="k91" style="max-width:680px">Every theme is a JSON file with 12 colors. Download one you like, put it in a folder on the console and pick it in Settings → Appearance → Themes. All themes are checked for text contrast.</p>
+</div>
+</div>
+</section>
+<section style="padding-top:24px">
+<div class="wrap">
+<div aria-live="polite" class="theme-grid" id="theme-gallery">
+<p class="sub" data-i18n="k92">Loading themes…</p>
+</div>
+</div>
+</section>
+<div class="divider"></div>
+<section aria-labelledby="how-title">
+<div class="wrap">
+<div class="section-head reveal">
+<p class="kicker" data-i18n="k4">Install</p>
+<h2 data-i18n="k93" id="how-title">How to apply a theme.</h2>
+</div>
+<div class="howto">
+<article class="card reveal">
+<div class="n">01</div>
+<h3 data-i18n="k94" style="margin-top:14px">Download the JSON</h3>
+<p data-i18n="k95">Press “Download .json” on the theme you like. The file is named after the theme, for example <code>arctic.json</code>.</p>
+</article>
+<article class="card reveal">
+<div class="n">02</div>
+<h3 data-i18n="k96" style="margin-top:14px">Put it on the console</h3>
+<p data-i18n="k97">Copy the file into <code>/data/overdrive/themes/</code>. The folder is created on first use, or you can create it yourself. Transfer it over FTP or a file manager.</p>
+</article>
+<article class="card reveal">
+<div class="n">03</div>
+<h3 data-i18n="k98" style="margin-top:14px">Pick the theme</h3>
+<p data-i18n="k99">In Overdrive, open Settings → Appearance → Themes and choose it under “From your themes folder”. It applies instantly.</p>
+</article>
+</div>
+</div>
+</section>
+<div class="divider"></div>
+<section aria-labelledby="format-title">
+<div class="wrap two" style="gap:56px;align-items:start">
+<div class="reveal">
+<p class="kicker" data-i18n="k100">Format</p>
+<h2 data-i18n="k101" id="format-title" style="font-size:clamp(30px,3.6vw,44px)">What's inside the file.</h2>
+<p class="sub" data-i18n="k102">A theme is not CSS. It recolors interface elements through a shared colors module and can add a wallpaper behind everything.</p>
+<div class="code" style="margin-top:28px">
+<div class="code-head"><span>arctic.json</span><button class="copy" data-copy='{"name":"My Theme","colors":{"canvas":"#000000","surface":"#17171a"},"background":"","backgroundDim":0.28}' data-i18n="k103" type="button">Copy minimal</button></div>
+<pre>{
+  <span class="p">"name"</span>: <span class="c">"Arctic"</span>,
+  <span class="p">"colors"</span>: {
+    <span class="p">"canvas"</span>: <span class="c">"#060a10"</span>,
+    <span class="p">"surface"</span>: <span class="c">"#111820"</span>,
+    <span class="p">"fg"</span>: <span class="c">"#eaf4ff"</span>,
+    <span class="c">…</span>
+  },
+  <span class="p">"background"</span>: <span class="c">""</span>,
+  <span class="p">"backgroundDim"</span>: <span class="c">0.28</span>
+}</pre>
+</div>
+<p class="sub" data-i18n="k104" style="margin-top:20px;font-size:15px">You can set just the colors you need: the rest fall back to the base palette.</p>
+</div>
+<div class="tbl-wrap reveal">
+<table class="spec-table">
+<tbody>
+<tr><td>canvas</td><td data-i18n="k105">The screen behind everything, the wallpaper's dim layer</td></tr>
+<tr><td>surface</td><td data-i18n="k106">Cards, tiles, dialogs, the side panel</td></tr>
+<tr><td>surface2</td><td data-i18n="k107">Focused rows, pressed tiles</td></tr>
+<tr><td>surface3</td><td data-i18n="k108">Bars, wells, deep chip backgrounds</td></tr>
+<tr><td>line</td><td data-i18n="k109">Dialog and card borders</td></tr>
+<tr><td>fg</td><td data-i18n="k110">Main text, focus ring, primary button</td></tr>
+<tr><td>muted</td><td data-i18n="k111">Secondary labels and hints</td></tr>
+<tr><td>subtle</td><td data-i18n="k112">Tertiary text, section headers</td></tr>
+<tr><td>accentFg</td><td data-i18n="k113">Text on fg and on the status chips</td></tr>
+<tr><td>ok</td><td data-i18n="k114">Success chips</td></tr>
+<tr><td>warn</td><td data-i18n="k115">Attention chips</td></tr>
+<tr><td>info</td><td data-i18n="k116">Neutral info chips</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+</section>
+<div class="divider"></div>
+<section aria-labelledby="editor-title">
+<div class="wrap">
+<div class="editor-bar reveal">
+<div>
+<p class="kicker" data-i18n="k88" style="margin-bottom:10px">Editor</p>
+<h2 data-i18n="k117" id="editor-title" style="margin:0;font-size:clamp(30px,3.6vw,44px)">Build your own theme.</h2>
+</div>
+<a class="btn btn-ghost" data-i18n="k118" href="editor/index.html" rel="noopener" target="_blank">Open full screen</a>
+</div>
+<p class="sub reveal" data-i18n="k119" style="margin-bottom:24px;max-width:720px">The editor runs right in the browser, with no internet. Change colors, check contrast in the preview and export a ready <code>.json</code>.</p>
+<div class="reveal">
+<iframe class="editor-frame" data-i18n-title="k120" loading="lazy" src="editor/index.html" title="Overdrive theme editor"></iframe>
+</div>
+</div>
+</section>
+<div class="divider"></div>
+<section aria-labelledby="share-title" style="padding-bottom:120px">
+<div class="wrap two" style="gap:18px">
+<div class="card reveal">
+<h3 data-i18n="k121">Wallpaper by URL</h3>
+<p data-i18n="k122">If a theme gives an image address (<code>https://…</code>), the whole theme is a single JSON file. Just send it, and the recipient drops it into the folder.</p>
+</div>
+<div class="card reveal">
+<h3 data-i18n="k123">Wallpaper from a file</h3>
+<p data-i18n="k124">For an image on the console, give just the file name, for example <code>wall.jpg</code>, and put the image next to the theme. Keep names unique, for example <code>mytheme-wall.jpg</code>, so themes don't shadow each other.</p>
+</div>
+</div>
+</section>
+</main>
+<footer>
+<div class="wrap">
+<div style="display:flex;flex-direction:column;gap:12px">
+<img alt="Overdrive" class="logo-dark" height="22" src="assets/img/logo-dark.svg" width="110"/><img alt="Overdrive" class="logo-light" height="22" src="assets/img/logo-light.svg" width="110"/>
+<span data-i18n="k85">An open-source game store for PS5 · GPL-3.0</span>
+</div>
+<nav aria-label="Links" data-i18n-aria-label="k86">
+<a data-i18n="k125" href="index.html">Home</a>
+<a data-i18n="k55" href="editor/index.html">Theme editor</a>
+<a data-i18n="k126" href="assets/themes-guide.md">Theme guide (md)</a>
+<a href="https://gitlab.com/myluxy/overdrive" rel="noopener" target="_blank">GitLab</a>
+<a href="https://github.com/Stintik-123/Overdrive" rel="noopener" target="_blank">GitHub</a>
+</nav>
+</div>
+</footer>
+<div aria-live="polite" class="toast" role="status"></div>
+<script src="js/themes-data.js"></script><script src="js/i18n.js"></script><script defer="" src="js/main.js"></script>
+</body>
+</html>

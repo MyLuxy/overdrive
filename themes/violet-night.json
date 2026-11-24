@@ -1,0 +1,22 @@
+{
+  "name": "Violet Night",
+  "colors": {
+    "canvas": "#0b0812",
+    "surface": "#171224",
+    "surface2": "#211a33",
+    "surface3": "#2c2344",
+    "line": "#33284d",
+    "fg": "#f3eefc",
+    "muted": "#b7a9d2",
+    "subtle": "#9584b5",
+    "accentFg": "#100a1c",
+    "ok": "#bbf7d0",
+    "warn": "#fde68a",
+    "info": "#d8b4fe"
+  },
+  "background": "",
+  "backgroundDim": 0.28,
+  "author": "Overdrive themes",
+  "description": "Deep violet background with soft lilac text.",
+  "version": 1
+}

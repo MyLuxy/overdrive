@@ -1,0 +1,22 @@
+{
+  "name": "Graphite",
+  "colors": {
+    "canvas": "#0a0a0c",
+    "surface": "#16161a",
+    "surface2": "#202026",
+    "surface3": "#2a2a31",
+    "line": "#2c2c34",
+    "fg": "#f2f2f3",
+    "muted": "#a9a9b2",
+    "subtle": "#8e8e98",
+    "accentFg": "#0d0d0f",
+    "ok": "#a7f3d0",
+    "warn": "#fde68a",
+    "info": "#a5f3fc"
+  },
+  "background": "",
+  "backgroundDim": 0.28,
+  "author": "Overdrive themes",
+  "description": "Neutral graphite with almost no tint. Strict and calm.",
+  "version": 1
+}
