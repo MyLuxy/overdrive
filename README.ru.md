@@ -290,6 +290,8 @@ wsl --install -d Ubuntu-24.04
 
 ```sh
 sudo apt update
+sudo apt install -y git curl nodejs npm
+npm --version          # шагу ниже нужен npm; в 24.04 apt несёт Node 18
 git clone https://github.com/Stintik-123/Overdrive.git
 cd Overdrive
 npm run setup        # один раз спросит sudo; те же пакеты, что и на Linux

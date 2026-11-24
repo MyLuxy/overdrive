@@ -362,6 +362,8 @@ Restart when asked, pick a username and password, then in the Ubuntu window:
 
 ```sh
 sudo apt update
+sudo apt install -y git curl nodejs npm
+npm --version          # the npm step below needs it; apt on 24.04 ships Node 18
 git clone https://github.com/Stintik-123/Overdrive.git
 cd Overdrive
 npm run setup        # asks for sudo once; the same packages as on Linux
