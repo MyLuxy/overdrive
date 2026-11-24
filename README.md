@@ -344,6 +344,41 @@ CURL and MacPorts supplies CMake.
 </details>
 
 <details>
+<summary><b>Developing on Windows</b></summary>
+<br>
+
+The preview runs on Windows through WSL2, the Linux layer that ships with Windows: the same
+commands as on Linux work there unchanged, and Ubuntu 24.04 is the same distribution the GitHub
+workflow builds on. The preview window opens on the Windows desktop as a regular one (WSLg).
+You need Windows 10 22H2 or Windows 11; no gaming GPU is needed, the preview renders in software.
+
+In PowerShell as administrator, once:
+
+```powershell
+wsl --install -d Ubuntu-24.04
+```
+
+Restart when asked, pick a username and password, then in the Ubuntu window:
+
+```sh
+sudo apt update
+git clone https://github.com/Stintik-123/Overdrive.git
+cd Overdrive
+npm run setup        # asks for sudo once; the same packages as on Linux
+npm run dev          # the preview window on the Windows desktop
+```
+
+Keep the repository inside the Linux filesystem (`~/Overdrive` in the Ubuntu home), not under
+`/mnt/c`: the build makes symlinks and walks thousands of small files, which is both slow and
+fragile on the Windows drives.
+
+`npm run preview`, `npm test` and `npm run build:app` work the same way. The full `npm run build`
+mounts the exFAT image with `sudo mount -o loop`, which the WSL2 kernel may not allow; build the
+image with the GitHub workflow (Run workflow) instead — it also produces `update.zip`.
+
+</details>
+
+<details>
 <summary><b>Building</b></summary>
 <br>
 

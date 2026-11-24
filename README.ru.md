@@ -272,6 +272,41 @@ sudo ../packaging/make-exfat.sh dist/PPSA99058 ../Overdrive.exfat
 </details>
 
 <details>
+<summary><b>Разработка на Windows</b></summary>
+<br>
+
+Превью работает на Windows через WSL2, встроенный в систему Linux-слой: те же команды, что и на
+Linux, работают там без изменений, а Ubuntu 24.04 — тот же дистрибутив, на котором собирает
+workflow. Окно превью открывается прямо на рабочем столе Windows (WSLg). Нужны Windows 10 22H2
+или Windows 11; игровая видеокарта не требуется, превью рендерит программно.
+
+В PowerShell от администратора, один раз:
+
+```powershell
+wsl --install -d Ubuntu-24.04
+```
+
+Согласись на перезагрузку, заведи пользователя и пароль, дальше в окне Ubuntu:
+
+```sh
+sudo apt update
+git clone https://github.com/Stintik-123/Overdrive.git
+cd Overdrive
+npm run setup        # один раз спросит sudo; те же пакеты, что и на Linux
+npm run dev          # окно превью на рабочем столе Windows
+```
+
+Держи репозиторий в файловой системе Linux (`~/Overdrive` в домашней папке Ubuntu), а не в
+`/mnt/c`: сборка создаёт симлинки и перебирает тысячи мелких файлов — на диске Windows это и
+медленно, и хрупко.
+
+`npm run preview`, `npm test` и `npm run build:app` работают так же. Полный `npm run build`
+монтирует образ exFAT через `sudo mount -o loop`, чего ядро WSL2 может не позволить; образ
+собирай workflow'ом (Run workflow) — он же делает `update.zip`.
+
+</details>
+
+<details>
 <summary><b>Исправления относительно оригинального ps5-react</b></summary>
 <br>
 
