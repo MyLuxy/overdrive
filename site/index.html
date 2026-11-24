@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+
+<html data-page="home" data-theme="dark" lang="en">
+<head>
+<meta charset="utf-8"/><script>(function(){var d=document.documentElement,q=new URLSearchParams(location.search),t=null,l=null;
+try{t=localStorage.getItem('od-theme');l=localStorage.getItem('od-lang')}catch(e){}
+t=q.get('theme')||t;l=q.get('lang')||l;
+if(t!=='light'&&t!=='dark')t=(window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';
+d.setAttribute('data-theme',t);d.setAttribute('lang',l==='ru'?'ru':'en');})();</script>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<title>Overdrive — the PS5 game store</title>
+<meta content="Overdrive is an open-source game and app store for PS5: a catalog of 4,143 games, downloads straight to the console, themes and source code." name="description"/>
+<meta content="#07070a" name="theme-color"/>
+<meta content="Overdrive — the PS5 game store" property="og:title"/>
+<meta content="Overdrive is an open-source game and app store for PS5: a catalog of 4,143 games, downloads straight to the console, themes and source code." property="og:description"/>
+<meta content="website" property="og:type"/>
+<link href="assets/img/icon0.png" rel="icon"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="css/style.css" rel="stylesheet"/>
+</head>
+<body>
+<a class="skip" data-i18n="k0" href="#main">Skip to content</a>
+<header class="nav" role="banner">
+<div class="wrap">
+<a aria-label="Overdrive — home" class="brand" data-i18n-aria-label="k1" href="index.html"><img alt="Overdrive" class="logo-dark" height="22" src="assets/img/logo-dark.svg" width="110"/><img alt="Overdrive" class="logo-light" height="22" src="assets/img/logo-light.svg" width="110"/></a>
+<button aria-expanded="false" aria-label="Menu" class="menu-btn" data-i18n-aria-label="k2" type="button">
+<svg fill="none" height="20" stroke="currentColor" stroke-linecap="round" stroke-width="2" viewbox="0 0 24 24" width="20"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>
+</button>
+<ul>
+<li><a data-i18n="k3" href="#features">Features</a></li>
+<li><a data-i18n="k4" href="#install">Install</a></li>
+<li><a data-i18n="k5" href="themes.html">Themes</a></li>
+<li><a data-i18n="k6" href="#build">Build</a></li>
+<li><a data-i18n="k7" href="#faq">FAQ</a></li>
+</ul>
+<div class="controls">
+<button aria-label="Switch language" class="icon-btn" data-i18n-aria-label="ui.lang" id="lang-toggle" type="button"><span data-i18n="ui.lang.short">RU</span></button>
+<button aria-label="Toggle light and dark theme" class="icon-btn" data-i18n-aria-label="ui.theme" id="theme-toggle" type="button">
+<svg aria-hidden="true" class="icon-sun" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewbox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+<svg aria-hidden="true" class="icon-moon" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewbox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"></path></svg>
+</button>
+</div><a class="btn btn-primary" data-i18n="k8" href="https://gitlab.com/myluxy/overdrive/-/releases" rel="noopener" target="_blank">Download</a>
+</div>
+</header>
+<main id="main">
+<!-- HERO -->
+<section aria-labelledby="hero-title" class="hero">
+<div aria-hidden="true" id="hero-bg"></div>
+<div class="wrap">
+<span class="eyebrow reveal" data-i18n="k9"><span class="dot"></span>Latest release v1.1.2</span>
+<div class="hero-row"><h1 class="reveal" data-i18n="k10" id="hero-title">Your PS5<br/><span class="grad">game store.</span></h1><img class="hero-logo logo-dark" src="assets/img/logo-dark.svg" alt="" aria-hidden="true" width="340" height="71"><img class="hero-logo logo-light" src="assets/img/logo-light.svg" alt="" aria-hidden="true" width="340" height="71"></div>
+<p class="lead reveal" data-i18n="k11">Overdrive is an open-source app for PlayStation 5. A catalog of thousands of games, downloads straight to the console, flexible theming and source code anyone can read.</p>
+<div class="cta reveal">
+<a class="btn btn-primary" href="https://gitlab.com/myluxy/overdrive/-/releases" rel="noopener" target="_blank">
+<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path></svg><span data-i18n="k12">Download Overdrive.exfat</span></a>
+<a class="btn btn-ghost" data-i18n="k13" href="#install">How to install</a>
+<a class="btn btn-ghost" data-i18n="k14" href="themes.html">Themes</a>
+</div>
+<div class="meta reveal">
+<div data-i18n="k15"><strong>4,143</strong> games in the catalog</div>
+<div data-i18n="k16"><strong>19</strong>interface languages</div>
+<div data-i18n="k17"><strong>GPL-3.0</strong>open source</div>
+<div data-i18n="k18"><strong>Auto</strong>updates from the console</div>
+</div>
+<figure class="hero-shot reveal">
+<img alt="Discover screen in Overdrive: a featured game with its description, the picks beside it and a “You might like” row" data-i18n-alt="k19" height="1080" loading="eager" src="assets/img/discover.jpg" width="1920"/>
+</figure>
+</div>
+</section>
+<!-- FEATURES -->
+<section aria-labelledby="features-title" id="features">
+<div class="wrap">
+<div class="section-head reveal">
+<p class="kicker" data-i18n="k3">Features</p>
+<h2 data-i18n="k20" id="features-title">Everything you need, on the big screen.</h2>
+<p class="sub" data-i18n="k21">Built for the controller: L1/R1 switch sections, ✕ selects, ○ goes back.</p>
+</div>
+<div class="grid">
+<article class="card reveal">
+<div class="ico"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" viewbox="0 0 24 24"><rect height="16" rx="3" width="18" x="3" y="4"></rect><path d="M3 10h18M8 15h3"></path></svg></div>
+<h3 data-i18n="k22">4,143 games</h3>
+<p data-i18n="k23">Ratings, picks, filters and sorting by score and size. See how much space a game needs before you download it.</p>
+</article>
+<article class="card reveal">
+<div class="ico"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewbox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 19h16"></path></svg></div>
+<h3 data-i18n="k24">Downloads to the console</h3>
+<p data-i18n="k25">To internal storage or a USB drive, with live speed and storage stats. A queue that recovers after a failure.</p>
+</article>
+<article class="card reveal">
+<div class="ico"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" viewbox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></div>
+<h3 data-i18n="k26">Search and favorites</h3>
+<p data-i18n="k27">Search with an on-screen keyboard, query history and a favorites page for the games you are waiting for.</p>
+</article>
+<article class="card reveal">
+<div class="ico"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" viewbox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7"></path><circle cx="18" cy="12" r="2"></circle></svg></div>
+<h3 data-i18n="k28">Files under control</h3>
+<p data-i18n="k29">The Files page shows what is on your drives and helps you free up space.</p>
+</article>
+<article class="card reveal">
+<div class="ico"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" viewbox="0 0 24 24"><path d="M12 2 4 6v6c0 5 3.5 8.5 8 10 4.5-1.5 8-5 8-10V6l-8-4Z"></path></svg></div>
+<h3 data-i18n="k30">Self-updating</h3>
+<p data-i18n="k31">A new version installs right from the console. No PC needed: the app tells you about the update itself.</p>
+</article>
+<article class="card reveal">
+<div class="ico"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" viewbox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"></path></svg></div>
+<h3 data-i18n="k32">19 languages</h3>
+<p data-i18n="k33">From Russian and English to Japanese, Arabic, Hindi and Bengali. New strings are added to every locale.</p>
+</article>
+</div>
+<div class="feature-shots">
+<figure class="shot reveal">
+<img alt="Browse page: 4,143 games with filters, sorting, scores and sizes" data-i18n-alt="k34" height="1080" loading="lazy" src="assets/img/browse.jpg" width="1920"/>
+<figcaption data-i18n="k35">Browse: filters, sorting, scores and sizes.</figcaption>
+</figure>
+<figure class="shot reveal">
+<img alt="Downloads page: “From a link”, “From a torrent” and “Debrid services” cards, storage stats" data-i18n-alt="k36" height="1080" loading="lazy" src="assets/img/downloads.jpg" width="1920"/>
+<figcaption data-i18n="k37">Downloads: links, torrents, Debrid and disk space.</figcaption>
+</figure>
+</div>
+</div>
+</section>
+<div class="divider"></div>
+<!-- INSTALL -->
+<section aria-labelledby="install-title" id="install">
+<div class="wrap">
+<div class="section-head reveal">
+<p class="kicker" data-i18n="k4">Install</p>
+<h2 data-i18n="k38" id="install-title">Four steps to your first launch.</h2>
+<p class="sub" data-i18n="k39">You need a jailbroken console and ShadowMount+, which installs <code>.exfat</code> files by itself.</p>
+</div>
+<div class="steps reveal">
+<div class="step">
+<span class="num">01</span>
+<h3 data-i18n="k40">Download the file</h3>
+<p data-i18n="k41">Get <code>Overdrive.exfat</code> from the latest release. Don't unzip it and don't change the extension.</p>
+</div>
+<div class="step">
+<span class="num">02</span>
+<h3 data-i18n="k42">Copy it to USB</h3>
+<p data-i18n="k43">Create a <code>homebrew</code> folder at the top level of the drive (exFAT) and copy the file into it.</p>
+</div>
+<div class="step">
+<span class="num">03</span>
+<h3 data-i18n="k44">Plug it into the PS5</h3>
+<p data-i18n="k45">ShadowMount+ finds the file, mounts and installs it. You get a notification; there is nothing to click.</p>
+</div>
+<div class="step">
+<span class="num">04</span>
+<h3 data-i18n="k46">Launch</h3>
+<p data-i18n="k47">Open Overdrive from the home screen. Updates arrive by themselves from then on.</p>
+</div>
+</div>
+<pre aria-label="Folder structure on the USB drive" class="tree reveal" data-i18n-aria-label="ui.tree">USB drive
+└── homebrew
+    └── Overdrive.exfat</pre>
+<p class="note reveal" data-i18n="k48"><span><b>Important.</b> The file must be named <code>Overdrive.exfat</code> and sit in the <code>homebrew</code> folder at the top level of the drive. If the app doesn't show up, the FAQ below tells you what to check.</span></p>
+</div>
+</section>
+<div class="divider"></div>
+<!-- THEMES TEASER -->
+<section aria-labelledby="themes-title" id="themes">
+<div class="wrap teaser">
+<div class="reveal">
+<p class="kicker" data-i18n="k14">Themes</p>
+<h2 data-i18n="k49" id="themes-title">Your own palette, one JSON file.</h2>
+<p class="sub" data-i18n="k50">A theme is 12 colors and, optionally, a wallpaper. Download a ready one, put the file in a folder on the console and pick it in settings. Or build your own in the editor, which runs in the browser with no internet.</p>
+<ul class="list-check">
+<li data-i18n="k51">Applies without a restart, under Settings → Appearance → Themes</li>
+<li data-i18n="k52">Built-in WCAG contrast check so text stays readable</li>
+<li data-i18n="k53">Wallpaper by URL: a single file, no extra attachments</li>
+</ul>
+<div class="cta" style="margin-top:34px">
+<a class="btn btn-primary" data-i18n="k54" href="themes.html">Open the theme gallery</a>
+<a class="btn btn-ghost" data-i18n="k55" href="editor/index.html">Theme editor</a>
+</div>
+</div>
+<div aria-hidden="true" class="reveal">
+<div class="swatches" id="swatches"></div>
+</div>
+</div>
+</section>
+<div class="divider"></div>
+<!-- BUILD -->
+<section aria-labelledby="build-title" id="build">
+<div class="wrap">
+<div class="section-head reveal">
+<p class="kicker" data-i18n="k56">Source code</p>
+<h2 data-i18n="k57" id="build-title">Build it yourself in a few commands.</h2>
+<p class="sub" data-i18n="k58">Overdrive is a React app on top of <a href="https://github.com/half144/ps5-react" rel="noopener" style="color:var(--fg);text-decoration:underline;text-underline-offset:3px" target="_blank">ps5-react</a>. It runs in a window on your PC, rebuilds on every save and builds for the console.</p>
+</div>
+<div class="two">
+<div class="code reveal">
+<div class="code-head"><span data-i18n="k59">Terminal</span><button class="copy" data-copy="git clone https://github.com/Stintik-123/Overdrive.git &amp;&amp; cd Overdrive &amp;&amp; npm run setup &amp;&amp; npm run dev" data-i18n="k60" type="button">Copy</button></div>
+<pre><span class="c" data-i18n="code.c1"># clone and set up (once)</span>
+<span class="p">$</span> git clone https://github.com/Stintik-123/Overdrive.git
+<span class="p">$</span> cd Overdrive
+<span class="p">$</span> npm run setup
+
+<span class="c" data-i18n="code.c2"># run in a window on your PC, rebuilt on every save</span>
+<span class="p">$</span> npm run dev</pre>
+</div>
+<div class="tbl-wrap reveal">
+<table aria-label="npm commands" class="cmd-table" data-i18n-aria-label="k61">
+<thead><tr><th data-i18n="k62">Command</th><th data-i18n="k63">What it does</th></tr></thead>
+<tbody>
+<tr><td>npm run setup</td><td data-i18n="k64">Installs every dependency, once</td></tr>
+<tr><td>npm run dev</td><td data-i18n="k65">A window on your PC, rebuilt on every save</td></tr>
+<tr><td>npm test</td><td data-i18n="k66">The framework's checks</td></tr>
+<tr><td>npm run build</td><td data-i18n="k67">The PS5 app, <code>Overdrive.exfat</code> and <code>update.zip</code></td></tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="two" style="margin-top:18px">
+<div class="card reveal">
+<h3 data-i18n="k68">Repository layout</h3>
+<p data-i18n="k69"><code>app/</code> — the application: interface, state, catalog and assets. <code>ps5-react/</code> — the framework. <code>packaging/</code> — building the exFAT image. <code>docs/</code> — documentation, including themes.</p>
+</div>
+<div class="card reveal">
+<h3 data-i18n="k70">License and upstream</h3>
+<p data-i18n="k71">The code is released under the GPL-3.0 license. The main project lives on <a href="https://gitlab.com/myluxy/overdrive" rel="noopener" style="color:var(--fg);text-decoration:underline;text-underline-offset:3px" target="_blank">GitLab</a>; this repository is its mirror with a Russian interface.</p>
+</div>
+</div>
+</div>
+</section>
+<div class="divider"></div>
+<!-- FAQ -->
+<section aria-labelledby="faq-title" id="faq">
+<div class="wrap">
+<div class="section-head reveal">
+<p class="kicker" data-i18n="k7">FAQ</p>
+<h2 data-i18n="k72" id="faq-title">Frequently asked questions.</h2>
+</div>
+<div class="grid">
+<article class="card reveal">
+<h3 data-i18n="k73">Overdrive didn't show up on the home screen</h3>
+<p data-i18n="k74">Check that ShadowMount+ is running, the folder is named exactly <code>homebrew</code> and sits at the top level of the drive, and the file ends in <code>.exfat</code>. ShadowMount+ waits until the file has finished copying.</p>
+</article>
+<article class="card reveal">
+<h3 data-i18n="k75">The page won't load</h3>
+<p data-i18n="k76">The copy on the console is damaged, usually from copying through USB. Delete <code>Overdrive.exfat</code>, download it again and transfer it with PS5Upload. Its size on the console must match the downloaded file.</p>
+</article>
+<article class="card reveal">
+<h3 data-i18n="k77">How to update</h3>
+<p data-i18n="k78">The app offers the update by itself a few seconds after it starts. Installing needs about 600 MB free on the drive that holds Overdrive.</p>
+</article>
+<article class="card reveal">
+<h3 data-i18n="k79">How to remove it</h3>
+<p data-i18n="k80">First delete <code>Overdrive.exfat</code> from the <code>homebrew</code> folder, then the icon from the home screen. In the other order ShadowMount+ brings the icon back.</p>
+</article>
+</div>
+</div>
+</section>
+<section aria-labelledby="cta-title" style="padding:96px 0 120px">
+<div class="wrap">
+<div class="card reveal" style="text-align:center;padding:64px 32px;background:linear-gradient(180deg,var(--surface),var(--bg-2))">
+<h2 data-i18n="k81" id="cta-title" style="margin-inline:auto;max-width:760px">Ready for your first launch?</h2>
+<p class="sub" data-i18n="k82" style="max-width:600px;margin:0 auto 32px">Download the latest release, put the file on a USB drive and open the app on your PS5.</p>
+<div class="cta" style="justify-content:center">
+<a class="btn btn-primary" data-i18n="k83" href="https://gitlab.com/myluxy/overdrive/-/releases" rel="noopener" target="_blank">Download the release</a>
+<a class="btn btn-ghost" data-i18n="k84" href="themes.html">Pick a theme</a>
+</div>
+</div>
+</div>
+</section>
+</main>
+<footer>
+<div class="wrap">
+<div style="display:flex;flex-direction:column;gap:12px">
+<img alt="Overdrive" class="logo-dark" height="22" src="assets/img/logo-dark.svg" width="110"/><img alt="Overdrive" class="logo-light" height="22" src="assets/img/logo-light.svg" width="110"/>
+<span data-i18n="k85">An open-source game store for PS5 · GPL-3.0</span>
+</div>
+<nav aria-label="Links" data-i18n-aria-label="k86">
+<a data-i18n="k3" href="#features">Features</a>
+<a data-i18n="k5" href="themes.html">Themes</a>
+<a data-i18n="k55" href="editor/index.html">Theme editor</a>
+<a href="https://gitlab.com/myluxy/overdrive" rel="noopener" target="_blank">GitLab</a>
+<a href="https://github.com/Stintik-123/Overdrive" rel="noopener" target="_blank">GitHub</a>
+<a data-i18n="k87" href="https://gitlab.com/myluxy/overdrive/-/releases" rel="noopener" target="_blank">Releases</a>
+</nav>
+</div>
+</footer>
+<div aria-live="polite" class="toast" role="status"></div>
+<script src="js/themes-data.js"></script><script src="js/i18n.js"></script><script defer="" src="js/main.js"></script>
+
+</body>
+</html>
