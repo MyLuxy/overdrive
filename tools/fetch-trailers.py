@@ -37,6 +37,7 @@ change or leave games out; a game both refuse is skipped without any other game 
 touched.
 """
 import argparse
+import http.client
 import html
 import json
 import os
@@ -105,7 +106,7 @@ def fetch(url, timeout=15, attempts=2, headers=None):
                 return None
             if error.code not in (429, 500, 502, 503, 504) or attempt + 1 == attempts:
                 return None
-        except (urllib.error.URLError, TimeoutError, OSError):
+        except (http.client.HTTPException, urllib.error.URLError, TimeoutError, OSError):
             if attempt + 1 == attempts:
                 return None
         time.sleep(SLEEP * (attempt + 1))
