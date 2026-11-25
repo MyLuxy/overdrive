@@ -523,7 +523,7 @@
   "update.quit": "إغلاق Overdrive",
   "update.reopen": "جارٍ الإغلاق. افتح Overdrive مجددًا من الشاشة الرئيسية",
   "update.reopenInstalled": "تم تحديث Overdrive إلى v{version}. أغلقه وافتحه مجددًا من الشاشة الرئيسية.",
-  "update.replaceByHand": "نزّل update.zip من gitlab.com/myluxy/overdrive، وأغلق Overdrive، ثم انسخ ملف .exfat فوق الملف القديم.",
+  "update.replaceByHand": "نزّل update.zip من github.com/MyLuxy/overdrive، وأغلق Overdrive، ثم انسخ ملف .exfat فوق الملف القديم.",
   "update.replaceFailed": "تعذّر استبدال الصورة المثبّتة أثناء تشغيل Overdrive.",
   "update.restartConsole": "إذا استمر فتح الإصدار القديم، فأعد تشغيل الجهاز.",
   "urlDialog.cancel": "إلغاء",

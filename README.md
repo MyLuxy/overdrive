@@ -20,13 +20,6 @@
   <a href="#build-it-yourself">Build it yourself</a>
 </div>
 
-> [!NOTE]
-> Overdrive was created by MyLuxy. His GitHub account — and with it the original repository —
-> is back online, and the project also lives on [GitLab](https://gitlab.com/myluxy/overdrive).
-> This repository is just a community fork kept by one of the players: nothing here competes with
-> the original. Releases, sources and updates all live with the author —
-> follow him on GitHub: [github.com/MyLuxy/overdrive](https://github.com/MyLuxy/overdrive).
-
 <div align="center" dir="ltr">
   <img src=".github/readme/discover.jpg" alt="Overdrive's Discover page: a featured game with its description, the picks beside it, and the You might like row" width="100%">
 </div>
@@ -91,7 +84,7 @@ If ShadowMount+ shows its notification when the console starts, you are ready. Y
 **USB drive** and a **PC**.
 
 <div align="center" dir="ltr">
-  <a href="https://gitlab.com/myluxy/overdrive/-/releases"><img src="https://img.shields.io/badge/Download-Overdrive.exfat-f2f2f3?style=for-the-badge&labelColor=0b0b0d" alt="Download Overdrive.exfat" width="347"></a>
+  <a href="https://github.com/MyLuxy/overdrive/releases"><img src="https://img.shields.io/badge/Download-Overdrive.exfat-f2f2f3?style=for-the-badge&labelColor=0b0b0d" alt="Download Overdrive.exfat" width="347"></a>
 </div>
 
 <table>
@@ -100,7 +93,7 @@ If ShadowMount+ shows its notification when the console starts, you are ready. Y
 <td>
 
 **Download `Overdrive.exfat`** with the button above, or from the
-[latest release](https://gitlab.com/myluxy/overdrive/-/releases). It is the only file you
+[latest release](https://github.com/MyLuxy/overdrive/releases). It is the only file you
 need. Leave it as it is: don't unzip it and don't change the `.exfat` at the end of its name.
 
 </td>
@@ -185,7 +178,7 @@ every start.
 
 1. Delete `Overdrive.exfat` from the `homebrew` folder, then its icon from the home screen.
 2. Download `Overdrive.exfat` again from the
-   [latest release](https://gitlab.com/myluxy/overdrive/-/releases).
+   [latest release](https://github.com/MyLuxy/overdrive/releases).
 3. Copy it to the console with [PS5Upload](https://github.com/phantomptr/ps5upload) instead of a
    USB drive, and check that its size on the console matches the downloaded file's.
 
@@ -215,7 +208,7 @@ when this happens.
 <br>
 
 Install it by hand: download `Overdrive.exfat` from the
-[latest release](https://gitlab.com/myluxy/overdrive/-/releases), close Overdrive, and copy
+[latest release](https://github.com/MyLuxy/overdrive/releases), close Overdrive, and copy
 the new file over the old one in the `homebrew` folder.
 
 </details>
@@ -278,7 +271,6 @@ npm run setup        # once; asks for sudo on Linux
 npm run dev          # the app in a window on your PC, rebuilt on every save under app/
 ```
 
-The upstream sources live on GitLab: [gitlab.com/myluxy/overdrive](https://gitlab.com/myluxy/overdrive).
 
 | Command | What it does |
 | --- | --- |
@@ -428,7 +420,6 @@ in the image; `fsck_exfat -n Overdrive.exfat` checks it again afterwards. The im
 <summary><b>Acknowledgements</b></summary>
 <br>
 
-- **[MyLuxy](https://gitlab.com/myluxy)** — decompiled Overdrive, recovered its source and rebuilt it.
 - **[ps5-react](https://github.com/half144/ps5-react)** — the framework everything runs on.
 - **[ShadowMount+](https://github.com/drakmor/ShadowMountPlus)** by drakmor — installs the app.
 - **[kstuff](https://github.com/EchoStretch/kstuff-lite)** by EchoStretch — the kernel payload that lets the console run homebrew and installed games.

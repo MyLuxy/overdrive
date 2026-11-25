@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Thanks for taking the time to report this. If Overdrive doesn't show up on the home screen
-        or an update won't install, the [Troubleshooting](https://gitlab.com/myluxy/overdrive#troubleshooting)
+        or an update won't install, the [Troubleshooting](https://github.com/MyLuxy/overdrive#readme)
         section may already have the answer.
 
   - type: input
@@ -98,7 +98,7 @@ body:
     attributes:
       label: Before you send it
       options:
-        - label: I'm on the [latest release](https://gitlab.com/myluxy/overdrive/-/releases).
+        - label: I'm on the [latest release](https://github.com/MyLuxy/overdrive/releases).
           required: true
         - label: I searched the existing issues and this hasn't been reported yet.
           required: true

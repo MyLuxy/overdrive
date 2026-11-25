@@ -523,7 +523,7 @@
   "update.quit": "Overdrive を終了",
   "update.reopen": "終了します。ホーム画面から Overdrive をもう一度開いてください",
   "update.reopenInstalled": "Overdrive は v{version} に更新されました。終了して、ホーム画面からもう一度開いてください。",
-  "update.replaceByHand": "gitlab.com/myluxy/overdrive から update.zip をダウンロードし、Overdrive を終了して .exfat を古いファイルに上書きコピーしてください。",
+  "update.replaceByHand": "github.com/MyLuxy/overdrive から update.zip をダウンロードし、Overdrive を終了して .exfat を古いファイルに上書きコピーしてください。",
   "update.replaceFailed": "Overdrive の実行中はインストール済みのイメージを置き換えられませんでした。",
   "update.restartConsole": "古いバージョンが開き続ける場合は、本体を再起動してください。",
   "urlDialog.cancel": "キャンセル",

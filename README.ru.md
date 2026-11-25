@@ -20,12 +20,6 @@
   <a href="#сборка-своими-руками">Сборка своими руками</a>
 </div>
 
-> [!NOTE]
-> Overdrive создан MyLuxy. Его аккаунт на GitHub — а вместе с ним и оригинальный репозиторий —
-> снова онлайн; проект также живёт на GitLab: [gitlab.com/myluxy/overdrive](https://gitlab.com/myluxy/overdrive).
-> Этот репозиторий — просто форк одного из игроков: здесь ничего не соревнуется с оригиналом.
-> Релизы, исходники и обновления живут у автора — заходите к нему: [github.com/MyLuxy/overdrive](https://github.com/MyLuxy/overdrive).
-
 <div align="center" dir="ltr">
   <img src=".github/readme/discover.jpg" alt="Страница «Обзор» в Overdrive: рекомендованная игра с описанием, подборки рядом и ряд «Вам может понравиться»" width="100%">
 </div>
@@ -70,7 +64,7 @@ TorBox, Real-Debrid и Premiumize скачивают ссылку или маг�
 показывает уведомление, значит всё готово. Также понадобятся **USB-накопитель** и **компьютер**.
 
 <div align="center" dir="ltr">
-  <a href="https://gitlab.com/myluxy/overdrive/-/releases"><img src="https://img.shields.io/badge/Download-Overdrive.exfat-f2f2f3?style=for-the-badge&labelColor=0b0b0d" alt="Скачать Overdrive.exfat" width="347"></a>
+  <a href="https://github.com/MyLuxy/overdrive/releases"><img src="https://img.shields.io/badge/Download-Overdrive.exfat-f2f2f3?style=for-the-badge&labelColor=0b0b0d" alt="Скачать Overdrive.exfat" width="347"></a>
 </div>
 
 <table>
@@ -79,7 +73,7 @@ TorBox, Real-Debrid и Premiumize скачивают ссылку или маг�
 <td>
 
 **Скачайте `Overdrive.exfat`** по кнопке выше или из
-[последнего релиза](https://gitlab.com/myluxy/overdrive/-/releases). Это единственный нужный
+[последнего релиза](https://github.com/MyLuxy/overdrive/releases). Это единственный нужный
 файл. Оставьте его как есть: не распаковывайте и не меняйте `.exfat` в конце имени.
 
 </td>
@@ -167,7 +161,7 @@ USB-накопитель. Удаление папок приложения не 
 
 1. Удалите `Overdrive.exfat` из папки `homebrew`, затем его значок с главного экрана.
 2. Скачайте `Overdrive.exfat` заново из
-   [последнего релиза](https://gitlab.com/myluxy/overdrive/-/releases).
+   [последнего релиза](https://github.com/MyLuxy/overdrive/releases).
 3. Скопируйте его на консоль через [PS5Upload](https://github.com/phantomptr/ps5upload), а не через
    USB-накопитель, и проверьте, что размер файла на консоли совпадает с размером скачанного.
 
@@ -197,7 +191,7 @@ USB-накопитель. Удаление папок приложения не 
 <br>
 
 Установите вручную: скачайте `Overdrive.exfat` из
-[последнего релиза](https://gitlab.com/myluxy/overdrive/-/releases), закройте Overdrive и
+[последнего релиза](https://github.com/MyLuxy/overdrive/releases), закройте Overdrive и
 скопируйте новый файл поверх старого в папку `homebrew`.
 
 </details>
@@ -309,7 +303,6 @@ npm run dev          # окно превью на рабочем столе Wind
 <summary><b>Благодарности</b></summary>
 <br>
 
-- **[MyLuxy](https://gitlab.com/myluxy)** — декомпилировал Overdrive, восстановил его исходный код и собрал заново.
 - **[ps5-react](https://github.com/half144/ps5-react)** — фреймворк, на котором всё работает.
 - **[ShadowMount+](https://github.com/drakmor/ShadowMountPlus)** от drakmor — устанавливает приложение.
 - **[kstuff](https://github.com/EchoStretch/kstuff-lite)** от EchoStretch — пейлоад ядра, благодаря которому консоль запускает хоумбрю и установленные игры.

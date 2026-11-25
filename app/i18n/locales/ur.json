@@ -523,7 +523,7 @@
   "update.quit": "Overdrive بند کریں",
   "update.reopen": "بند ہو رہا ہے۔ ہوم اسکرین سے Overdrive دوبارہ کھولیں",
   "update.reopenInstalled": "Overdrive کو v{version} پر اپ ڈیٹ کر دیا گیا ہے۔ اسے بند کریں اور ہوم اسکرین سے دوبارہ کھولیں۔",
-  "update.replaceByHand": "gitlab.com/myluxy/overdrive سے update.zip ڈاؤن لوڈ کریں، Overdrive بند کریں اور .exfat فائل کو پرانی فائل کے اوپر کاپی کریں۔",
+  "update.replaceByHand": "github.com/MyLuxy/overdrive سے update.zip ڈاؤن لوڈ کریں، Overdrive بند کریں اور .exfat فائل کو پرانی فائل کے اوپر کاپی کریں۔",
   "update.replaceFailed": "Overdrive چلتے وقت انسٹال شدہ امیج تبدیل نہیں ہو سکی۔",
   "update.restartConsole": "اگر پرانا ورژن ہی کھلتا رہے تو کنسول دوبارہ شروع کریں۔",
   "urlDialog.cancel": "منسوخ کریں",

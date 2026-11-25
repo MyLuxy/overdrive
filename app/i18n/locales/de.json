@@ -523,7 +523,7 @@
   "update.quit": "Overdrive schließen",
   "update.reopen": "Wird geschlossen. Öffne Overdrive erneut über den Startbildschirm",
   "update.reopenInstalled": "Overdrive wurde auf v{version} aktualisiert. Schließe es und öffne es erneut über den Startbildschirm.",
-  "update.replaceByHand": "Lade update.zip von gitlab.com/myluxy/overdrive herunter, schließe Overdrive und kopiere die .exfat-Datei über die alte.",
+  "update.replaceByHand": "Lade update.zip von github.com/MyLuxy/overdrive herunter, schließe Overdrive und kopiere die .exfat-Datei über die alte.",
   "update.replaceFailed": "Das installierte Image konnte nicht ersetzt werden, während Overdrive läuft.",
   "update.restartConsole": "Wenn weiterhin die alte Version startet, starte die Konsole neu.",
   "urlDialog.cancel": "Abbrechen",

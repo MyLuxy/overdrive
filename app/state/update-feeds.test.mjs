@@ -3,17 +3,16 @@ import test from 'node:test';
 
 const {createUpdater} = await import('./updater.js');
 
-// The update check asks every feed at once and keeps the newest release: GitHub's release API while
-// the account answers, and the project's own feed on GitLab. One host going quiet must not leave an
-// installed Overdrive unable to update (update.js holds the two addresses).
+// The update check asks every feed at once and keeps the newest release. One host going quiet must
+// not leave an installed Overdrive unable to update (update.js holds the feed addresses).
 
-const FEEDS = [{name: 'github', url: 'https://github.test/latest'}, {name: 'gitlab', url: 'https://gitlab.test/feed.json'}];
+const FEEDS = [{name: 'github', url: 'https://github.test/latest'}, {name: 'legacy', url: 'https://legacy.test/feed.json'}];
 
 function release(tag, {asset = 'update.zip', digest = `sha256:${'a'.repeat(64)}`} = {}) {
   return {
     tag_name: tag,
     body: `notes of ${tag}`,
-    assets: [{name: asset, size: 32_827_690, digest, browser_download_url: `https://gitlab.test/${tag}/${asset}`}],
+    assets: [{name: asset, size: 32_827_690, digest, browser_download_url: `https://legacy.test/${tag}/${asset}`}],
   };
 }
 
@@ -46,7 +45,7 @@ test('a feed that fails does not hide the other one', async () => {
     [FEEDS[1].url]: release('v1.1.0'),
   }).check();
   assert.equal(update.version, '1.1.0');
-  assert.equal(update.url, 'https://gitlab.test/v1.1.0/update.zip');
+  assert.equal(update.url, 'https://legacy.test/v1.1.0/update.zip');
   assert.equal(update.size, 32_827_690);
   assert.equal(update.notes, 'notes of v1.1.0');
 });
@@ -56,7 +55,7 @@ test('the newest release of the two wins, whichever host carries it', async () =
     [FEEDS[0].url]: release('v1.1.0'),
     [FEEDS[1].url]: release('v1.2.0'),
   }).check();
-  assert.equal(both.version, '1.2.0', 'GitLab ahead of a working GitHub still updates');
+  assert.equal(both.version, '1.2.0', 'a feed ahead of a working GitHub still updates');
   const other = await updater({
     [FEEDS[0].url]: release('v1.2.0'),
     [FEEDS[1].url]: release('v1.1.0'),

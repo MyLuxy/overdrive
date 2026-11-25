@@ -532,7 +532,7 @@
   "update.quit": "Закрыть Overdrive",
   "update.reopen": "Закрытие. Снова откройте Overdrive с главного экрана",
   "update.reopenInstalled": "Overdrive обновлён до v{version}. Закройте его и снова откройте с главного экрана.",
-  "update.replaceByHand": "Скачайте update.zip с gitlab.com/myluxy/overdrive, закройте Overdrive и скопируйте файл .exfat поверх старого.",
+  "update.replaceByHand": "Скачайте update.zip с github.com/MyLuxy/overdrive, закройте Overdrive и скопируйте файл .exfat поверх старого.",
   "update.replaceFailed": "Не удалось заменить установленный образ, пока Overdrive запущен.",
   "update.restartConsole": "Если по-прежнему открывается старая версия, перезагрузите консоль.",
   "update.restarting": "Перезапуск Overdrive…",
