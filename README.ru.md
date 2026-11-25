@@ -21,10 +21,10 @@
 </div>
 
 > [!NOTE]
-> Аккаунт автора на GitHub больше не существует, поэтому апстрим теперь живёт
-> на GitLab: [gitlab.com/myluxy/overdrive](https://gitlab.com/myluxy/overdrive). Этот репозиторий —
-> форк, а не зеркало: код и каталог игр (4 100+) унаследованы, но разработка продолжается со своими
-> изменениями. Ссылки на релизы и источники все ещё ведут на GitLab.
+> Overdrive создан MyLuxy. Его аккаунт на GitHub — а вместе с ним и оригинальный репозиторий —
+> снова онлайн; проект также живёт на GitLab: [gitlab.com/myluxy/overdrive](https://gitlab.com/myluxy/overdrive).
+> Этот репозиторий — просто форк одного из игроков: здесь ничего не соревнуется с оригиналом.
+> Релизы, исходники и обновления живут у автора — заходите к нему: [github.com/MyLuxy/overdrive](https://github.com/MyLuxy/overdrive).
 
 <div align="center" dir="ltr">
   <img src=".github/readme/discover.jpg" alt="Страница «Обзор» в Overdrive: рекомендованная игра с описанием, подборки рядом и ряд «Вам может понравиться»" width="100%">
