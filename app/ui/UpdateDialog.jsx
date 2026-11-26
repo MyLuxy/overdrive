@@ -16,7 +16,7 @@ import { ProgressBar } from './ProgressBar.jsx';
 import { ShimmerText } from './ShimmerText.jsx';
 import { px } from './scale.js';
 import { VERSION } from '../version.js';
-import { BackHandler, FocusScope, Image, Text, View } from '@ps5-react/core';
+import { BackHandler, FocusScope, Image, ScrollView, Text, View } from '@ps5-react/core';
 
   var CLOSE_DELAY_MS = 2e3;
   var REOPEN_DELAY_MS = 11e3;
@@ -53,7 +53,7 @@ import { BackHandler, FocusScope, Image, Text, View } from '@ps5-react/core';
     };
     const fraction = state === "downloading" && progress.total ? progress.written / progress.total : state ? 1 : 0;
     const installed = update.installed;
-    const paragraphs = installed ? [t2("update.reopenInstalled", { version: update.version }), ...update.stuck ? [t2("update.restartConsole")] : []] : error2 ?? [update.notes || t2("update.detail")];
+    const paragraphs = installed ? [t2("update.reopenInstalled", { version: update.version }), ...update.stuck ? [t2("update.restartConsole")] : []] : error2 ?? String(update.notes || t2("update.detail")).split("\n").filter((line) => line.trim());
     const label = error2 ? t2("update.failed") : state === "done" || installed ? t2("update.done") : state ? t2("update.updating") : t2("update.available");
     const status = state === "downloading" ? `${formatPercent2(Math.round(fraction * 100)).replace(/\u202f/g, "\xA0")}  \xB7  ${formatBytes(progress.written)} / ${formatBytes(progress.total)}` : state === "installing" ? t2("update.installing") : state === "done" ? t2(relaunch ? "update.restarting" : "update.reopen") : null;
     return (
@@ -69,7 +69,7 @@ import { BackHandler, FocusScope, Image, Text, View } from '@ps5-react/core';
             /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 66, fontWeight: 600, color: "#f2f2f3", letterSpacing: -1.65 }, children: `v${update.version}` }),
             /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "JetBrainsMono-Regular", fontSize: 23, color: "#a3a3ab" }, children: `v${VERSION}  \u2192  v${update.version}` })
           ] }),
-          state ? null : /* @__PURE__ */ (0, jsx)(View, { style: { width: 690, gap: 12 }, children: paragraphs.map((text) => /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 24, color: "#a3a3ab", numberOfLines: 4, ellipsizeMode: "tail", lineHeight: 36 }, children: text }, text)) }),
+          state ? null : /* @__PURE__ */ (0, jsx)(ScrollView, { style: { width: 690, maxHeight: 288, gap: 12 }, children: paragraphs.map((text, line) => /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 24, color: "#a3a3ab", lineHeight: 36 }, children: text }, line)) }),
           status ? /* @__PURE__ */ (0, jsx)(View, { focusable: true, children: /* @__PURE__ */ (0, jsx)(ShimmerText, { textStyle: STATUS2, children: status }) }) : installed ? /* @__PURE__ */ (0, jsxs)(View, { style: { flexDirection: "row", gap: 18 }, children: [
             /* @__PURE__ */ (0, jsx)(Button2, { variant: "primary", size: "lg", label: t2("update.quit"), autoFocus: true, onPress: () => BackHandler.exitApp({ relaunch: false }) }),
             /* @__PURE__ */ (0, jsx)(Button2, { variant: "outline", size: "lg", label: t2("update.later"), onPress: close })

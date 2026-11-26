@@ -10,6 +10,8 @@ import { COVER, HERO, LOGO } from './art.js';
 import { canDownload } from './releases.js';
 import { SPAN_MAX, fitBytes } from '../i18n/fit.js';
 import { latin, useLocale, useT } from '../i18n/index.js';
+import { trailersFor } from '../state/trailers.js';
+import { ratingFor } from '../state/ratings.js';
 import { genreLabel, listedId } from '../state/catalog.js';
 import { useStoreActions, useWishlist } from '../state/store.jsx';
 import { Button2 } from '../ui/Button.jsx';
@@ -38,6 +40,7 @@ import { Image, Text, View, motion } from '@ps5-react/core';
   function Meta({ game }) {
     const t2 = useT();
     const { rtl } = useLocale();
+    const rating = ratingFor(game.id);
     return /* @__PURE__ */ (0, jsxs)(Fragment, { children: [
       /* @__PURE__ */ (0, jsx)(motion.View, { variants: rise, style: { marginTop: 12 }, children: /* @__PURE__ */ (0, jsxs)(Text, { style: { width: 960, fontFamily: "Inter-Regular", fontSize: 23, color: "#a3a3ab", numberOfLines: 1, ellipsizeMode: "tail" }, children: [
         latin(rtl, fitBytes(game.developer, SPAN_MAX - 3)),
@@ -49,7 +52,11 @@ import { Image, Text, View, motion } from '@ps5-react/core';
           /* @__PURE__ */ (0, jsx)(View, { style: { borderRadius: 3, backgroundColor: "#f2f2f3", paddingHorizontal: 9 }, children: /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, fontWeight: 700, color: "#000000", lineHeight: 30 }, children: String(game.metacritic) }) }),
           /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, color: "#a3a3ab", lineHeight: 30 }, children: t2("game.metacritic") })
         ] }) : null,
-        game.year ? /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, color: "#a3a3ab", lineHeight: 30 }, children: t2("game.released", { year: String(game.year) }) }) : null
+        game.year ? /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, color: "#a3a3ab", lineHeight: 30 }, children: t2("game.released", { year: String(game.year) }) }) : null,
+        rating ? /* @__PURE__ */ (0, jsxs)(View, { style: { flexDirection: "row", alignItems: "center", gap: 12 }, children: [
+          /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, fontWeight: 700, color: "#f2f2f3", lineHeight: 30 }, children: `${Math.round(rating.average * 10) / 10}/5` }),
+          /* @__PURE__ */ (0, jsx)(Text, { style: { fontFamily: "Inter-Regular", fontSize: 21, color: "#a3a3ab", lineHeight: 30 }, children: t2("game.ratingCount", { count: String(rating.count) }) })
+        ] }) : null
       ] })
     ] });
   }
@@ -58,6 +65,7 @@ import { Image, Text, View, motion } from '@ps5-react/core';
     const { rtl } = useLocale();
     const { toggleWish } = useStoreActions();
     const wished = useWishlist().includes(listedId(game.id));
+    const trailers = trailersFor(game.id);
     // Down from the buttons goes to the screenshots, or else to the description's Show more: without
     // either named, focus took the nearest card of "More like this" past the description.
     const nextDown = game.shots.length > 0 ? "game:shots" : game.about.some((text) => text.trim()) ? "game:about" : void 0;
@@ -86,7 +94,18 @@ import { Image, Text, View, motion } from '@ps5-react/core';
                   focusKey: `favorite:${game.id}`,
                   children: /* @__PURE__ */ (0, jsx)(WishHeart, { active: wished })
                 }
-              )
+              ),
+              trailers.length > 0 ? /* @__PURE__ */ (0, jsx)(
+                Button2,
+                {
+                  variant: "outline",
+                  size: "lg",
+                  label: t2("game.trailer"),
+                  onPress: () => onRequestDialog({ kind: "trailer", game, trailer: trailers[0] }),
+                  nextFocusDown: nextDown,
+                  focusKey: `trailer:${game.id}`
+                }
+              ) : null
             ] })
           ] })
         ] })

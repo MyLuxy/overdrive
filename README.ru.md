@@ -13,11 +13,6 @@
 </div>
 
 <div align="center" dir="ltr">
-  <a href="https://github.com/MyLuxy/overdrive/releases/latest"><img src="https://img.shields.io/github/v/release/MyLuxy/overdrive?style=for-the-badge&label=release&labelColor=0b0b0d&color=2a2a2f" alt="Последний релиз" width="236"></a>
-  <a href="https://github.com/MyLuxy/overdrive/releases"><img src="https://img.shields.io/github/downloads/MyLuxy/overdrive/total?style=for-the-badge&label=downloads&labelColor=0b0b0d&color=2a2a2f" alt="Скачивания" width="220"></a>
-</div>
-
-<div align="center" dir="ltr">
   <a href="#установка-в-четыре-шага">Установка</a> ·
   <a href="#возможности">Возможности</a> ·
   <a href="#обновления">Обновления</a> ·
@@ -25,16 +20,14 @@
   <a href="#сборка-своими-руками">Сборка своими руками</a>
 </div>
 
-> [!NOTE]
-> Оригинальный проект Overdrive был закрыт, поэтому я декомпилировал последнюю выпущенную сборку,
-> восстановил полный исходный код и собрал его заново.
-
 <div align="center" dir="ltr">
   <img src=".github/readme/discover.jpg" alt="Страница «Обзор» в Overdrive: рекомендованная игра с описанием, подборки рядом и ряд «Вам может понравиться»" width="100%">
 </div>
 <div align="center" dir="ltr">
-  <img src=".github/readme/browse.jpg" alt="Библиотека: 2105 игр с фильтрами, сортировкой, оценками и размерами" width="49.5%">
-  <img src=".github/readme/downloads.jpg" alt="Страница загрузок с карточками добавления загрузки, активностью и местом на внутреннем накопителе и USB-накопителе" width="49.5%">
+  <img src=".github/readme/browse.jpg" alt="Библиотека: 4100+ игр с фильтрами, сортировкой, оценками и размерами" width="100%">
+</div>
+<div align="center" dir="ltr">
+  <img src=".github/readme/downloads.jpg" alt="Страница загрузок с карточками добавления загрузки, активностью и местом на внутреннем накопителе и USB-накопителе" width="100%">
 </div>
 
 ## Debrid-сервисы
@@ -44,17 +37,17 @@ TorBox, Real-Debrid и Premiumize скачивают ссылку или маг�
 У каждого свой ключ аккаунта: вводится один раз и хранится на консоли.
 
 <div align="center" dir="ltr">
-  <img src=".github/readme/debrid.webp" alt="Окно «Debrid-сервисы» на странице загрузок: TorBox, Real-Debrid и Premiumize, каждому нужен свой ключ" width="70%">
+  <img src=".github/readme/debrid.ru.jpg" alt="Окно «Debrid-сервисы» на странице загрузок: TorBox, Real-Debrid и Premiumize, каждому нужен свой ключ" width="70%">
 </div>
 
 ## Возможности
 
-- **Более 2100 игр** для поиска, с подборкой **«Лучшие по оценкам»**, рядом избранных игр и отдельной рекомендованной игрой
+- **Более 4100 игр** для поиска, с подборкой **«Лучшие по оценкам»**, рядом избранных игр и отдельной рекомендованной игрой
 - **Хоумбрю**: нативные приложения и игры для PS5 из каталога сообщества [prosperostore.net](https://prosperostore.net/), всегда актуальные, устанавливаются из релизов разработчиков на GitHub
 - **Просмотр всей библиотеки** с фильтрами, сортировкой, оценками и размерами загрузок — всё видно сразу
 - **Загрузка прямо на консоль** — во внутренний накопитель или на любой USB-накопитель, со скоростью и занятым местом в реальном времени
 - **Избранное**, **поиск** с экранной клавиатурой и страница **«Файлы»**, где видно, что лежит на накопителях, и можно это почистить
-- **17 языков**: английский, немецкий, испанский, французский, итальянский, нидерландский, польский, португальский (Бразилия), русский, индонезийский, японский, китайский (упрощённый), арабский, персидский, урду, хинди, бенгальский
+- **19 языков**: английский, немецкий, испанский, французский, итальянский, нидерландский, польский, португальский (Бразилия), португальский (Португалия), русский, индонезийский, японский, китайский (упрощённый), китайский (традиционный), арабский, персидский, урду, хинди, бенгальский
 - **Обновляется сам**: новая версия устанавливается прямо с консоли, без компьютера
 - Сделано под геймпад: <kbd>L1</kbd> <kbd>R1</kbd> — переключение разделов, <kbd>✕</kbd> — выбрать, <kbd>○</kbd> — назад
 
@@ -71,7 +64,7 @@ TorBox, Real-Debrid и Premiumize скачивают ссылку или маг�
 показывает уведомление, значит всё готово. Также понадобятся **USB-накопитель** и **компьютер**.
 
 <div align="center" dir="ltr">
-  <a href="https://github.com/MyLuxy/overdrive/releases/latest/download/Overdrive.exfat"><img src="https://img.shields.io/badge/Download-Overdrive.exfat-f2f2f3?style=for-the-badge&labelColor=0b0b0d" alt="Скачать Overdrive.exfat" width="347"></a>
+  <a href="https://github.com/MyLuxy/overdrive/releases"><img src="https://img.shields.io/badge/Download-Overdrive.exfat-f2f2f3?style=for-the-badge&labelColor=0b0b0d" alt="Скачать Overdrive.exfat" width="347"></a>
 </div>
 
 <table>
@@ -80,7 +73,7 @@ TorBox, Real-Debrid и Premiumize скачивают ссылку или маг�
 <td>
 
 **Скачайте `Overdrive.exfat`** по кнопке выше или из
-[последнего релиза](https://github.com/MyLuxy/overdrive/releases/latest). Это единственный нужный
+[последнего релиза](https://github.com/MyLuxy/overdrive/releases). Это единственный нужный
 файл. Оставьте его как есть: не распаковывайте и не меняйте `.exfat` в конце имени.
 
 </td>
@@ -168,7 +161,7 @@ USB-накопитель. Удаление папок приложения не 
 
 1. Удалите `Overdrive.exfat` из папки `homebrew`, затем его значок с главного экрана.
 2. Скачайте `Overdrive.exfat` заново из
-   [последнего релиза](https://github.com/MyLuxy/overdrive/releases/latest).
+   [последнего релиза](https://github.com/MyLuxy/overdrive/releases).
 3. Скопируйте его на консоль через [PS5Upload](https://github.com/phantomptr/ps5upload), а не через
    USB-накопитель, и проверьте, что размер файла на консоли совпадает с размером скачанного.
 
@@ -198,7 +191,7 @@ USB-накопитель. Удаление папок приложения не 
 <br>
 
 Установите вручную: скачайте `Overdrive.exfat` из
-[последнего релиза](https://github.com/MyLuxy/overdrive/releases/latest), закройте Overdrive и
+[последнего релиза](https://github.com/MyLuxy/overdrive/releases), закройте Overdrive и
 скопируйте новый файл поверх старого в папку `homebrew`.
 
 </details>
@@ -233,7 +226,7 @@ USB-накопитель. Удаление папок приложения не 
 
 Overdrive — это приложение на React, работающее на [ps5-react](https://github.com/half144/ps5-react),
 и весь его JavaScript-бандл лежит открытым текстом внутри `eboot.bin`. Сборщик объединяет все модули
-в одну область видимости, поэтому импорты между модулями превращаются в простые имена; поскольку
+в однув одну область видимости, поэтому импорты между модулями превращаются в простые имена; поскольку
 каждое имя верхнего уровня остаётся уникальным, можно снова определить, какой модуль объявляет это
 имя. Так бандл удалось разбить обратно на его 137 исходных модулей с настоящими строками
 `import`/`export`, сверяя результат с оригинальным бандлом, пока не совпала каждая связь импорта.
@@ -275,26 +268,41 @@ sudo ../packaging/make-exfat.sh dist/PPSA99058 ../Overdrive.exfat
 </details>
 
 <details>
-<summary><b>Исправления относительно оригинального ps5-react</b></summary>
+<summary><b>Разработка на Windows</b></summary>
 <br>
 
-Два исправления во встроенном фреймворке, оба в инструментах сборки и оба обнаружены при сборке на
-Linux:
+Превью работает на Windows через WSL2, встроенный в систему Linux-слой: те же команды, что и на
+Linux, работают там без изменений, а Ubuntu 24.04 — тот же дистрибутив, на котором собирает
+workflow. Окно превью открывается прямо на рабочем столе Windows (WSLg). Нужны Windows 10 22H2
+или Windows 11; игровая видеокарта не требуется, превью рендерит программно.
 
-- `ps5-react/tools/common.py` читал строку `git apply --summary` с фиксированным числом пробелов,
-  из-за чего режим файла приклеивался к пути (`100644 <путь>`) и любая чистая выгрузка зависимости
-  падала на первом же патче, создающем файл. Теперь строка разбивается по пробельным символам.
-- `ps5-react/tools/build_ps5.py` открывал `data.tar.zst` из закреплённого пакета LLVM через
-  `tarfile`, а тот читает zstd только начиная с Python 3.14, тогда как документированный минимум —
-  3.12. Теперь есть откат на команду `zstd`.
+В PowerShell от администратора, один раз:
 
-Больше во фреймворке ничего не изменено.
+```powershell
+wsl --install -d Ubuntu-24.04
+```
+
+Согласись на перезагрузку, заведи пользователя и пароль, дальше в окне Ubuntu:
+
+```sh
+sudo apt update
+sudo apt install -y git curl nodejs npm
+npm --version          # шагу ниже нужен npm; в 24.04 apt несёт Node 18
+git clone https://github.com/Stintik-123/Overdrive.git
+cd Overdrive
+npm run setup        # один раз спросит sudo; те же пакеты, что и на Linux
+npm run dev          # окно превью на рабочем столе Windows
+```
+
+Держи репозиторий в файловой системе Linux (`~/Overdrive` в домашней папке Ubuntu), а не в
+`/mnt/c`.
 
 </details>
 
-## Благодарности
+<details>
+<summary><b>Благодарности</b></summary>
+<br>
 
-- **[MyLuxy](https://github.com/MyLuxy)** — декомпилировал Overdrive, восстановил его исходный код и собрал заново.
 - **[ps5-react](https://github.com/half144/ps5-react)** — фреймворк, на котором всё работает.
 - **[ShadowMount+](https://github.com/drakmor/ShadowMountPlus)** от drakmor — устанавливает приложение.
 - **[kstuff](https://github.com/EchoStretch/kstuff-lite)** от EchoStretch — пейлоад ядра, благодаря которому консоль запускает хоумбрю и установленные игры.
@@ -307,4 +315,12 @@ Linux:
 <sub>Overdrive — неофициальный homebrew-проект, не связанный с Sony Interactive Entertainment и не
 одобренный ею. PlayStation и PS5 — товарные знаки Sony Interactive Entertainment.</sub>
 
+</details>
+
 <sub>Русский перевод сделан в [форке Stintik-123](https://github.com/Stintik-123/Overdrive).</sub>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Stintik-123/Overdrive&type=Date&theme=dark" />
+  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Stintik-123/Overdrive&type=Date" />
+  <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Stintik-123/Overdrive&type=Date" />
+</picture>

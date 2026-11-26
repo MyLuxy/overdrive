@@ -11,5 +11,6 @@
   "resources": ["data/releases", "data/pages", "i18n/locales", "third_party/qrcodegen-LICENSE.txt"],
   "filesystemAccess": "console",
   "networking": true,
+  "video": true,
   "timeoutSeconds": 0
 }

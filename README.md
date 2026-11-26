@@ -20,16 +20,14 @@
   <a href="#build-it-yourself">Build it yourself</a>
 </div>
 
-> [!WARNING]
-> This is a backup mirror for the source code. If the primary repository on GitHub goes down
-> updates will not work and you will need to manually reinstall Overdrive.
-
 <div align="center" dir="ltr">
   <img src=".github/readme/discover.jpg" alt="Overdrive's Discover page: a featured game with its description, the picks beside it, and the You might like row" width="100%">
 </div>
 <div align="center" dir="ltr">
-  <img src=".github/readme/browse.jpg" alt="Browse library: 2,105 games with filters, sorting, scores and sizes" width="49.5%">
-  <img src=".github/readme/downloads.jpg" alt="Downloads page with the From a link, From a torrent and Debrid services cards, activity and storage for internal storage and a USB drive" width="49.5%">
+  <img src=".github/readme/browse.jpg" alt="Browse library: 4,100+ games with filters, sorting, scores and sizes" width="100%">
+</div>
+<div align="center" dir="ltr">
+  <img src=".github/readme/downloads.jpg" alt="Downloads page with the From a link, From a torrent and Debrid services cards, activity and storage for internal storage and a USB drive" width="100%">
 </div>
 
 ## Debrid services
@@ -44,7 +42,7 @@ prepares. Each uses your own account key, typed once and kept on the console.
 
 ## Features
 
-- **3,426+ games** to discover, with **Top rated**, a hand-picked row and a featured spotlight
+- **4,100+ games** to discover, with **Top rated**, a hand-picked row and a featured spotlight
 - **Homebrew**: native PS5 apps and games from the community catalog at [prosperostore.net](https://prosperostore.net/), always up to date, installed from each developer's GitHub release
 - **Browse the whole library** with filters, sorting, scores and download sizes at a glance
 - **Downloads straight to the console**, to internal storage or any USB drive, with live speed and storage stats
@@ -86,7 +84,7 @@ If ShadowMount+ shows its notification when the console starts, you are ready. Y
 **USB drive** and a **PC**.
 
 <div align="center" dir="ltr">
-  <a href="https://gitlab.com/myluxy/overdrive/-/releases"><img src="https://img.shields.io/badge/Download-Overdrive.exfat-f2f2f3?style=for-the-badge&labelColor=0b0b0d" alt="Download Overdrive.exfat" width="347"></a>
+  <a href="https://github.com/MyLuxy/overdrive/releases"><img src="https://img.shields.io/badge/Download-Overdrive.exfat-f2f2f3?style=for-the-badge&labelColor=0b0b0d" alt="Download Overdrive.exfat" width="347"></a>
 </div>
 
 <table>
@@ -95,7 +93,7 @@ If ShadowMount+ shows its notification when the console starts, you are ready. Y
 <td>
 
 **Download `Overdrive.exfat`** with the button above, or from the
-[latest release](https://github.com/MyLuxy/overdrive/releases/latest). It is the only file you
+[latest release](https://github.com/MyLuxy/overdrive/releases). It is the only file you
 need. Leave it as it is: don't unzip it and don't change the `.exfat` at the end of its name.
 
 </td>
@@ -180,7 +178,7 @@ every start.
 
 1. Delete `Overdrive.exfat` from the `homebrew` folder, then its icon from the home screen.
 2. Download `Overdrive.exfat` again from the
-   [latest release](https://github.com/MyLuxy/overdrive/releases/latest).
+   [latest release](https://github.com/MyLuxy/overdrive/releases).
 3. Copy it to the console with [PS5Upload](https://github.com/phantomptr/ps5upload) instead of a
    USB drive, and check that its size on the console matches the downloaded file's.
 
@@ -210,7 +208,7 @@ when this happens.
 <br>
 
 Install it by hand: download `Overdrive.exfat` from the
-[latest release](https://github.com/MyLuxy/overdrive/releases/latest), close Overdrive, and copy
+[latest release](https://github.com/MyLuxy/overdrive/releases), close Overdrive, and copy
 the new file over the old one in the `homebrew` folder.
 
 </details>
@@ -267,11 +265,12 @@ the PS5 build and the tests (it asks for `sudo` once); on macOS the Homebrew for
 framework's npm packages. Read the script first if you'd rather install them yourself.
 
 ```sh
-git clone https://github.com/MyLuxy/overdrive.git
-cd overdrive
+git clone https://github.com/Stintik-123/Overdrive.git
+cd Overdrive
 npm run setup        # once; asks for sudo on Linux
 npm run dev          # the app in a window on your PC, rebuilt on every save under app/
 ```
+
 
 | Command | What it does |
 | --- | --- |
@@ -340,6 +339,43 @@ CURL and MacPorts supplies CMake.
 </details>
 
 <details>
+<summary><b>Developing on Windows</b></summary>
+<br>
+
+The preview runs on Windows through WSL2, the Linux layer that ships with Windows: the same
+commands as on Linux work there unchanged, and Ubuntu 24.04 is the same distribution the GitHub
+workflow builds on. The preview window opens on the Windows desktop as a regular one (WSLg).
+You need Windows 10 22H2 or Windows 11; no gaming GPU is needed, the preview renders in software.
+
+In PowerShell as administrator, once:
+
+```powershell
+wsl --install -d Ubuntu-24.04
+```
+
+Restart when asked, pick a username and password, then in the Ubuntu window:
+
+```sh
+sudo apt update
+sudo apt install -y git curl nodejs npm
+npm --version          # the npm step below needs it; apt on 24.04 ships Node 18
+git clone https://github.com/Stintik-123/Overdrive.git
+cd Overdrive
+npm run setup        # asks for sudo once; the same packages as on Linux
+npm run dev          # the preview window on the Windows desktop
+```
+
+Keep the repository inside the Linux filesystem (`~/Overdrive` in the Ubuntu home), not under
+`/mnt/c`: the build makes symlinks and walks thousands of small files, which is both slow and
+fragile on the Windows drives.
+
+`npm run preview`, `npm test` and `npm run build:app` work the same way. The full `npm run build`
+mounts the exFAT image with `sudo mount -o loop`, which the WSL2 kernel may not allow; build the
+image with the GitHub workflow (Run workflow) instead — it also produces `update.zip`.
+
+</details>
+
+<details>
 <summary><b>Building</b></summary>
 <br>
 
@@ -376,44 +412,24 @@ npm run image:mac      # both, in one go
 `npm run package:mac` overwrites `Overdrive.exfat` in the repository root, so keep a copy of the
 image you had before. It checks the filesystem with `fsck_exfat` and that every file of the app is
 in the image; `fsck_exfat -n Overdrive.exfat` checks it again afterwards. The image keeps the same
-64 KiB clusters and `OVERDRIVE` label as the Linux one.
-
-The image is a plain exFAT volume whose root is the app folder, with 64 KiB clusters and the
-label `OVERDRIVE`. To release a new version, raise the version in `app/version.js` and
-`app/app.json`, run the workflow, test the draft's image on a console, then publish the draft:
-that creates its tag, and installed apps offer exactly the tested files on their next start.
+64 KiB clusters and `OVERDRIVE` label as the upstream one.
 
 </details>
 
 <details>
-<summary><b>Fixes over upstream ps5-react</b></summary>
+<summary><b>Acknowledgements</b></summary>
 <br>
 
-Two fixes in the vendored framework, both in the build tooling and both reported by a Linux build:
+- **[ps5-react](https://github.com/half144/ps5-react)** — the framework everything runs on.
+- **[ShadowMount+](https://github.com/drakmor/ShadowMountPlus)** by drakmor — installs the app.
+- **[kstuff](https://github.com/EchoStretch/kstuff-lite)** by EchoStretch — the kernel payload that lets the console run homebrew and installed games.
+- **[PS5 Homebrew Catalog](https://github.com/darkxex/ps5-homebrew-catalog)** by darkxex — the store API for the Homebrew section, and every developer in it.
 
-- `ps5-react/tools/common.py` read the `git apply --summary` line with a fixed space count, which
-  glued the file mode onto the path (`100644 <path>`) and made every fresh dependency checkout
-  fail on the first patch that creates a file. It now splits on whitespace.
-- `ps5-react/tools/build_ps5.py` opened the pinned LLVM package's `data.tar.zst` with `tarfile`,
-  which reads zstd only from Python 3.14 while the documented minimum is 3.12. It now falls back
-  to the `zstd` command.
-
-Nothing else in the framework is changed.
-
-</details>
-
-## Credits
-
-- **[MyLuxy](https://github.com/MyLuxy)**, current maintainer, who decompiled Overdrive, recovered its source and rebuilt it.
-- **[ps5-react](https://github.com/half144/ps5-react)**, the framework it runs on.
-- **[ShadowMount+](https://github.com/drakmor/ShadowMountPlus)** by drakmor, which installs it.
-- **[kstuff](https://github.com/EchoStretch/kstuff-lite)** by EchoStretch, the kernel payload that lets the console run homebrew and the games it installs.
-- **[PS5 Homebrew Catalog](https://github.com/darkxex/ps5-homebrew-catalog)** by darkxex, the store API behind the Homebrew section, and every developer listed in it.
-- **[QR Code generator](https://github.com/nayuki/QR-Code-generator)** by Project Nayuki (MIT), which draws the QR codes of the phone login; its notice ships in the app as `third_party/qrcodegen-LICENSE.txt`.
-
-`ps5-react/` is GPL-3.0-or-later and carries its own `LICENSE`, `LICENSE-ATTRIBUTION` and
-`NOTICE`. Every dependency notice is copied into `notices/` inside the built app, and
-`ps5-react/docs/DEPENDENCIES.md` lists them with their sources.
+`ps5-react/` is distributed under GPL-3.0-or-later and carries its own `LICENSE`,
+`LICENSE-ATTRIBUTION` and `NOTICE`. All dependency notices are copied into `notices/` inside
+the built app, and `ps5-react/docs/DEPENDENCIES.md` lists them with their sources.
 
 <sub>Overdrive is an unofficial homebrew project and is not affiliated with or endorsed by Sony
 Interactive Entertainment. PlayStation and PS5 are trademarks of Sony Interactive Entertainment.</sub>
+
+</details>

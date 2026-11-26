@@ -1,0 +1,22 @@
+{
+  "name": "Forest",
+  "colors": {
+    "canvas": "#050a07",
+    "surface": "#0f1914",
+    "surface2": "#16241c",
+    "surface3": "#1f3228",
+    "line": "#243a2d",
+    "fg": "#eefaf2",
+    "muted": "#a3c2ae",
+    "subtle": "#8aa895",
+    "accentFg": "#06120b",
+    "ok": "#86efac",
+    "warn": "#fde68a",
+    "info": "#99f6e4"
+  },
+  "background": "",
+  "backgroundDim": 0.28,
+  "author": "Overdrive themes",
+  "description": "Dark forest green with a mint accent.",
+  "version": 1
+}

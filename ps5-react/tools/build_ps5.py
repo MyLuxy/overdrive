@@ -65,10 +65,17 @@ def main():
                PS5_CLANG=str(llvm / "clang"), PS5_PAYLOAD_SDK=str(sdk), USE_CCACHE="0")
 
     archive = args.opengl_archive or DEPS / "ps5-opengl-sdk-1.0.0.tar.gz"
-    # The original release (github.com/blackbearreloaded/ps5-opengl) is gone; the same archive, checked by
-    # its hash, is kept at MyLuxy/overdrive-deps.
-    fetch("https://github.com/MyLuxy/overdrive-deps/releases/download/ps5-opengl-v1.0.0/ps5-opengl-sdk-1.0.0.tar.gz",
-          archive, GL_HASH)
+    # github.com/blackbearreloaded/ps5-opengl is gone, but the v1.0.0 release archive survived as a
+    # release asset on mirror repositories (github.com/JVK3R/ps5-opengl; its bytes match the pinned
+    # hashes bit for bit). The build downloads that archive itself and checks it against GL_HASH via
+    # fetch(); a locally built archive (whose bytes necessarily differ) stays available through
+    # --opengl-archive and is not checked against the release hash. Either way the SDK's own
+    # manifest.sha256 checks every file inside the extracted SDK below.
+    if args.opengl_archive:
+        if not archive.exists():
+            raise RuntimeError(f"The OpenGL SDK archive is missing: {archive}")
+    else:
+        archive = fetch(LOCK["ps5OpenGL"]["url"], DEPS / "ps5-opengl-sdk-1.0.0.tar.gz", GL_HASH)
     gl = DEPS / "ps5-opengl-sdk-1.0.0/sdk"
     if not gl.exists():
         with tarfile.open(archive) as package:

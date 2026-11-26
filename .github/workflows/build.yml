@@ -16,11 +16,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: App tests
+        # The state tests stub the PS5 host through a loader, and that loader resolves react
+        # from ps5-react/node_modules, so react lands there first.
+        run: |
+          npm install --prefix ps5-react --no-save react@18
+          node --test app/i18n/locales.test.mjs app/state/ratings.test.mjs \
+            app/state/steam-reviews.test.mjs app/state/trailers.test.mjs app/state/themes.test.mjs
+
       - name: Install the toolchain
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            clang-18 llvm-18 llvm-18-dev cmake ninja-build nodejs npm python3-venv \
+            clang-18 llvm-18 llvm-18-dev cmake ninja-build nasm nodejs npm python3-venv \
             zlib1g-dev build-essential pkg-config unzip zip curl zstd exfatprogs exfat-fuse
           # The build wants unversioned clang and llvm-config in --llvm.
           for tool in clang clang++ llvm-config; do

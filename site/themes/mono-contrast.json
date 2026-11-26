@@ -1,0 +1,22 @@
+{
+  "name": "Mono Contrast",
+  "colors": {
+    "canvas": "#000000",
+    "surface": "#121212",
+    "surface2": "#1c1c1c",
+    "surface3": "#262626",
+    "line": "#3a3a3a",
+    "fg": "#ffffff",
+    "muted": "#d4d4d4",
+    "subtle": "#b8b8b8",
+    "accentFg": "#000000",
+    "ok": "#d9f99d",
+    "warn": "#fef08a",
+    "info": "#e5e5e5"
+  },
+  "background": "",
+  "backgroundDim": 0.28,
+  "author": "Overdrive themes",
+  "description": "Pure black and white, maximum contrast for readability.",
+  "version": 1
+}

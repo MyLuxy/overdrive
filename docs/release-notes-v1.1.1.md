@@ -3,7 +3,7 @@ More games and the right archive passwords.
 - Fixed: The Knight Witch archive password
 - Improved: 70 known archive passwords
 
-**New to Overdrive?** Download `Overdrive.exfat` below and follow the [install guide](https://gitlab.com/myluxy/overdrive#install-in-four-steps).
+**New to Overdrive?** Download `Overdrive.exfat` below and follow the [install guide](https://github.com/MyLuxy/overdrive#readme).
 
 ### New
 - **94 games and 51 alternate editions** from Pegasus and SuperPSX join the built-in catalog. Alternate platform editions stay grouped with their existing game.

@@ -13,9 +13,11 @@ import { LIMITS } from '../state/speed-limit.js';
 import { MODES } from '../state/pkg-mode.js';
 import { formatBytes } from '../state/size.js';
 import { LEVELS } from './haptics.js';
+import { activeTheme, activeThemeId, listThemes, themeDisplayName } from '../state/themes.js';
 
   var GROUPS = [
     { key: "general", title: "settings.group.general", items: ["vibration", "language"] },
+    { key: "appearance", title: "settings.group.appearance", items: ["themes"] },
     { key: "downloads", title: "settings.group.downloads", items: ["speed", "disk", "pkg", "cleanup"] },
     { key: "services", title: "settings.group.services", items: ["torbox", "realdebrid", "premiumize", "qbittorrent"] }
   ];
@@ -24,6 +26,7 @@ import { LEVELS } from './haptics.js';
   var ITEMS = {
     vibration: { icon: "controller", title: "settings.vibration", lead: "settings.vibrationDetail" },
     language: { icon: "languages", title: "language.title", lead: "language.subtitle" },
+    themes: { icon: "palette", title: "themes.title", lead: "themes.lead" },
     speed: { icon: "gauge", title: "settings.speedLimit", lead: "settings.speedLimitDetail" },
     disk: { icon: "hardDrive", title: "settings.disk", lead: "settings.diskDetail" },
     pkg: { icon: "package", title: "settings.pkgMode", lead: "settings.pkgModeDetail" },
@@ -39,6 +42,7 @@ import { LEVELS } from './haptics.js';
   var SERVICES = ["torbox", "realdebrid", "premiumize", "qbittorrent"];
   var PHONE = ["torbox", "realdebrid"];
   var MODE_DETAIL = { ask: "settings.pkgAskDetail", console: "settings.pkgConsoleDetail", overdrive: "settings.pkgOverdriveDetail" };
+  var THEME_PREVIEW_KEYS = ["canvas", "surface", "fg", "muted", "subtle", "line"];
 
   function mask(key) {
     return `••••${key.slice(-4)}`;
@@ -63,6 +67,7 @@ import { LEVELS } from './haptics.js';
       case "disk": return values.root ?? "auto";
       case "pkg": return values.mode;
       case "cleanup": return values.cleanup;
+      case "themes": return activeThemeId();
       default: return null;
     }
   }
@@ -76,6 +81,7 @@ import { LEVELS } from './haptics.js';
     if (id === "disk") return values.root ? driveName(values.root) : t2("settings.diskAuto");
     if (id === "pkg") return t2(`settings.pkgMode.${values.mode}`);
     if (id === "cleanup") return t2(values.cleanup ? "settings.on" : "settings.off");
+    if (id === "themes") { const theme = activeTheme(); return theme.builtin ? t2(theme.nameKey) : theme.name; }
     if (id === "qbittorrent") return values.services.address || t2("add.notSet");
     if (SERVICES.includes(id)) {
       const key = values.services[id];
@@ -133,6 +139,10 @@ import { LEVELS } from './haptics.js';
       { key: "on", label: t2("settings.on"), value: true },
       { key: "off", label: t2("settings.off"), detail: t2("settings.cleanupOffDetail"), value: false }
     ];
+    if (id === "themes") return listThemes().map((theme) => ({
+      key: theme.id, value: theme.id, label: themeDisplayName(theme, t2),
+      detail: theme.builtin ? "" : t2("themes.userDetail")
+    }));
     if (SERVICES.includes(id)) return serviceRows(id, values, t2);
     return [];
   }
@@ -200,6 +210,17 @@ import { LEVELS } from './haptics.js';
       big: t2(chosen ? "settings.on" : "settings.off"),
       small: t2(chosen ? "settings.cleanupSideOn" : "settings.cleanupSideOff")
     };
+    if (id === "themes") {
+      const theme = listThemes().find((entry) => entry.id === chosen) ?? activeTheme();
+      return {
+        eyebrow: t2("themes.sideEyebrow"),
+        big: themeDisplayName(theme, t2),
+        rows: THEME_PREVIEW_KEYS.map((key) => ({ label: t2(`themes.color.${key}`), value: theme.colors[key], on: false })).concat([
+          { label: t2("themes.background"), value: theme.background ? theme.background : t2("themes.backgroundOff") }
+        ]),
+        small: t2("themes.sideNote")
+      };
+    }
     if (id === "qbittorrent") {
       const { address, user } = values.services;
       return address

@@ -13,13 +13,10 @@ import { Archives, Downloads, FileSystem, Http, Platform } from '@ps5-react/core
   // directory naming its own releases repository, which no longer exists — every install upgraded
   // in place then asked a dead feed for updates instead of this one (issue #122).
   //
-  // Two feeds, both asked at once: GitHub's release API while the account answers, and this
-  // project's own feed on GitLab, which carries the same shape (the release, its notes, and the
-  // asset's size and sha256). The newest release of the two wins, so one host going quiet never
-  // leaves an installed Overdrive without a way to update.
+  // One feed: the project's releases on GitHub (the release, its notes, and the asset's
+  // size and sha256).
   var FEEDS = [
-    { name: "github", url: "https://api.github.com/repos/MyLuxy/overdrive/releases/latest" },
-    { name: "gitlab", url: "https://gitlab.com/myluxy/overdrive/-/raw/main/update-feed.json" }
+    { name: "github", url: "https://api.github.com/repos/MyLuxy/overdrive/releases/latest" }
   ];
   function location() {
     if (Platform.OS !== "ps5") return { installDir: `${FileSystem.dataDir}/homebrew/${TITLE}`, workDir: `${FileSystem.dataDir}/overdrive-update` };
