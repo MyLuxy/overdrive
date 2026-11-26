@@ -317,7 +317,7 @@ npm run dev          # окно превью на рабочем столе Wind
 
 <sub>Русский перевод сделан в [форке Stintik-123](https://github.com/Stintik-123/Overdrive).</sub>
 
-## Star History
+</details>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Stintik-123/Overdrive&type=Date&theme=dark" />
