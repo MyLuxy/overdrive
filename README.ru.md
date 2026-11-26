@@ -1,41 +1,45 @@
-<div align="center" dir="ltr">
-  <img src=".github/readme/logo.svg" alt="Overdrive" width="520">
-</div>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/readme/logo-dark.svg">
+    <img src=".github/readme/logo-light.svg" alt="Overdrive" width="440">
+  </picture>
+</p>
 
-<div align="center" dir="ltr">
-  <h5><a href="README.md">English</a> ·
-  <b>Русский</b></h5>
-</div>
+<p align="center">
+  <a href="README.md">English</a> ·
+  <b>Русский</b>
+</p>
 
-<div align="center" dir="ltr">
-  <h3><b>Ваш игровой магазин для PS5.</b><br>
-  Восставший из мёртвых, собранный заново из собственного бинарника, с полностью открытым исходным кодом.</h3>
-</div>
+<p align="center">
+  <b>Ваш игровой магазин для PS5.</b><br>
+  Восставший из мёртвых, собранный заново из собственного бинарника, с полностью открытым исходным кодом.
+</p>
 
-<div align="center" dir="ltr">
-  <a href="https://github.com/MyLuxy/overdrive/releases/latest"><img src="https://img.shields.io/github/v/release/MyLuxy/overdrive?style=for-the-badge&label=release&labelColor=0b0b0d&color=2a2a2f" alt="Последний релиз" width="236"></a>
-  <a href="https://github.com/MyLuxy/overdrive/releases"><img src="https://img.shields.io/github/downloads/MyLuxy/overdrive/total?style=for-the-badge&label=downloads&labelColor=0b0b0d&color=2a2a2f" alt="Скачивания" width="220"></a>
-</div>
+<p align="center">
+  <a href="https://github.com/MyLuxy/overdrive/releases/latest"><img src="https://img.shields.io/github/v/release/MyLuxy/overdrive?style=for-the-badge&label=release&labelColor=0b0b0d&color=2a2a2f" alt="Последний релиз" width="197"></a>
+  <a href="https://github.com/MyLuxy/overdrive/releases"><img src="https://img.shields.io/github/downloads/MyLuxy/overdrive/total?style=for-the-badge&label=downloads&labelColor=0b0b0d&color=2a2a2f" alt="Скачивания" width="183"></a>
+  <a href="https://github.com/sponsors/MyLuxy"><img src="https://img.shields.io/badge/sponsor-%E2%9D%A4-db61a2?style=for-the-badge&logo=githubsponsors&logoColor=white&labelColor=0b0b0d" alt="Поддержать MyLuxy на GitHub" width="180"></a>
+</p>
 
-<div align="center" dir="ltr">
+<p align="center">
   <a href="#установка-в-четыре-шага">Установка</a> ·
   <a href="#возможности">Возможности</a> ·
   <a href="#обновления">Обновления</a> ·
   <a href="#решение-проблем">Решение проблем</a> ·
   <a href="#сборка-своими-руками">Сборка своими руками</a>
-</div>
+</p>
 
 > [!NOTE]
 > Оригинальный проект Overdrive был закрыт, поэтому я декомпилировал последнюю выпущенную сборку,
 > восстановил полный исходный код и собрал его заново.
 
-<div align="center" dir="ltr">
+<p align="center">
   <img src=".github/readme/discover.jpg" alt="Страница «Обзор» в Overdrive: рекомендованная игра с описанием, подборки рядом и ряд «Вам может понравиться»" width="100%">
-</div>
-<div align="center" dir="ltr">
+</p>
+<p align="center">
   <img src=".github/readme/browse.jpg" alt="Библиотека: 2105 игр с фильтрами, сортировкой, оценками и размерами" width="49.5%">
   <img src=".github/readme/downloads.jpg" alt="Страница загрузок с карточками добавления загрузки, активностью и местом на внутреннем накопителе и USB-накопителе" width="49.5%">
-</div>
+</p>
 
 ## Debrid-сервисы
 
@@ -43,9 +47,9 @@ TorBox, Real-Debrid и Premiumize скачивают ссылку или маг�
 **Загрузки → Debrid-сервисы**, вставьте ссылку, и консоль скачает то, что подготовил сервис.
 У каждого свой ключ аккаунта: вводится один раз и хранится на консоли.
 
-<div align="center" dir="ltr">
+<p align="center">
   <img src=".github/readme/debrid.webp" alt="Окно «Debrid-сервисы» на странице загрузок: TorBox, Real-Debrid и Premiumize, каждому нужен свой ключ" width="70%">
-</div>
+</p>
 
 ## Возможности
 
@@ -60,9 +64,9 @@ TorBox, Real-Debrid и Premiumize скачивают ссылку или маг�
 
 ## Установка в четыре шага
 
-<div align="center" dir="ltr">
+<p align="center">
   <img src=".github/readme/install-steps.ru.svg" alt="1 Скачайте Overdrive.exfat · 2 Скопируйте его в папку homebrew на USB-накопителе · 3 Вставьте накопитель: ShadowMount+ установит его · 4 Играйте" width="100%">
-</div>
+</p>
 
 ### Перед началом
 
@@ -70,9 +74,9 @@ TorBox, Real-Debrid и Premiumize скачивают ссылку или маг�
 это payload, который сам устанавливает образы `.exfat`. Если при включении консоли ShadowMount+
 показывает уведомление, значит всё готово. Также понадобятся **USB-накопитель** и **компьютер**.
 
-<div align="center" dir="ltr">
+<p align="center">
   <a href="https://github.com/MyLuxy/overdrive/releases/latest/download/Overdrive.exfat"><img src="https://img.shields.io/badge/Download-Overdrive.exfat-f2f2f3?style=for-the-badge&labelColor=0b0b0d" alt="Скачать Overdrive.exfat" width="347"></a>
-</div>
+</p>
 
 <table>
 <tr>
@@ -141,6 +145,14 @@ Overdrive нужно установить вручную только один �
 Для обновления нужно около **600 МБ свободного места** на накопителе, где лежит Overdrive.
 Файл `update.zip` в каждом релизе — это тот самый пакет, который скачивает приложение; вам он
 самому не нужен.
+
+## Поддержать проект
+
+Overdrive бесплатный и с открытым исходным кодом. Если он вам нравится, спонсорство помогает мне его обновлять.
+
+<p align="center">
+  <a href="https://github.com/sponsors/MyLuxy"><img src=".github/readme/sponsor.ru.svg" alt="Поддержать Overdrive через GitHub Sponsors" width="414"></a>
+</p>
 
 ## Решение проблем
 
