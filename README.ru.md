@@ -316,3 +316,11 @@ npm run dev          # окно превью на рабочем столе Wind
 одобренный ею. PlayStation и PS5 — товарные знаки Sony Interactive Entertainment.</sub>
 
 <sub>Русский перевод сделан в [форке Stintik-123](https://github.com/Stintik-123/Overdrive).</sub>
+
+## Star History
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Stintik-123/Overdrive&type=Date&theme=dark" />
+  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Stintik-123/Overdrive&type=Date" />
+  <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Stintik-123/Overdrive&type=Date" />
+</picture>
