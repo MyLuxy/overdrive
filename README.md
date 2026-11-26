@@ -431,3 +431,11 @@ the built app, and `ps5-react/docs/DEPENDENCIES.md` lists them with their source
 
 <sub>Overdrive is an unofficial homebrew project and is not affiliated with or endorsed by Sony
 Interactive Entertainment. PlayStation and PS5 are trademarks of Sony Interactive Entertainment.</sub>
+
+## Star History
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Stintik-123/Overdrive&type=Date&theme=dark" />
+  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Stintik-123/Overdrive&type=Date" />
+  <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Stintik-123/Overdrive&type=Date" />
+</picture>
