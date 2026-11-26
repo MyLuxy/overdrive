@@ -119,3 +119,10 @@ listed themes page link out to it. Loading a theme from a URL straight inside Ov
 input, which the current ps5-react engine does not offer yet (no on-screen keyboard, see
 `ps5-react/docs/NATIVE-API.md`); once the engine adds it, "add theme by URL" can read an entry from
 such an index without leaving the console.
+
+## Draft: Theme Engine 2.0
+
+The format above stays exactly as it is. [theme-engine-2.md](theme-engine-2.md) drafts the next
+version on top of it: three extra palette keys (`accent`, `focus`, `overlay`), layout overrides,
+theme sounds and a lightbar setting — every field optional, every v1 theme unchanged. The audit of
+what the app can be customized with today is in [customization-audit.md](customization-audit.md).
