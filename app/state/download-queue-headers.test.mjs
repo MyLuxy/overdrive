@@ -173,6 +173,8 @@ test('extraction failure is not swallowed by optional header checks', async () =
 for (const password of [
   '(DLPSGAME.COM)', 'pspkg.com', 'Th3B4tm4nWhoL4ugh$', 'DLPSGAME.COM_37629',
   'Kupo! Kupo! Kupo!', 'www.[DLPSGAME.COM]', 'Darksoftware', 'Superpsx',
+  '21218', '34086', '31885', '28617', '20662', '26698', '18622', '22053',
+  '28465', '06981', '20246', '34577', '21006', 'abdo',
 ]) {
   test(`an archive without password metadata retries the published password ${password}`, async () => {
     const fixture = harness({parts: true, acceptedPassword: password});
@@ -192,4 +194,12 @@ test('a published password in release metadata is tried first with punctuation i
   assert.equal(job.state, 'extracted', job.error);
   assert.equal(fixture.extractions.length, 1);
   assert.equal(fixture.extractions[0].password, '(DLPSGAME.COM)');
+});
+
+test('a numeric archive password keeps its leading zero in metadata', async () => {
+  const fixture = harness({parts: true, acceptedPassword: '06981', archivePassword: '06981'});
+  const job = await completed(fixture);
+  assert.equal(job.state, 'extracted', job.error);
+  assert.equal(fixture.extractions.length, 1);
+  assert.equal(fixture.extractions[0].password, '06981');
 });

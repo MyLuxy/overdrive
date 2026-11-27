@@ -12,7 +12,7 @@
   var hosts2 = {
     mediafire: ["mediafire.com"],
     buzzheavier: ["buzzheavier.com"],
-    vikingfile: ["vikingfile.com", "vik1ngfile.site"],
+    vikingfile: ["vikingfile.com", "vik1ngfile.site", "vik1ngf1le.online"],
     datanodes: ["datanodes.to"],
     filekeeper: ["filekeeper.net"]
   };

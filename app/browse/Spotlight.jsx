@@ -5,7 +5,7 @@ import '../assets/Inter-Regular.ttf';
 import { jsx, jsxs } from 'react/jsx-runtime';
 import { memo, useEffect, useRef, useState } from 'react';
 import { FIRST_POPULAR } from './PopularRail.jsx';
-import { FAMOUS, picked, shuffle } from './picks.js';
+import { selectFeatured } from './picks.js';
 import { SpotlightList } from './SpotlightList.jsx';
 import { useSlides } from './useSlides.js';
 import { games } from '../data/catalog.js';
@@ -19,24 +19,16 @@ import { WishHeart } from '../ui/WishHeart.jsx';
 import { EASE_OUT } from '../ui/ease.js';
 import { AnimatePresence, Image, Text, View, motion } from '@ps5-react/core';
 
-  // Five slides, new on every launch: four of the hand-picked famous games (picks.js), and one
-  // surprise from the rest of the catalog's well-dressed games. A slide needs only its hero art: a
-  // game with no logo shows its title in its place (GameLogo).
-  function selectFeatured() {
-    const famous = picked(games, FAMOUS).filter((game) => game.art.hero);
-    const chosen = new Set(famous);
-    const surprise = shuffle(games.filter((game) => game.art.hero && game.genres.length && !chosen.has(game) && (game.art.logo || game.recommendations > 0 || game.metacritic)));
-    const slides = [...famous.slice(0, 4), ...surprise.slice(0, 5 - Math.min(4, famous.length))];
-    return shuffle(slides.length ? slides : games.filter((game) => game.art.hero).slice(0, 5));
-  }
-  var featured = selectFeatured();
+  // GTA VI opens the five-slide hero; picks.js shuffles the remaining games.
+  // A game without a logo shows its title in its place (GameLogo).
+  var featured = selectFeatured(games);
   var ART = { width: 1410, height: 660 };
   var LOGO2 = [320, 112, 48 * 256];
   function prefetchSlides() {
     for (const game of featured) {
       if (game.art.hero) Image.prefetch(game.art.hero, ART).catch(() => {
       });
-      if (game.art.logo) Image.prefetch(game.art.logo, { ...logoStyle(game, ...LOGO2), resizeMode: "contain" }).catch(() => {
+      if (game.art.logo && /^https?:\/\//i.test(game.art.logo)) Image.prefetch(game.art.logo, { ...logoStyle(game, ...LOGO2), resizeMode: "contain" }).catch(() => {
       });
     }
   }

@@ -56,6 +56,7 @@ BRAKE = 0.05
 HOSTS = {
     "vikingfile.com": ("VikingFile", "vikingfile", "vikingfile"),
     "vik1ngfile.site": ("VikingFile", "vikingfile", "vikingfile"),
+    "vik1ngf1le.online": ("VikingFile", "vikingfile", "vikingfile"),
     "filekeeper.net": ("filekeeper.net", "browser", "filekeeper"),
     "datanodes.to": ("DataNodes", "datanodes", "datanodes"),
     "datanodes.co": ("DataNodes", "datanodes", "datanodes"),
@@ -63,7 +64,7 @@ HOSTS = {
     "akirabox.to": ("AkiraBox", "akirabox", "akirabox"),
 }
 FILE_IDS = (
-    (("vikingfile.com", "vik1ngfile.site"), re.compile(r"^/[fd]/([A-Za-z0-9]+)")),
+    (("vikingfile.com", "vik1ngfile.site", "vik1ngf1le.online"), re.compile(r"^/[fd]/([A-Za-z0-9]+)")),
     (("filekeeper.net", "datanodes.to", "datanodes.co"), re.compile(r"^/([a-z0-9]{12})")),
     (("akirabox.com", "akirabox.to"), re.compile(r"^/([A-Za-z0-9]+)")),
 )
@@ -252,6 +253,14 @@ def build_plan(args):
         by_edition.setdefault((game["platform"], edition_key(game["title"])), []).append(game_id)
     releases = read_releases()
     seen = known_files(releases)
+    passwords = {}
+    for rows in releases.values():
+        for row in rows:
+            password = row.get("archivePassword")
+            if ours(row) and isinstance(password, str) and password:
+                for field in ("url", "browserUrl"):
+                    if row.get(field):
+                        passwords.setdefault(file_id(row[field]), set()).add(password)
     records, new_games, feeds, skipped = {}, {}, {}, {}
     skip = lambda why: skipped.__setitem__(why, skipped.get(why, 0) + 1)
     for slug in FEEDS:
@@ -311,7 +320,13 @@ def build_plan(args):
                     "twin": other[0] if len(other) == 1 and other[0] in games else None,
                 }
             for name, url in links:
-                records.setdefault(target, []).append(record_for(slug, target, package, name, url))
+                row = record_for(slug, target, package, name, url)
+                previous = passwords.get(file_id(url), set())
+                if len(previous) > 1:
+                    raise ValueError(f"Conflicting existing archive passwords for {target}: {url}")
+                if previous:
+                    row["archivePassword"] = next(iter(previous))
+                records.setdefault(target, []).append(row)
     # Feeds missing from the cache keep their records: nothing was read to replace them.
     kept_feeds = {PREFIX + slug for slug in FEEDS if slug not in feeds}
     before = sum(1 for rows in releases.values() for r in rows if ours(r) and r["source"] not in kept_feeds)

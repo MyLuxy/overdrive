@@ -159,9 +159,9 @@ static bool scan_prefix(BrowserMatch *match, const unsigned char *bytes, size_t 
 bool browser_match(void *context, const unsigned char *bytes, size_t length) {
     BrowserMatch *match = context;
     if (match->anchor) return match->prefix && scan_prefix(match, bytes, length, match->prefix, true);
-    /* Vikingfile's two routes are both scanned: a link page may hand out either one. */
+    /* Scan every verified Vikingfile alias: a link page may hand out any of them. */
     const char *const *prefixes = match->page ? browser_capture_page_prefixes : browser_capture_prefixes;
-    for (size_t which = 0; which < 2; which++)
+    for (size_t which = 0; which < BROWSER_CAPTURE_VIKING_ROUTES; which++)
         if (scan_prefix(match, bytes, length, prefixes[which], false)) return true;
     return false;
 }

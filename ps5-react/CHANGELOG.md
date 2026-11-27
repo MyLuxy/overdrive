@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — Vikingfile redirect alias
+
+- Browser capture recognizes `vik1ngf1le.online` for Vikingfile file pages and
+  filename-bound downloads, following the provider's verified redirect. Existing
+  aliases, page/file separation and lookalike-host rejection remain enforced.
+
 ## Unreleased — package links served by the app
 
 - `Packages.proxy({url, total, file, token, port})` (ABI v21) serves `url` for the console's

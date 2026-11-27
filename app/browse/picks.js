@@ -30,4 +30,18 @@
     return shuffle(ids.map((id) => byId.get(id)).filter(Boolean));
   }
 
-export { FAMOUS, INDIE, picked, shuffle };
+  // Temporary promotion: GTA VI opens the hero; the other slides still change each launch.
+  var FIRST_FEATURED = "PPSA38500";
+  var EXCLUDED_FEATURED = new Set(["PPSA01325", "PPSA01342"]);
+  function selectFeatured(games) {
+    const first = games.find((game) => game.id === FIRST_FEATURED && game.art.hero);
+    const pool = games.filter((game) => game !== first && !EXCLUDED_FEATURED.has(game.id));
+    const famous = picked(pool, FAMOUS).filter((game) => game.art.hero);
+    const chosen = new Set(famous);
+    const surprise = shuffle(pool.filter((game) => game.art.hero && game.genres.length && !chosen.has(game) && (game.art.logo || game.recommendations > 0 || game.metacritic)));
+    const slides = [...famous.slice(0, 4), ...surprise.slice(0, 5 - Math.min(4, famous.length))];
+    const rest = shuffle(slides.length ? slides : pool.filter((game) => game.art.hero).slice(0, 5));
+    return first ? [first, ...rest.slice(0, 4)] : rest;
+  }
+
+export { FAMOUS, FIRST_FEATURED, INDIE, picked, selectFeatured, shuffle };

@@ -6,7 +6,7 @@ import { sourceKind, webURL } from './download-sources.js';
   var VIKING_PREFIX = "https://vikingfile.com/d/";
   // The file page a LinkVault vault opens; the capture's page mode returns it.
   var VIKING_PAGE_PREFIX = "https://vikingfile.com/f/";
-  var VIKING_PREFIXES = [VIKING_PREFIX, "https://vik1ngfile.site/d/"];
+  var VIKING_PREFIXES = [VIKING_PREFIX, "https://vik1ngfile.site/d/", "https://vik1ngf1le.online/d/"];
   var vikingPath = (url) => {
     const prefix = VIKING_PREFIXES.find((item) => url.startsWith(item));
     return prefix ? url.slice(prefix.length) : "";
@@ -62,8 +62,8 @@ import { sourceKind, webURL } from './download-sources.js';
     const parsed = webURL(url);
     // Vikingfile hands each file to one of its own servers (ar., am., zo. ... .vikingfile.com, seen
     // 2026-10-18): any of its subdomains is its own.
-    const own = ["vikingfile.com", "vik1ngfile.site"].some((domain) => parsed.host === domain || parsed.host.endsWith(`.${domain}`));
-    if (!url.startsWith("https://") || parsed.origin !== `https://${parsed.host}` || parsed.path.includes("#") || !(own || parsed.host.endsWith(".s3.bhs.io.cloud.ovh.net") || parsed.host.endsWith(".r2.cloudflarestorage.com"))) {
+    const own = ["vikingfile.com", "vik1ngfile.site", "vik1ngf1le.online"].some((domain) => parsed.host === domain || parsed.host.endsWith(`.${domain}`));
+    if (!url.startsWith("https://") || parsed.origin !== `https://${parsed.host}` || parsed.path.includes("#") || !(own || parsed.host.endsWith(".s3.bhs.io.cloud.ovh.net") || parsed.host.endsWith(".s3.sbg.io.cloud.ovh.net") || parsed.host.endsWith(".r2.cloudflarestorage.com"))) {
       // The host only, never the path or query: those carry the file's signed token.
       console.log("[browser-capture] download host refused:", parsed.origin);
       throw new Error("Captured file redirected to an unsupported download host.");
@@ -107,7 +107,7 @@ import { sourceKind, webURL } from './download-sources.js';
   async function describeVikingCapture(http, release, signal) {
     const url = release.browserUrl || release.url;
     const page2 = webURL(url);
-    if (!["vikingfile.com", "vik1ngfile.site"].includes(page2.host) || !/^\/f\/[a-z0-9]{10}$/i.test(page2.path))
+    if (!["vikingfile.com", "vik1ngfile.site", "vik1ngf1le.online"].includes(page2.host) || !/^\/f\/[a-z0-9]{10}$/i.test(page2.path))
       throw new Error("Unsupported Vikingfile page. Enter the final file link.");
     const response = await http.request(url, { signal, maxBytes: 1024 * 1024 });
     if (!response.ok) throw new Error(`Vikingfile metadata HTTP ${response.status}. Enter the final file link.`);

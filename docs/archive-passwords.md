@@ -98,3 +98,39 @@ Full provenance, including every matched source page for each new value, is in [
 ## Validation
 
 17 queue tests passed, including password fallback with case-sensitive variants, spaces, punctuation and numeric suffixes. All 70 values are unique and every addition has source evidence. No real archive extraction was performed for this audit.
+
+## Additional source check — GTA VI (2026-11-26)
+
+- Game: **Grand Theft Auto VI**, PS5 title ID `PPSA38500`.
+- Source: [VikingFile file page](https://vik1ngf1le.online/f/JbQIQC9EMm), also reached by a redirect from `https://vikingfile.com/f/JbQIQC9EMm`.
+- The public page names `Grand Theft Auto VI [PPSA38500] [v01.002].pkg`. Neither it nor the [upstream source record](https://github.com/B4ckd0orl/Padrino-Store/blob/391154eff1be99edd8817af93df728f3318fee36/app/data/releases/PPSA38500.json) declares an archive password. No password was invented or added to the fallback list.
+- The upstream exact byte count is unverified and was omitted from the imported record; the file page displays 205.85 GB. Normal VikingFile capture validates the actual download size when used.
+- This is a check of published metadata, not verification of the package's contents or successful installation/extraction. No package download or extraction was performed.
+
+## Catalog refresh — 2026-11-26
+
+- Refreshed all four Pegasus feeds (4,183 packages) and the SuperPSX incremental catalog.
+- Checked 1,439 original release pages/metadata endpoints; two original URLs were unavailable (listed in the JSON report). Existing verified passwords were retained.
+- Added 14 explicitly published archive-password candidates, for 84 unique fallbacks. Numeric passwords remain strings, including the leading zero in `06981`.
+- Passwords are attached to exact files/version scopes when unambiguous; alternatives remain separate fallback candidates.
+- Rejected navigation text, WordPress error markers and Season Pass/DLC descriptions as password false positives. Spanish voice/text notes are separate from their preceding numeric extraction password.
+- This verifies published metadata, not successful archive extraction. No game files were downloaded and no build was performed.
+
+| Password | Game | Original source |
+|---|---|---|
+| `21218` | Tales of the Shire: A The Lord of The Rings™ Game (`PPSA21218`) | [Package metadata](https://catalog.gfs-dlps.workers.dev/api/packages) |
+| `34086` | Tiny Bookshop (`PPSA34086`) | [Package metadata](https://catalog.gfs-dlps.workers.dev/api/packages) |
+| `31885` | WinX Club: The Magic is Back (`PPSA31885`) | [Package metadata](https://catalog.gfs-dlps.workers.dev/api/packages) |
+| `28617` | Spirit of the North 2 (`PPSA28617`) | [Package metadata](https://catalog.gfs-dlps.workers.dev/api/packages) |
+| `20662` | MIO: Memories In Orbit (`PPSA20662`) | [Package metadata](https://catalog.gfs-dlps.workers.dev/api/packages) |
+| `26698` | Rollercoaster Tycoon 3: Complete Edition (`PPSA26698`) | [Package metadata](https://catalog.gfs-dlps.workers.dev/api/packages) |
+| `18622` | Seed of Life (`PPSA18622`) | [Package metadata](https://catalog.gfs-dlps.workers.dev/api/packages) |
+| `22053` | Star Overdrive (`PPSA22053`) | [Package metadata](https://catalog.gfs-dlps.workers.dev/api/packages) |
+| `28465` | Trails in the Sky 1st Chapter (`PPSA28465`) | [Package metadata](https://catalog.gfs-dlps.workers.dev/api/packages) |
+| `06981` | NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS (`PPSA06981`) | [Package metadata](https://catalog.gfs-dlps.workers.dev/api/packages) |
+| `20246` | Sky Oceans: Wings For Hire (`PPSA20246`) | [Package metadata](https://catalog.gfs-dlps.workers.dev/api/packages) |
+| `34577` | Majogami (`PPSA34577`) | [Package metadata](https://catalog.gfs-dlps.workers.dev/api/packages) |
+| `21006` | Forward To The Sky (`PPSA21006`) | [Package metadata](https://catalog.gfs-dlps.workers.dev/api/packages) |
+| `abdo` | Resonance A Plague Tale Legacy (`PPSA30601`) | [Package metadata](https://catalog.gfs-dlps.workers.dev/api/packages) |
+
+Full per-game/version provenance (2,816 grouped associations) is in `catalog_refreshes` in [archive-passwords.json](archive-passwords.json).

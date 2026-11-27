@@ -9,8 +9,8 @@ static int hex(unsigned char c) {
   if (c >= 'A' && c <= 'F') return c - 'A' + 10;
   return -1;
 }
-// Vikingfile moved its pages to vik1ngfile.site; its download links may follow.
-const char *const browser_capture_prefixes[] = {"https://vikingfile.com/d/", "https://vik1ngfile.site/d/"};
+// Vikingfile's verified page redirects also serve its download routes.
+const char *const browser_capture_prefixes[] = {"https://vikingfile.com/d/", "https://vik1ngfile.site/d/", "https://vik1ngf1le.online/d/"};
 const char *browser_capture_prefix(const char *url) {
   for (size_t i = 0; i < sizeof browser_capture_prefixes / sizeof *browser_capture_prefixes; i++)
     if (!strncmp(url, browser_capture_prefixes[i], strlen(browser_capture_prefixes[i]))) return browser_capture_prefixes[i];
@@ -21,7 +21,7 @@ const char *browser_capture_prefix(const char *url) {
 static bool page_id_char(char c) {
   return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 }
-const char *const browser_capture_page_prefixes[] = {"https://vikingfile.com/f/", "https://vik1ngfile.site/f/"};
+const char *const browser_capture_page_prefixes[] = {"https://vikingfile.com/f/", "https://vik1ngfile.site/f/", "https://vik1ngf1le.online/f/"};
 bool browser_capture_page_url(const char *url) {
   for (size_t i = 0; i < sizeof browser_capture_page_prefixes / sizeof *browser_capture_page_prefixes; i++) {
     const size_t length = strlen(browser_capture_page_prefixes[i]);
@@ -39,7 +39,7 @@ bool browser_capture_page_url(const char *url) {
 static const char *const browser_capture_hosts[] = {
   "akirabox.com", "akirabox.to", "buzzheavier.com", "datanodes.co", "datanodes.to",
   "datavaults.co", "fileditchfiles.st", "filekeeper.net", "mediafire.com", "rootz.so",
-  "vikingfile.com", "vik1ngfile.site", "bhs.io.cloud.ovh.net", "r2.cloudflarestorage.com"};
+  "vikingfile.com", "vik1ngfile.site", "vik1ngf1le.online", "bhs.io.cloud.ovh.net", "r2.cloudflarestorage.com"};
 // Archives and console images only: a page's .php/.html/.js can never be the download itself.
 static const char *const browser_capture_extensions[] = {
   "7z", "rar", "zip", "pkg", "exfat", "ffpkg", "ffpfsc", "ffpfs", "bin", "iso", "img"};
@@ -150,7 +150,8 @@ static bool host_page(const char *host, size_t length, const char *path) {
     return true;
   if (host_equals(host, length, "akirabox.com") || host_equals(host, length, "akirabox.to"))
     return strncmp(path, "/download/", 10) != 0;
-  if (host_equals(host, length, "vikingfile.com") || host_equals(host, length, "vik1ngfile.site"))
+  if (host_equals(host, length, "vikingfile.com") || host_equals(host, length, "vik1ngfile.site") ||
+      host_equals(host, length, "vik1ngf1le.online"))
     return !strncmp(path, "/f/", 3);
   static const char *const pages[] = {"datanodes.to", "datanodes.co", "filekeeper.net", "datavaults.co"};
   for (size_t i = 0; i < sizeof pages / sizeof *pages; i++) {

@@ -1,12 +1,12 @@
 {
-  "tag_name": "v1.1.1",
-  "body": "More games and the right archive passwords.\n- New: 94 games and 51 alternate editions\n- Fixed: The Knight Witch archive password\n- Improved: 70 known archive passwords\n\n**New to Overdrive?** Download `Overdrive.exfat` below and follow the [install guide](https://gitlab.com/myluxy/overdrive#install-in-four-steps).\n\n### New\n- **94 games and 51 alternate editions** from Pegasus and SuperPSX join the built-in catalog. Alternate platform editions stay grouped with their existing game.\n- **Updated download sources and game details.** Newly imported entries include the available artwork, descriptions, screenshots, genres and release information.\n\n### Fixed\n- **The Knight Witch:** its archive password is `(DLPSGAME.COM)`, including the parentheses. Its release now carries that password explicitly.\n- **More archive passwords:** 62 additional published passwords join the previous eight, for 70 automatic fallback candidates. Exact case, spaces, brackets and numeric suffixes are preserved.\n- The catalog enrichment tool now refreshes expired title-list caches without failing on an undefined source URL.\n\n### Improved\n- Published archive passwords were checked across the source feeds and relevant DLPS pages; additional SuperPSX variants were confirmed on their download pages.\n- New-game and source imports now have a documented requirement to collect archive passwords and record their provenance.\n\n### Validation\n- This exact build was compiled on the VPS, verified against its build receipt, and reported working on PS5 by the maintainer.\n- The image uses 8 KiB exFAT clusters. The `update.zip` download contains `Overdrive.exfat` at its root.\n",
+  "tag_name": "v1.1.2",
+  "body": "Overdrive v1.1.2 expands the catalog and improves game discovery, download capture, and the GTA VI hero.\n\n### Catalog\n- Added 294 catalog entries, including Pegasus and SuperPSX imports, with new detail pages and download records.\n- Refreshed existing source records and archive-password metadata; the SuperPSX importer now handles its redesigned frontend and password sections.\n\n### Fixed and improved\n- GTA VI is the first featured game in the home carousel. Its bundled logo now appears immediately, and the hero description no longer waits for a remote-image load event.\n- VikingFile capture accepts the OVH SBG storage redirects used by its download links.\n- Disabled scheduled catalog imports on GitHub; the workflow remains available for manual runs.\n\n### Install and update\n- Download `Overdrive.exfat` for a new installation.\n- The in-app updater downloads `update.zip`, which contains the `.exfat` image at its root. GitHub and GitLab both carry the v1.1.2 update.\n\n### Validation\n- Built on the VPS. The PS5 title verifier passed, the exFAT image passed `fsck.exfat`, and all 8,813 packaged files were checked.\n- The maintainer tested this build successfully on PS5.\n",
   "assets": [
     {
       "name": "update.zip",
-      "size": 32976009,
-      "digest": "sha256:d27c0b93cd85e319eba2300a02fea0394b5e92a69f8ba43f67ec2f923717201d",
-      "browser_download_url": "https://gitlab.com/api/v4/projects/88312516/packages/generic/overdrive-update/1.1.1/update.zip"
+      "size": 33384589,
+      "digest": "sha256:feb1bbd190eefa7eefc0734713eca7bfa847194f60ba70a1bdd69c152169e313",
+      "browser_download_url": "https://gitlab.com/api/v4/projects/88312516/packages/generic/overdrive-update/1.1.2/update.zip"
     }
   ]
 }

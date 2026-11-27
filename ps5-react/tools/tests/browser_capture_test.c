@@ -24,6 +24,21 @@ int main(void) {
   assert(!browser_capture_url("Other.pkg", url));
   assert(browser_capture_url("", url));
   assert(browser_capture_url("Game DLC.pkg", "https://vik1ngfile.site/d/Ab01234567/Game%20DLC.pkg"));
+  assert(browser_capture_url("Game DLC.pkg", "https://vik1ngf1le.online/d/Ab01234567/Game%20DLC.pkg"));
+  assert(!browser_capture_url("Game DLC.pkg", "https://vik1ngf1le.online.evil.test/d/Ab01234567/Game%20DLC.pkg"));
+  assert(browser_capture_page_url("https://vik1ngf1le.online/f/Ab01234567"));
+  assert(!browser_capture_page_url("https://vik1ngf1le.online.evil.test/f/Ab01234567"));
+  assert(!browser_capture_anchor_url("PPSA38500", "https://vik1ngf1le.online/f/Ab01234567#PPSA38500.pkg"));
+  {
+    BrowserMatch alias = {.filename = "Game DLC.pkg"};
+    const char *download = "https://vik1ngf1le.online/d/Ab01234567/Game%20DLC.pkg";
+    assert(browser_match(&alias, (const unsigned char *)download, strlen(download) + 1));
+    assert(!strcmp(alias.url, download));
+    BrowserMatch page = {.filename = "", .page = true};
+    const char *url = "https://vik1ngf1le.online/f/Ab01234567";
+    assert(browser_match(&page, (const unsigned char *)url, strlen(url) + 1));
+    assert(!strcmp(page.url, url));
+  }
   assert(!browser_capture_url("Game DLC.pkg", "https://vik1ngfile.site.evil.test/d/Ab01234567/Game%20DLC.pkg"));
   assert(!browser_capture_url("", "https://vikingfile.com/d/Ab01234567/"));
   assert(!browser_capture_url("", "https://vikingfile.com/d/Ab01234567/a%2Fb.rar"));

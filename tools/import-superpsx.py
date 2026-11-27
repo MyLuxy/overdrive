@@ -28,11 +28,18 @@ games the app hides today for want of a working source; --scope catalog every PS
 --new also adds the games the catalog lacks, one per title, by the title id of the base game's file,
 with only what the app needs to list them (enrich-catalog.py --since HEAD fills in the rest).
 Without --write it only prints, and --report saves, what it would change.
+
+Both the original API tables and the newer spsx-ver/spsx-file HTML cards are supported. Passwords
+are scoped to each version/file. A single published password is stored as archivePassword;
+alternatives are separate candidates in the report, never a joined password. Existing verified
+metadata is preserved, and conflicting published values must be reviewed before --write.
+The report includes password provenance for the required archive-password audit and fallback list.
 """
 import argparse
 import calendar
 import hashlib
 import html
+from html.parser import HTMLParser
 import json
 import os
 import re
@@ -61,6 +68,7 @@ PAUSE = 2.0
 HOSTS = {
     "vikingfile.com": ("VikingFile", "vikingfile", "Vikingfile", "vikingfile"),
     "vik1ngfile.site": ("VikingFile", "vikingfile", "Vikingfile", "vikingfile"),
+    "vik1ngf1le.online": ("VikingFile", "vikingfile", "Vikingfile", "vikingfile"),
     "filekeeper.net": ("filekeeper.net", "browser", "FileKeeper", "filekeeper"),
     "datanodes.to": ("DataNodes", "datanodes", "DataNodes", "datanodes"),
     "datanodes.co": ("DataNodes", "datanodes", "DataNodes", "datanodes"),
@@ -69,7 +77,7 @@ HOSTS = {
 }
 # The file's own id on its host, so the same file under another spelling counts once.
 FILE_IDS = (
-    (("vikingfile.com", "vik1ngfile.site"), re.compile(r"^/[fd]/([A-Za-z0-9]+)")),
+    (("vikingfile.com", "vik1ngfile.site", "vik1ngf1le.online"), re.compile(r"^/[fd]/([A-Za-z0-9]+)")),
     (("filekeeper.net", "datanodes.to", "datanodes.co"), re.compile(r"^/([a-z0-9]{12})")),
     (("akirabox.com", "akirabox.to"), re.compile(r"^/([A-Za-z0-9]+)")),
 )
@@ -214,7 +222,155 @@ def article_of(page):
     return page[start:end] if start >= 0 and end > start else page
 
 
+class Element:
+    """Small, dependency-free HTML tree for the site's download cards and table rows."""
+    def __init__(self, tag="", attrs=(), parent=None):
+        self.tag, self.attrs, self.parent = tag, dict(attrs), parent
+        self.children = []
+
+    def has_class(self, name):
+        return name in self.attrs.get("class", "").split()
+
+    def nodes(self, tag=None, css=None):
+        for child in self.children:
+            if isinstance(child, Element):
+                if (tag is None or child.tag == tag) and (css is None or child.has_class(css)):
+                    yield child
+                yield from child.nodes(tag, css)
+
+    def text(self):
+        return "".join(child.text() if isinstance(child, Element) else child for child in self.children)
+
+
+class DownloadHTML(HTMLParser):
+    VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
+
+    def __init__(self, body):
+        super().__init__(convert_charrefs=True)
+        self.root = Element()
+        self.stack = [self.root]
+        self.feed(body)
+        self.close()
+
+    def handle_starttag(self, tag, attrs):
+        node = Element(tag, ((key, value or "") for key, value in attrs), self.stack[-1])
+        self.stack[-1].children.append(node)
+        if tag not in self.VOID:
+            self.stack.append(node)
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+        if tag not in self.VOID:
+            self.handle_endtag(tag)
+
+    def handle_endtag(self, tag):
+        for index in range(len(self.stack) - 1, 0, -1):
+            if self.stack[index].tag == tag:
+                del self.stack[index:]
+                break
+
+    def handle_data(self, text):
+        self.stack[-1].children.append(text)
+
+
+def password_candidates(values):
+    """Only explicit password fields reach here; preserve case and punctuation, split 'or'."""
+    found = []
+    for value in values:
+        for candidate in re.split(r"\s+or\s+", value.strip(), flags=re.I):
+            candidate = candidate.strip()
+            if candidate and candidate.lower() not in {"-", "n/a", "none", "no password", "not required"} and candidate not in found:
+                found.append(candidate)
+    return found
+
+
+def inside(node, css, stop):
+    parent = node.parent
+    while parent is not None and parent is not stop:
+        if parent.has_class(css):
+            return True
+        parent = parent.parent
+    return False
+
+
+def card_sections(versions):
+    sections = []
+    for version in versions:
+        heading = next(version.nodes(css="spsx-ver-t"), None)
+        version_name = heading.text().strip() if heading else ""
+        # A version's password must not accidentally come from a single file's override.
+        inherited = password_candidates(node.text() for node in version.nodes(css="spsx-pass-v")
+                                        if not inside(node, "spsx-file", version))
+        for file in version.nodes(css="spsx-file"):
+            title = next(file.nodes(css="spsx-file-name"), None)
+            if title is None:
+                continue
+            note = next(file.nodes(css="spsx-file-note"), None)
+            name = title.text().strip()
+            if note and note.text().strip():
+                name += " (%s)" % note.text().strip()
+            links = [[link.text().strip(), link.attrs["href"]] for link in file.nodes("a")
+                     if link.has_class("spsx-host") and re.match(r"https?://", link.attrs.get("href", ""))]
+            fields = list(file.nodes(css="spsx-pass-v"))
+            passwords = password_candidates(node.text() for node in fields) if fields else inherited
+            if links:
+                sections.append({"version": version_name, "name": name, "links": links, "passwords": list(passwords)})
+    return sections
+
+
+def table_password_scopes(tree):
+    """Password rows apply within their table/version, never across the whole page."""
+    scopes = []
+    for table in tree.nodes("table"):
+        parent = table.parent
+        while parent is not None and parent.tag != "table":
+            parent = parent.parent
+        if parent is not None:
+            continue
+        version, links, values = "", set(), []
+
+        def save():
+            if links:
+                scopes.append({"version": version, "links": set(links), "passwords": password_candidates(values)})
+
+        for row in table.nodes("tr"):
+            cells = [child for child in row.children if isinstance(child, Element) and child.tag in ("td", "th")]
+            if not cells:
+                continue
+            label = cells[0].text().strip().rstrip(":\u21db\u21d2 ").strip()
+            if re.fullmatch("version", label, re.I):
+                save()
+                version, links, values = " ".join(cell.text().strip() for cell in cells[1:]), set(), []
+            elif re.fullmatch(r"(?:archive\s+)?(?:password|pasword|pass)", label, re.I):
+                values.extend(cell.text().strip() for cell in cells[1:])
+            links.update(link.attrs["href"] for link in row.nodes("a") if "href" in link.attrs)
+        save()
+    return scopes
+
+
 def parse_download_page(body):
+    """Read old API tables or new HTML cards, keeping password candidates on their own sections."""
+    tree = DownloadHTML(body).root
+    versions = list(tree.nodes(css="spsx-ver"))
+    if versions:
+        return card_sections(versions)
+    scopes = table_password_scopes(tree)
+    sections = []
+    for section in legacy_sections(body):
+        # Split by password when one old-style heading spans links from different scopes.
+        grouped = {}
+        ids = set(TITLE_ID.findall(section["version"]))
+        for link in section["links"]:
+            matches = [scope for scope in scopes if link[1] in scope["links"] and
+                       (not ids or not TITLE_ID.search(scope["version"]) or ids.intersection(TITLE_ID.findall(scope["version"])))]
+            passwords = password_candidates(value for scope in matches for value in scope["passwords"])
+            grouped.setdefault(tuple(passwords), []).append(link)
+        for passwords, links in grouped.items():
+            sections.append({**section, "links": links, "passwords": list(passwords)})
+    return sections
+
+
+def legacy_sections(body):
     """The sections of a download page's article: [{"version": "CUSA58757 – USA", "name": "Game", "links": [[text, url]]}]."""
     body = re.sub(r"<(script|style)[^>]*>.*?</\1>", "", body, flags=re.S)
     # Only the links stay as tags: every other tag ends a piece of text, so a heading reads whole.
@@ -432,7 +588,7 @@ def region_of(version, url):
     return ""
 
 
-def record_for(title_id, url, kind, version, region, spec, extra, file_title=None):
+def record_for(title_id, url, kind, version, region, spec, extra, file_title=None, password=None):
     release_id = "r" + hashlib.sha256(("%s|%s" % (title_id, url)).encode("utf-8")).hexdigest()[:12]
     provider, flow, suffix, _ = spec
     label = " ".join(part for part in (region, kind, extra) if part) + " - " + suffix
@@ -455,6 +611,7 @@ def record_for(title_id, url, kind, version, region, spec, extra, file_title=Non
         # The file's own title id, when another region or edition than the game's: the queue
         # downloads by it (the browser capture looks for it), so it is not an "another game?" warning.
         **({"titleId": file_title} if file_title and file_title != title_id else {}),
+        **({"archivePassword": password} if password else {}),
     }
 
 
@@ -482,6 +639,14 @@ def build_plan(args):
             ps5_by_edition.setdefault(edition_key(title), []).append(match.group(1))
     releases = read_releases()
     seen = known_files(releases)
+    previous_passwords = {}
+    for rows in releases.values():
+        for row in rows:
+            password = row.get("archivePassword")
+            if row.get("source") == SOURCE and isinstance(password, str) and password:
+                for field in ("url", "browserUrl"):
+                    if row.get(field):
+                        previous_passwords.setdefault(file_id(row[field]), set()).add(password)
     scope = {tid for tid, game in games.items() if game["hidden"]} if args.scope == "hidden" else set(games)
     # A game this import showed is no longer hidden: it stays in scope, or a second run would take
     # back the sources that showed it.
@@ -491,12 +656,15 @@ def build_plan(args):
     # --new: a post of a game the catalog lacks becomes one, by the title id of its file, one per title.
     new_games, new_by_title = {}, {}
     records, unmatched, skipped = {}, [], {"other host": 0, "known": 0, "part or other section": 0, "dead": 0}
+    password_evidence, password_conflicts = [], []
     for name in sorted(os.listdir(os.path.join(args.cache, "pages"))):
         page = read_json(os.path.join(args.cache, "pages", name), None)
         if "articles" not in page:  # read by an earlier version of this tool: crawl again
             continue
         post = page["post"]
-        sections = [section for article in page["articles"] for section in parse_download_page(article)]
+        downloads = post.get("downloads", [])
+        sections = [{**section, "page": downloads[index] if index < len(downloads) else post.get("link", "")}
+                    for index, article in enumerate(page["articles"]) for section in parse_download_page(article)]
         ids = [m for s in sections for m in TITLE_ID.findall(s["version"] + " " + " ".join(u for _, u in s["links"]))]
         same_title = by_title.get(title_key(post["title"]), [])
         # Else the same game in another edition ("Fallout 4 Game of The Year Edition" is "Fallout 4").
@@ -558,12 +726,26 @@ def build_plan(args):
                 label_kind, update_version = kind
                 extra = " ".join(part for part in ("v" + update_version if update_version else "", section_extra(section["name"])) if part)
                 file_title = (TITLE_ID.findall(url) or TITLE_ID.findall(section["version"]) or [None])[0]
+                published = section.get("passwords", [])
+                previous = sorted(previous_passwords.get(file_id(url), set()))
+                # Singular metadata cannot represent alternatives. Keep a verified old value,
+                # otherwise set it only when the page unambiguously declares one candidate.
+                password = previous[0] if len(previous) == 1 else (published[0] if len(published) == 1 else None)
+                evidence = {"titleId": target, "title": post["title"], "post": post.get("link", ""),
+                            "page": section["page"], "pages": downloads, "version": section["version"],
+                            "section": section["name"], "url": url, "passwords": published,
+                            "previousPasswords": previous, "archivePassword": password}
+                if published or previous:
+                    password_evidence.append(evidence)
+                if len(previous) > 1 or (previous and published and not set(previous).intersection(published)):
+                    password_conflicts.append(evidence)
                 records.setdefault(target, []).append(
-                    record_for(target, url, label_kind, update_version, region_of(section["version"], url), spec, extra.strip(), file_title))
+                    record_for(target, url, label_kind, update_version, region_of(section["version"], url), spec, extra.strip(), file_title, password))
     # A post with no link the app can use adds no game.
     new_games = {tid: game for tid, game in new_games.items() if tid in records}
     return {"games": games, "lines": lines, "releases": releases, "records": records, "new": new_games,
-            "unmatched": unmatched, "skipped": skipped}
+            "unmatched": unmatched, "skipped": skipped, "passwords": password_evidence,
+            "passwordConflicts": password_conflicts}
 
 
 def new_title(title):
@@ -634,13 +816,17 @@ def run_import(args):
     print("new links by host:", by_host)
     print("links left out:", plan["skipped"])
     print(f"posts matching no catalog game: {len(plan['unmatched'])}")
+    print(f"sources with password evidence: {len(plan['passwords'])}; conflicts: {len(plan['passwordConflicts'])}")
     for tid in revived[:25]:
         print(f"  shown again: {tid} {games[tid]['title']} ({len(records[tid])} links)")
     if args.report:
         write_json(args.report, {"revived": [[tid, games[tid]["title"]] for tid in revived],
                                  "new": [[tid, game["title"], game["region"]] for tid, game in sorted(new.items())],
-                                 "records": records, "unmatched": plan["unmatched"], "skipped": plan["skipped"]})
+                                 "records": records, "unmatched": plan["unmatched"], "skipped": plan["skipped"],
+                                 "passwords": plan["passwords"], "passwordConflicts": plan["passwordConflicts"]})
     if args.write:
+        if plan["passwordConflicts"]:
+            raise SystemExit("Conflicting archive passwords: review the password evidence with --report before writing.")
         changed = apply_plan(plan)
         print(f"wrote {len(changed)} release files and the catalog's providers")
 

@@ -107,6 +107,20 @@ import { VIKING_PAGE_PREFIX, VIKING_PREFIX, describeVikingCapture, linkPageMetad
     "puppeteer",
     "vnsharing",
     "www.[DLPSGAME.COM]",
+    "21218",
+    "34086",
+    "31885",
+    "28617",
+    "20662",
+    "26698",
+    "18622",
+    "22053",
+    "28465",
+    "06981",
+    "20246",
+    "34577",
+    "21006",
+    "abdo",
   ];
   var PASSWORD_FAILURE = /archive password|RAR5 password|passphrase/i;
   // A LinkVault page adds its own check and a mirror page before the host's, so a link capture gets

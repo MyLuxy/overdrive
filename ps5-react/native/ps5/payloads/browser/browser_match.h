@@ -30,8 +30,9 @@ typedef struct {
   unsigned near_misses;
   char url[PROBE_MATCH_MAX];
 } BrowserMatch;
-extern const char *const browser_capture_prefixes[2];
-extern const char *const browser_capture_page_prefixes[2];
+#define BROWSER_CAPTURE_VIKING_ROUTES 3
+extern const char *const browser_capture_prefixes[BROWSER_CAPTURE_VIKING_ROUTES];
+extern const char *const browser_capture_page_prefixes[BROWSER_CAPTURE_VIKING_ROUTES];
 bool browser_capture_page_url(const char *url);
 const char *browser_capture_prefix(const char *url);
 bool browser_capture_url(const char *filename, const char *url);

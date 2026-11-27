@@ -1,12 +1,10 @@
 name: catalog
 
-# Every night, and from Run workflow: the importers read what Pegasus and SuperPSX changed, the new
-# games are filled from the PlayStation Store (IGDB when it lacks something), and what changed since
-# main's last commit goes to catalog-update.json on the "catalog" branch, which the app downloads.
-# main itself is never written: a release folds the update into the build's own catalog.
+# From Run workflow only: the importers read what Pegasus and SuperPSX changed, the new games are
+# filled from the PlayStation Store (IGDB when it lacks something), and what changed since main's
+# last commit goes to catalog-update.json on the "catalog" branch. A release folds updates into its
+# built-in catalog.
 on:
-  schedule:
-    - cron: "0 2 * * *" # 04:00 in Italy in summer, 03:00 in winter
   workflow_dispatch:
 
 permissions:

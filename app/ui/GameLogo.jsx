@@ -34,22 +34,24 @@ import { Image, Text } from '@ps5-react/core';
   }
   function GameLogo({ game, width, height, area = width * height * 0.6, onReady }) {
     const { logo } = game.art;
+    const remote = /^https?:\/\//i.test(logo || "");
+    const source = remote ? { uri: logo } : logo;
     const [loaded, setLoaded] = (0, useState)(null);
     const [failed, setFailed] = (0, useState)(null);
     (0, useLayoutEffect)(() => {
-      if (!logo) onReady?.();
-    }, [logo]);
+      if (!logo || !remote) onReady?.();
+    }, [logo, remote]);
     if (!logo || failed === logo) return /* @__PURE__ */ (0, jsx)(Title, { game, width });
     const box = logoStyle(game, width, height, area);
     return /* @__PURE__ */ (0, jsxs)(Fragment, { children: [
-      loaded !== logo && /* @__PURE__ */ (0, jsx)(Skeleton, { pulse: true, style: box }),
+      remote && loaded !== logo && /* @__PURE__ */ (0, jsx)(Skeleton, { pulse: true, style: box }),
       /* @__PURE__ */ (0, jsx)(
         Image,
         {
-          source: { uri: logo },
+          source,
           resizeMode: "contain",
           tintColor: game.art.logoDark ? colors.fg : void 0,
-          style: loaded === logo ? box : { ...box, display: "none" },
+          style: !remote || loaded === logo ? box : { ...box, display: "none" },
           onLoad: () => {
             setLoaded(logo);
             onReady?.();

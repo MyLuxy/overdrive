@@ -30,3 +30,8 @@ opens, so the app can read which file it names. Before the app opens the page, a
 returned only when it is new. Only a complete matching route is returned: Vikingfile's own download URL, or, in
 anchor mode, a file link on a known host or one whose name carries the title id.
 Buffers are wiped.
+
+Vikingfile page and download capture also recognize `vik1ngf1le.online`, verified
+through a redirect from `vikingfile.com` on 2026-11-26. The existing routes remain
+supported; file pages are excluded from download matches and lookalike domains
+remain rejected.
