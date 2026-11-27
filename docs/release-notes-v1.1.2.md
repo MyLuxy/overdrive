@@ -1,4 +1,4 @@
-﻿Catalog updates and improved download capture.
+Catalog updates and improved download capture.
 
 - VikingFile capture accepts the OVH SBG storage redirects used by its download links.
 - Added 294 catalog entries, including Pegasus and SuperPSX imports, with new detail pages and download records.
