@@ -92,26 +92,49 @@
       return { url: webURL(response.url || url).url, headers, rejectHtml: true };
     }
     // FileKeeper's page has no human check: a five-second countdown, then its Free Download button
-    // posts op=download2 with the file's code, and the answer redirects to the file on Datanodes'
-    // dlproxy.uk gateway. The page itself keeps the file in a cookie the engine never hands to the
-    // app, so the app posts the same form to the file's own address, /<code>, which needs none,
-    // after waiting the countdown out.
+    // posts op=download2 with the file's code, and the answer redirects to the file on the host's
+    // gateway (edge01.fetchio.cc today, Datanodes' dlproxy.uk family before it). The page itself
+    // keeps the file in a cookie the engine never hands to the app, so the app asks the file's own
+    // address, /<code>, which needs none, after waiting the countdown out.
+    //
+    // The host reads those parameters from the query string exactly as it reads them from the form
+    // (checked 2026-11-27), so the request that carries no body goes first: a console whose HTTP
+    // client drops or mangles a POST body then still gets its redirect, and a host that ever stops
+    // reading the query string is answered by the form on the second try.
     async function fileKeeper(url, signal) {
       const code = /^\/([a-z0-9]{12})(?:[/?]|$)/i.exec(webURL(url).path)?.[1];
       if (!code) throw new BrowserRequired(url);
-      console.log("[sources] filekeeper", code, "- waiting its countdown, then posting its form");
+      console.log("[sources] filekeeper", code, "- waiting its countdown, then asking for the file");
       await pause(FILEKEEPER_COUNTDOWN_MS, signal);
       if (signal?.aborted) throw new Error("Cancelled.");
-      const next = await request(url, {
-        signal,
-        method: "POST",
-        followRedirects: false,
-        headers: { "Content-Type": "application/x-www-form-urlencoded", Referer: url },
-        body: `op=download2&id=${code}&rand=&referer=&method_free=&down_direct=1`
-      });
-      const location2 = next.headers?.location;
-      console.log("[sources] filekeeper answered HTTP", next.status, location2 ? `with ${webURL(absolute(location2, url)).host}` : "without a file");
-      if (!location2) throw new Error("Source unavailable: FileKeeper gave no file. Choose another source.");
+      const form = `op=download2&id=${code}&rand=&referer=&method_free=&down_direct=1`;
+      const page2 = url.split("?")[0];
+      const attempts = [
+        { label: "GET", ask: `${page2}?${form}`, options: { signal, followRedirects: false } },
+        { label: "POST", ask: page2, options: {
+          signal,
+          method: "POST",
+          followRedirects: false,
+          headers: { "Content-Type": "application/x-www-form-urlencoded", Referer: url },
+          body: form
+        } }
+      ];
+      let location2 = "";
+      let last = null;
+      for (const attempt of attempts) {
+        try {
+          const reply = await request(attempt.ask, attempt.options);
+          const redirect = reply.headers?.location || "";
+          console.log("[sources] filekeeper", attempt.label, "answered HTTP", reply.status,
+            redirect ? `with ${webURL(absolute(redirect, url)).host}` : "without a file");
+          if (redirect) { location2 = redirect; break; }
+          last = new Error("Source unavailable: FileKeeper gave no file. Choose another source.");
+        } catch (error) {
+          console.log("[sources] filekeeper", attempt.label, "failed:", error.message);
+          last = error;
+        }
+      }
+      if (!location2) throw last;
       // The catalog's FileKeeper sizes are rounded (1 GiB for a 1.6 GB file), and the engine holds a
       // download to its expected size exactly: the file's own length, from the same HEAD, replaces it.
       const file = absolute(location2, url);
